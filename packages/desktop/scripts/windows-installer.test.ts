@@ -1,36 +1,89 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-test.skipIf(process.platform !== "win32")(
+const windows = test.skipIf(process.platform !== "win32")
+
+// Matches the 16 hex characters the staged directory name takes from APP_64_HASH.
+const payloadHash = "0123456789ABCDEF0123456789ABCDEF"
+
+async function harness() {
+  const { getMakeNsisPath, getNsisPluginsPath } = await import("app-builder-lib/out/toolsets/windows")
+  const { nsisTemplatesDir } = await import("app-builder-lib/out/targets/nsis/nsisUtil")
+  const { NsisScriptGenerator } = await import("app-builder-lib/out/targets/nsis/nsisScriptGenerator")
+  const config = (await import("../electron-builder.config")).default
+  const compiler = await getMakeNsisPath(config.toolsets?.nsis, config.nsis?.customNsisBinary)
+  const plugins = await getNsisPluginsPath(config.toolsets?.nsis, config.nsis?.customNsisResources)
+  const dir = await mkdtemp(path.join(os.tmpdir(), "opencode-installer-"))
+  // electron-builder generates the command-line flags such as ${isUpdated}.
+  const flags = new NsisScriptGenerator()
+  flags.flags(["updated"])
+
+  const run = async (cmd: string[], env: Record<string, string> = {}) => {
+    const result = Bun.spawn(cmd, { env: { ...process.env, ...compiler.env, ...env }, stdout: "pipe", stderr: "pipe" })
+
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(result.stdout).text(),
+      new Response(result.stderr).text(),
+      result.exited,
+    ])
+
+    return { stdout: stdout.trim(), stderr, code }
+  }
+
+  // Compiles the custom include with the template's flags and messages around one section body.
+  const compile = async (name: string, section: string) => {
+    const script = path.join(dir, `${name}.nsi`)
+    const exe = path.join(dir, `${name}.exe`)
+    await Bun.write(
+      script,
+      `Unicode true
+RequestExecutionLevel user
+SilentInstall silent
+OutFile "${exe}"
+!addplugindir /x86-unicode "${path.join(plugins, "x86-unicode")}"
+!addincludedir "${path.join(nsisTemplatesDir, "include")}"
+!include LogicLib.nsh
+!include StdUtils.nsh
+${flags.build()}
+LoadLanguageFile "\${NSISDIR}\\Contrib\\Language files\\English.nlf"
+LangString appRunning \${LANG_ENGLISH} "running"
+LangString appClosing \${LANG_ENGLISH} "closing"
+LangString appCannotBeClosed \${LANG_ENGLISH} "cannot close"
+!define APP_EXECUTABLE_FILENAME "OpenCode.exe"
+!define APP_64 "${path.join(dir, "app.7z")}"
+!define APP_64_HASH "${payloadHash}"
+!define APP_64_UNPACKED_SIZE 1
+!include "${config.nsis?.include}"
+Section
+${section}
+SectionEnd
+`,
+    )
+    const result = await run([compiler.path, script])
+    expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0)
+
+    return exe
+  }
+
+  return { dir, run, compile, cleanup: () => rm(dir, { recursive: true, force: true }) }
+}
+
+windows(
   "installer grants sandbox access without changing unrelated permissions",
   async () => {
-    const { getMakeNsisPath } = await import("app-builder-lib/out/toolsets/windows")
-    const config = (await import("../electron-builder.config")).default
-    const compiler = await getMakeNsisPath(config.toolsets?.nsis, config.nsis?.customNsisBinary)
-    const dir = await mkdtemp(path.join(os.tmpdir(), "opencode-installer-"))
+    const installer = await harness()
 
-    const run = async (cmd: string[]) => {
-      const result = Bun.spawn(cmd, {
-        env: { ...process.env, ...compiler.env, OPENCODE_INSTALLER_TEST_ROOT: dir },
-        stdout: "pipe",
-        stderr: "pipe",
-      })
+    const succeed = async (cmd: string[]) => {
+      const result = await installer.run(cmd, { OPENCODE_INSTALLER_TEST_ROOT: installer.dir })
+      expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0)
 
-      const [stdout, stderr, code] = await Promise.all([
-        new Response(result.stdout).text(),
-        new Response(result.stderr).text(),
-        result.exited,
-      ])
-
-      expect(code, `${stdout}\n${stderr}`).toBe(0)
-
-      return stdout.trim()
+      return result.stdout
     }
 
     const acl = (file: string) =>
-      run([
+      succeed([
         "pwsh",
         "-NoProfile",
         "-NonInteractive",
@@ -39,35 +92,158 @@ test.skipIf(process.platform !== "win32")(
       ])
 
     try {
-      await Bun.write(path.join(dir, "app/runtime/icudtl.dat"), "runtime fixture")
-      await Bun.write(path.join(dir, "unrelated.txt"), "outside the installation")
-      await run(["icacls.exe", path.join(dir, "app"), "/grant", "*S-1-15-2-999-999-999:(OI)(CI)(F)"])
+      await Bun.write(path.join(installer.dir, "app/runtime/icudtl.dat"), "runtime fixture")
+      await Bun.write(path.join(installer.dir, "unrelated.txt"), "outside the installation")
+      await succeed(["icacls.exe", path.join(installer.dir, "app"), "/grant", "*S-1-15-2-999-999-999:(OI)(CI)(F)"])
       const parent = await acl(".")
       const unrelated = await acl("unrelated.txt")
-      await Bun.write(
-        path.join(dir, "installer.nsi"),
-        `Unicode true
-RequestExecutionLevel user
-SilentInstall silent
-OutFile "${path.join(dir, "installer.exe")}"
-!include "${config.nsis?.include}"
-Section
-  StrCpy $INSTDIR "$EXEDIR\\app"
-  !insertmacro customInstall
-SectionEnd
-`,
+
+      const exe = await installer.compile(
+        "acl",
+        `  StrCpy $INSTDIR "$EXEDIR\\app"
+  !insertmacro customInstall`,
       )
-      await run([compiler.path, path.join(dir, "installer.nsi")])
-      await run([path.join(dir, "installer.exe")])
+
+      await succeed([exe])
       const installed = await acl("app/runtime/icudtl.dat")
       expect(installed).toContain("(A;ID;0x1200a9;;;S-1-15-2-2)")
       expect(installed).toContain("S-1-15-2-999-999-999")
-      await run([path.join(dir, "installer.exe")])
+      await succeed([exe])
       expect(await acl("app/runtime/icudtl.dat")).toBe(installed)
       expect(await acl(".")).toBe(parent)
       expect(await acl("unrelated.txt")).toBe(unrelated)
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      await installer.cleanup()
+    }
+  },
+  120_000,
+)
+
+// The running app unpacks an update beside the install directory before the restart. The install takes it
+// only when it belongs to this payload and the old version is gone, and never leaves a staged copy behind.
+const stagedCases = [
+  {
+    name: "moves the staged app into the emptied install directory",
+    installed: [],
+    staged: { [`update-${payloadHash.slice(0, 16)}`]: ["OpenCode.exe", "resources/app.asar"] },
+    moved: true,
+    expected: ["OpenCode.exe", "resources/app.asar"],
+  },
+  {
+    name: "keeps an install directory that still holds files",
+    installed: ["locked.dll"],
+    staged: { [`update-${payloadHash.slice(0, 16)}`]: ["OpenCode.exe"] },
+    moved: false,
+    expected: ["locked.dll"],
+  },
+  {
+    name: "discards an update staged from another payload",
+    installed: [],
+    staged: { "update-FEDCBA9876543210": ["OpenCode.exe"] },
+    moved: false,
+    expected: [],
+  },
+  {
+    name: "discards staging that never finished",
+    installed: [],
+    staged: { staging: ["OpenCode.exe"] },
+    moved: false,
+    expected: [],
+  },
+]
+
+windows(
+  "installs a staged update only into an emptied install directory",
+  async () => {
+    const installer = await harness()
+
+    try {
+      const exe = await installer.compile(
+        "staged",
+        `  InitPluginsDir
+  SetOutPath $INSTDIR
+  !insertmacro customInstallStagedApp
+  \${If} $R0 == "installed"
+    SetErrorLevel 0
+  \${Else}
+    SetErrorLevel 3
+  \${EndIf}`,
+      )
+
+      for (const item of stagedCases) {
+        const root = path.join(installer.dir, item.name.replaceAll(" ", "-"))
+        const install = path.join(root, "app")
+        await mkdir(install, { recursive: true })
+        await Promise.all([
+          ...item.installed.map((file) => Bun.write(path.join(install, file), "old")),
+          ...Object.entries(item.staged).flatMap(([suffix, files]) =>
+            files.map((file) => Bun.write(path.join(`${install}.${suffix}`, file), "new")),
+          ),
+        ])
+
+        const result = await installer.run([exe, `/D=${install}`])
+        const files = await readdir(install, { recursive: true, withFileTypes: true })
+
+        expect(result.code, item.name).toBe(item.moved ? 0 : 3)
+        expect(
+          files
+            .filter((entry) => entry.isFile())
+            .map((entry) => path.relative(install, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
+            .toSorted(),
+          item.name,
+        ).toEqual(item.expected)
+        expect(await readdir(root), item.name).toEqual(["app"])
+      }
+    } finally {
+      await installer.cleanup()
+    }
+  },
+  120_000,
+)
+
+// Stand-ins for the app are copies of ping.exe: it exits with 0 when it finishes and 1 when terminated.
+const runningCases = [
+  { name: "a manual install stops the app at once", args: [], pings: 30, exitCode: 1 },
+  { name: "an update lets the quitting app exit by itself", args: ["--updated"], pings: 2, exitCode: 0 },
+]
+
+windows(
+  "stops only the processes that run from the install directory",
+  async () => {
+    const installer = await harness()
+    const ping = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "PING.EXE")
+
+    try {
+      const exe = await installer.compile("running", "  !insertmacro customCheckAppRunning")
+
+      for (const item of runningCases) {
+        const root = path.join(installer.dir, item.name.replaceAll(" ", "-"))
+        const install = path.join(root, "app")
+        // Shares the install directory's name as a prefix, so a match without the separator would stop it.
+        const sibling = path.join(root, "app-sibling")
+        await mkdir(path.join(install, "resources"), { recursive: true })
+        await mkdir(sibling, { recursive: true })
+        await copyFile(ping, path.join(install, "resources", "standin.exe"))
+        await copyFile(ping, path.join(sibling, "standin.exe"))
+
+        const app = Bun.spawn([path.join(install, "resources", "standin.exe"), "-n", String(item.pings), "127.0.0.1"], {
+          stdout: "ignore",
+        })
+
+        const other = Bun.spawn([path.join(sibling, "standin.exe"), "-n", "30", "127.0.0.1"], { stdout: "ignore" })
+
+        try {
+          expect((await installer.run([exe, ...item.args, `/D=${install}`])).code, item.name).toBe(0)
+          expect(other.exitCode, item.name).toBeNull()
+          expect(await app.exited, item.name).toBe(item.exitCode)
+        } finally {
+          app.kill()
+          other.kill()
+          await Promise.all([app.exited, other.exited])
+        }
+      }
+    } finally {
+      await installer.cleanup()
     }
   },
   120_000,
