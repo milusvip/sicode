@@ -1,0 +1,2145 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SiCode · 桌面端</title>
+    <style>
+      :root {
+        --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+        --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        background: #060607;
+        font-family: var(--font);
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        overflow: hidden;
+      }
+
+      /* ---------- window ---------- */
+
+      .window {
+        width: min(1240px, 100%);
+        height: min(806px, calc(100vh - 48px));
+        display: flex;
+        flex-direction: column;
+        border-radius: 11px;
+        overflow: hidden;
+        background: #0d0d0f;
+        color: #e9e7e4;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.075),
+          0 40px 100px -30px rgba(0, 0, 0, 0.9),
+          0 2px 10px rgba(0, 0, 0, 0.5);
+        --bg: #0d0d0f;
+        --panel: #111113;
+        --code-bg: #141417;
+        --text: #e9e7e4;
+        --muted: #9c9791;
+        --faint: #6c6761;
+        --line: rgba(255, 255, 255, 0.075);
+        --rail: rgba(255, 255, 255, 0.1);
+        --hover: rgba(255, 255, 255, 0.045);
+        --active: rgba(255, 255, 255, 0.075);
+        --add-bg: rgba(74, 222, 128, 0.1);
+        --add-fg: #8adfa6;
+        --del-bg: rgba(248, 113, 113, 0.1);
+        --del-fg: #eda3a3;
+        --err: #e5756a;
+        --accent: #e6e1da;
+        transition: width 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .window[data-theme="light"] {
+        background: #fbfaf8;
+        color: #171614;
+        --bg: #fbfaf8;
+        --panel: #f5f3f0;
+        --code-bg: #f1efec;
+        --text: #171614;
+        --muted: #6b6660;
+        --faint: #9a948e;
+        --line: rgba(0, 0, 0, 0.085);
+        --rail: rgba(0, 0, 0, 0.11);
+        --hover: rgba(0, 0, 0, 0.04);
+        --active: rgba(0, 0, 0, 0.06);
+        --add-bg: rgba(22, 163, 74, 0.1);
+        --add-fg: #1a7f45;
+        --del-bg: rgba(220, 38, 38, 0.09);
+        --del-fg: #b3352f;
+        --err: #b3352f;
+        --accent: #171614;
+        box-shadow:
+          0 0 0 1px rgba(0, 0, 0, 0.1),
+          0 30px 80px -34px rgba(0, 0, 0, 0.5);
+      }
+
+      .titlebar {
+        flex: 0 0 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-inline: 14px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+        -webkit-app-region: drag;
+      }
+
+      .tb-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .logo {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        flex: 0 0 auto;
+      }
+
+      .tb-title {
+        font-size: 11.5px;
+        font-weight: 550;
+        color: var(--muted);
+        letter-spacing: 0.005em;
+      }
+
+      .tb-controls {
+        display: flex;
+        align-items: center;
+        height: 100%;
+        margin-inline-end: -14px;
+      }
+
+      .ctl {
+        width: 44px;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: default;
+      }
+
+      .ctl:hover {
+        background: var(--hover);
+      }
+
+      .ctl.close:hover {
+        background: #c42b1c;
+        color: #fff;
+      }
+
+      .ctl svg {
+        width: 10px;
+        height: 10px;
+        stroke: currentColor;
+        stroke-width: 1.1;
+        fill: none;
+      }
+
+      .body {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+
+      /* ---------- sidebar ---------- */
+
+      .sidebar {
+        flex: 0 0 236px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 10px 8px;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        min-height: 0;
+      }
+
+      .ws {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 7px 9px;
+        min-width: 0;
+      }
+
+      .ws-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ws-branch {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--faint);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+
+      .new-chat {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .new-chat:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+
+      .side-label {
+        padding: 8px 8px 4px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+        opacity: 0.8;
+      }
+
+      .conv {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        cursor: default;
+        min-width: 0;
+      }
+
+      .conv:hover {
+        background: var(--hover);
+      }
+
+      .conv[data-active="true"] {
+        background: var(--active);
+      }
+
+      .conv-title {
+        font-size: 12px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .conv[data-active="true"] .conv-title {
+        color: var(--text);
+      }
+
+      .conv-meta {
+        font-size: 10px;
+        color: var(--faint);
+        opacity: 0.8;
+      }
+
+      .side-foot {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border-top: 1px solid var(--line);
+        font-size: 11.5px;
+        color: var(--faint);
+      }
+
+      .avatar {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: rgba(216, 207, 194, 0.16);
+        color: var(--muted);
+        font-size: 9.5px;
+        font-weight: 600;
+        flex: 0 0 auto;
+      }
+
+      /* ---------- main ---------- */
+
+      .main {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+      }
+
+      .conv-head {
+        flex: 0 0 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-inline: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .ch-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .ch-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chip {
+        flex: 0 0 auto;
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--faint);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+        line-height: 1.6;
+      }
+
+      .ch-right {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .icon-btn {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+      }
+
+      .icon-btn:hover {
+        background: var(--hover);
+        color: var(--muted);
+      }
+
+      .icon-btn svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        stroke-width: 1.4;
+        fill: none;
+        stroke-linecap: round;
+      }
+
+      .scroll {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 22px 28px 8px;
+        min-height: 0;
+      }
+
+      .scroll::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      .scroll::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.09);
+        border: 3px solid transparent;
+        background-clip: content-box;
+        border-radius: 10px;
+      }
+
+      .thread {
+        max-width: 720px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .thread[hidden] {
+        display: none;
+      }
+
+      .msg.user {
+        align-self: flex-end;
+        max-width: 82%;
+        padding: 9px 12px;
+        border-radius: 10px;
+        background: var(--active);
+        font-size: 13px;
+        line-height: 1.66;
+        color: var(--text);
+      }
+
+      .turn {
+        display: flex;
+        gap: 10px;
+      }
+
+      .turn-mark {
+        flex: 0 0 20px;
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        margin-top: 2px;
+      }
+
+      .turn-body {
+        min-width: 0;
+        flex: 1;
+        font-size: 13px;
+        line-height: 1.72;
+        color: var(--muted);
+      }
+
+      .turn-body strong {
+        color: var(--text);
+        font-weight: 550;
+      }
+
+      /* ---------- process shell（整段过程可收起） ---------- */
+
+      .process-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 3px 6px 3px 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: start;
+        cursor: pointer;
+      }
+
+      .process-head:hover {
+        background: var(--hover);
+      }
+
+      .p-ind {
+        flex: 0 0 19px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+      }
+
+      .p-ind svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .p-title {
+        font-size: 12.5px;
+        color: var(--faint);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .p-meta {
+        flex: 0 0 auto;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--faint);
+        opacity: 0.8;
+      }
+
+      .p-chev {
+        margin-inline-start: auto;
+        flex: 0 0 12px;
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+        opacity: 0.75;
+        transition: transform 200ms ease;
+      }
+
+      .p-chev svg {
+        width: 11px;
+        height: 11px;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        fill: none;
+      }
+
+      .process[data-open="true"] .p-chev {
+        transform: rotate(90deg);
+      }
+
+      .process[data-open="true"] .p-closed,
+      .process[data-open="false"] .p-open {
+        display: none;
+      }
+
+      .process[data-open="false"] .process-head {
+        padding-block: 5px;
+      }
+
+      .process-body {
+        display: grid;
+        grid-template-rows: 1fr;
+        transition: grid-template-rows 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .process[data-open="false"] .process-body {
+        grid-template-rows: 0fr;
+      }
+
+      .process-body > div {
+        overflow: hidden;
+      }
+
+      /* ---------- step title ---------- */
+
+      .step-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 10px 0 2px;
+      }
+
+      .step-no {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--faint);
+        letter-spacing: 0.04em;
+      }
+
+      .step-text {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+      }
+
+      .step-line {
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+      }
+
+      /* ---------- tool chain ---------- */
+
+      .chain {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+
+      .chain::before {
+        content: "";
+        position: absolute;
+        inset-block: 8px;
+        left: 9px;
+        width: 1px;
+        background: var(--rail);
+        opacity: 0.6;
+      }
+
+      .tool {
+        position: relative;
+      }
+
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 28px;
+        padding: 3px 6px 3px 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: start;
+        cursor: pointer;
+      }
+
+      .row:hover {
+        background: var(--hover);
+      }
+
+      .ind {
+        position: relative;
+        z-index: 1;
+        flex: 0 0 19px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--faint);
+      }
+
+      .ind svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .tool[data-state="running"] .ind {
+        color: var(--text);
+      }
+
+      .tool[data-state="error"] .ind {
+        color: var(--err);
+      }
+
+      .spinner {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1.4px solid color-mix(in srgb, currentColor 22%, transparent);
+        border-top-color: currentColor;
+        animation: spin 720ms linear infinite;
+      }
+
+      .title {
+        font-size: 12.5px;
+        font-weight: 450;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .tool[data-state="running"] .title {
+        background: linear-gradient(90deg, var(--muted) 12%, var(--text) 42%, var(--muted) 72%);
+        background-size: 260% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: shimmer 1.5s linear infinite;
+      }
+
+      .tool[data-state="error"] .title {
+        color: var(--err);
+      }
+
+      .arg {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--faint);
+        direction: ltr;
+        text-align: start;
+      }
+
+      .arg b {
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .meta {
+        flex: 0 0 auto;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--faint);
+        opacity: 0.85;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .meta.bad {
+        color: var(--err);
+        opacity: 1;
+      }
+
+      .chev {
+        flex: 0 0 12px;
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+        opacity: 0;
+        transition:
+          transform 180ms ease,
+          opacity 120ms ease;
+      }
+
+      .row:hover .chev,
+      .tool[data-open="true"] .chev {
+        opacity: 0.85;
+      }
+
+      .tool[data-open="true"] .chev {
+        transform: rotate(90deg);
+      }
+
+      .chev svg {
+        width: 10px;
+        height: 10px;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        fill: none;
+      }
+
+      .tool-body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .tool[data-open="true"] .tool-body {
+        grid-template-rows: 1fr;
+      }
+
+      .tool-body > div {
+        overflow: hidden;
+      }
+
+      .body-pad {
+        padding: 4px 0 10px 19px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code-bg);
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 5px 9px;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--faint);
+      }
+
+      .panel-head .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+      }
+
+      .panel-head .live i {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: blink 1.1s ease-in-out infinite;
+      }
+
+      pre.code {
+        margin: 0;
+        padding: 8px 9px;
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--muted);
+        overflow-x: auto;
+        tab-size: 2;
+      }
+
+      pre.code .ln {
+        display: inline-block;
+        width: 22px;
+        color: var(--faint);
+        opacity: 0.5;
+        user-select: none;
+      }
+
+      pre.code .kw {
+        color: #b79ce0;
+      }
+
+      pre.code .str {
+        color: #9ecf9e;
+      }
+
+      .diff {
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.58;
+      }
+
+      .diff div {
+        display: flex;
+        gap: 8px;
+        padding: 0 9px;
+        white-space: pre;
+      }
+
+      .diff .sign {
+        width: 7px;
+        flex: 0 0 7px;
+        opacity: 0.7;
+      }
+
+      .diff .add {
+        background: var(--add-bg);
+        color: var(--add-fg);
+      }
+
+      .diff .del {
+        background: var(--del-bg);
+        color: var(--del-fg);
+      }
+
+      .diff .ctx {
+        color: var(--faint);
+      }
+
+      .term {
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.64;
+        padding: 8px 9px;
+        color: var(--muted);
+        max-height: 160px;
+        overflow-y: auto;
+      }
+
+      .term .dim {
+        color: var(--faint);
+      }
+
+      .term .ok {
+        color: var(--add-fg);
+      }
+
+      .term .bad {
+        color: var(--del-fg);
+      }
+
+      .term .cursor {
+        display: inline-block;
+        width: 5px;
+        height: 11px;
+        vertical-align: -2px;
+        background: var(--text);
+        opacity: 0.65;
+        animation: blink 1s steps(2, start) infinite;
+      }
+
+      .panel.bad {
+        border-color: color-mix(in srgb, var(--err) 34%, transparent);
+      }
+
+      .panel.bad .panel-head {
+        color: var(--err);
+      }
+
+      .reason-text {
+        position: relative;
+        padding: 2px 0 4px 19px;
+        font-size: 12.5px;
+        line-height: 1.76;
+        color: var(--muted);
+      }
+
+      .reason-text::before {
+        content: "";
+        position: absolute;
+        left: 9px;
+        top: 6px;
+        bottom: 8px;
+        width: 2px;
+        border-radius: 2px;
+        background: linear-gradient(var(--rail), transparent);
+      }
+
+      .reason-text p {
+        margin: 0 0 6px;
+      }
+
+      .reason-text p:last-child {
+        margin: 0;
+      }
+
+      .tool[data-kind="reason"] .body-pad {
+        padding: 0;
+      }
+
+      .tool[data-kind="reason"] .title {
+        font-weight: 400;
+      }
+
+      /* ---------- composer ---------- */
+
+      .composer {
+        flex: 0 0 auto;
+        padding: 10px 28px 16px;
+      }
+
+      .composer-inner {
+        max-width: 720px;
+        margin: 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--panel);
+        padding: 9px 10px 8px;
+      }
+
+      .composer-inner:focus-within {
+        border-color: color-mix(in srgb, var(--text) 22%, transparent);
+      }
+
+      .ph {
+        font-size: 13px;
+        color: var(--faint);
+        padding: 2px 2px 12px;
+      }
+
+      .composer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .cb-left {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--faint);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 6px;
+        border-radius: 6px;
+        border: 0;
+        background: transparent;
+        color: var(--faint);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      .pill:hover {
+        background: var(--hover);
+        color: var(--muted);
+      }
+
+      .send {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 7px;
+        background: var(--accent);
+        color: var(--bg);
+        cursor: pointer;
+      }
+
+      .send svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* ---------- demo controls ---------- */
+
+      .demo {
+        position: fixed;
+        right: 18px;
+        top: 16px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px;
+        border-radius: 9px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(20, 20, 22, 0.86);
+        backdrop-filter: blur(8px);
+        opacity: 0.34;
+        transition: opacity 160ms ease;
+        z-index: 10;
+      }
+
+      .demo:hover {
+        opacity: 1;
+      }
+
+      .demo button {
+        padding: 4px 9px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: #a29c95;
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      .demo button:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ece9e4;
+      }
+
+      .demo button[aria-pressed="true"] {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+
+      .demo .sep {
+        width: 1px;
+        height: 14px;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      /* ---------- mobile ---------- */
+
+      /* ---------- replay ---------- */
+
+      .tool[data-replay="running"] .ind svg {
+        opacity: 0;
+      }
+
+      .tool[data-replay="running"] .ind::after {
+        content: "";
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1.4px solid color-mix(in srgb, var(--text) 22%, transparent);
+        border-top-color: var(--text);
+        animation: spin 720ms linear infinite;
+      }
+
+      .tool[data-replay="running"] .title {
+        background: linear-gradient(90deg, var(--muted) 12%, var(--text) 42%, var(--muted) 72%);
+        background-size: 260% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: shimmer 1.5s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes shimmer {
+        from {
+          background-position: 120% 0;
+        }
+        to {
+          background-position: -120% 0;
+        }
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.15;
+        }
+      }
+
+      /* ---------- 窄屏：一套代码自适应，无切换 ---------- */
+
+      @media (max-width: 768px) {
+        body {
+          display: block;
+          padding: 0;
+        }
+
+        .window {
+          width: 100vw;
+          height: 100vh;
+          height: 100dvh;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        .sidebar,
+        .tb-title,
+        .ch-right,
+        .meta.optional {
+          display: none;
+        }
+
+        .titlebar {
+          flex-basis: calc(38px + env(safe-area-inset-top));
+          padding-top: env(safe-area-inset-top);
+          padding-inline: 0;
+          justify-content: center;
+        }
+
+        .tb-controls {
+          display: none;
+        }
+
+        .conv-head {
+          flex-basis: 44px;
+          padding-inline: 12px;
+        }
+
+        .scroll {
+          padding: 16px 12px 4px;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .thread {
+          gap: 12px;
+        }
+
+        .msg.user {
+          max-width: 88%;
+          font-size: 12.5px;
+        }
+
+        .turn-body {
+          font-size: 12.5px;
+        }
+
+        .turn-mark {
+          width: 17px;
+          height: 17px;
+          flex-basis: 17px;
+        }
+
+        .arg .path {
+          display: none;
+        }
+
+        .row {
+          min-height: 38px;
+        }
+
+        .chev {
+          opacity: 0.55;
+        }
+
+        .body-pad {
+          padding-left: 15px;
+        }
+
+        .reason-text {
+          padding-left: 15px;
+          font-size: 12px;
+        }
+
+        .reason-text::before,
+        .chain::before {
+          left: 7px;
+        }
+
+        pre.code,
+        .diff,
+        .term {
+          font-size: 10px;
+        }
+
+        .term {
+          max-height: 128px;
+        }
+
+        .diff {
+          overflow-x: auto;
+        }
+
+        .composer {
+          padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+        }
+
+        .ph {
+          font-size: 12.5px;
+          padding-bottom: 10px;
+        }
+
+        .step-text {
+          font-size: 11.5px;
+        }
+
+        .p-title {
+          font-size: 11.5px;
+        }
+
+        .p-meta {
+          display: none;
+        }
+
+        .demo {
+          top: calc(4px + env(safe-area-inset-top));
+          right: auto;
+          left: 4px;
+          gap: 1px;
+          padding: 3px;
+          opacity: 0.94;
+        }
+
+        .demo button {
+          padding: 4px 6px;
+          font-size: 10.5px;
+        }
+
+        button,
+        .row,
+        .conv {
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 1ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-file" viewBox="0 0 16 16">
+        <path d="M9 1.8H4.2a1 1 0 0 0-1 1v10.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V5.6L9 1.8Z" />
+        <path d="M9 1.8V5.6h3.8" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 16 16">
+        <circle cx="7" cy="7" r="4.2" />
+        <path d="m10.2 10.2 3 3" />
+      </symbol>
+      <symbol id="i-pencil" viewBox="0 0 16 16">
+        <path d="M11.1 2.6l2.3 2.3-8 8-3 .7.7-3 8-8Z" />
+        <path d="M9.6 4.1l2.3 2.3" />
+      </symbol>
+      <symbol id="i-terminal" viewBox="0 0 16 16">
+        <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.4" />
+        <path d="M4.6 6.6l2 1.7-2 1.7M8.6 10.3h2.8" />
+      </symbol>
+      <symbol id="i-spark" viewBox="0 0 16 16">
+        <path d="M8 2.1l1.35 3.45L12.8 6.9 9.35 8.25 8 11.7 6.65 8.25 3.2 6.9l3.45-1.35L8 2.1Z" />
+        <path d="M12.5 10.4l.62 1.58 1.58.62-1.58.62-.62 1.58-.62-1.58L10.3 12.6l1.58-.62.62-1.58Z" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 16 16">
+        <path d="m3.4 8.4 3 3 6.2-6.6" />
+      </symbol>
+      <symbol id="i-list" viewBox="0 0 16 16">
+        <path d="M6 4.2h7M6 8h7M6 11.8h7M3 4.2h.01M3 8h.01M3 11.8h.01" />
+      </symbol>
+      <symbol id="i-chev" viewBox="0 0 12 12">
+        <path d="m4.5 2.5 3.5 3.5-3.5 3.5" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 16 16">
+        <path d="M8 3.4v9.2M3.4 8h9.2" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 16 16">
+        <path d="M8 12.6V3.6M4.2 7.2 8 3.4l3.8 3.8" />
+      </symbol>
+      <symbol id="i-sliders" viewBox="0 0 16 16">
+        <path d="M2.6 5h10.8M2.6 11h10.8M5.6 3v4M10.4 9v4" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 10 10">
+        <path d="M2.4 2.4l5.2 5.2M7.6 2.4L2.4 7.6" />
+      </symbol>
+      <symbol id="i-min" viewBox="0 0 10 10">
+        <path d="M2 5h6" />
+      </symbol>
+      <symbol id="i-max" viewBox="0 0 10 10">
+        <rect x="2.2" y="2.2" width="5.6" height="5.6" />
+      </symbol>
+    </svg>
+
+    <div class="demo" id="demo">
+      <button data-scene="brand" aria-pressed="true">品牌改造</button>
+      <button data-scene="fix" aria-pressed="false">构建报错</button>
+      <span class="sep"></span>
+      <button id="collapse">收起过程</button>
+      <button id="replay">重放</button>
+    </div>
+
+    <div class="window" id="win" data-theme="dark">
+      <div class="titlebar">
+        <div class="tb-left">
+          <img class="logo" id="tbLogo" alt="" />
+          <span class="tb-title">SiCode</span>
+        </div>
+        <div class="tb-controls">
+          <button class="ctl" tabindex="-1" aria-hidden="true"><svg><use href="#i-min" /></svg></button>
+          <button class="ctl" tabindex="-1" aria-hidden="true"><svg><use href="#i-max" /></svg></button>
+          <button class="ctl close" tabindex="-1" aria-hidden="true"><svg><use href="#i-close" /></svg></button>
+        </div>
+      </div>
+
+      <div class="body">
+        <aside class="sidebar">
+          <div class="ws">
+            <span class="ws-name">sicode</span>
+            <span class="ws-branch">main</span>
+          </div>
+          <button class="new-chat"><svg width="12" height="12" style="stroke: currentColor; fill: none; stroke-width: 1.6"><use href="#i-plus" /></svg>新会话</button>
+          <div class="side-label">最近</div>
+          <div class="conv" data-active="true">
+            <span class="conv-title">桌面端品牌改造</span>
+            <span class="conv-meta">刚刚 · 4 个工具</span>
+          </div>
+          <div class="conv">
+            <span class="conv-title">构建报错修复</span>
+            <span class="conv-meta">12 分钟前 · 3 个工具</span>
+          </div>
+          <div class="conv">
+            <span class="conv-title">图标生成脚本</span>
+            <span class="conv-meta">1 小时前</span>
+          </div>
+          <div class="conv">
+            <span class="conv-title">打包配置对比</span>
+            <span class="conv-meta">昨天</span>
+          </div>
+          <div class="side-foot">
+            <span class="avatar">朕</span>
+            <span>milusvip</span>
+          </div>
+        </aside>
+
+        <main class="main">
+          <div class="conv-head">
+            <div class="ch-left">
+              <span class="ch-title" id="chTitle">桌面端品牌改造</span>
+              <span class="chip">main</span>
+            </div>
+            <div class="ch-right">
+              <button class="icon-btn" tabindex="-1" aria-hidden="true"><svg><use href="#i-search" /></svg></button>
+              <button class="icon-btn" tabindex="-1" aria-hidden="true"><svg><use href="#i-sliders" /></svg></button>
+            </div>
+          </div>
+
+          <div class="scroll" id="scroll">
+            <!-- ================= 案例一：品牌改造 ================= -->
+            <div class="thread" data-scene="brand">
+              <div class="msg user">logo 换成这个，名字改为 SiCode，我的仓库是 git@github.com:milusvip/sicode.git</div>
+
+              <div class="turn">
+                <img class="turn-mark" data-mark alt="" />
+                <div class="turn-body">明白，先摸清 desktop 包的品牌落点，再统一替换；内核保持上游原样，方便以后同步。</div>
+              </div>
+
+              <div class="process" data-open="true">
+                <button class="process-head">
+                  <span class="p-ind">
+                    <svg class="p-open"><use href="#i-list" /></svg>
+                    <svg class="p-closed"><use href="#i-check" /></svg>
+                  </span>
+                  <span class="p-title p-open">过程 · 3 个阶段 / 15 个工具</span>
+                  <span class="p-title p-closed">已完成 15 个工具 · 3 个阶段</span>
+                  <span class="p-meta">34s</span>
+                  <span class="p-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="process-body"><div>
+
+              <div class="step-title">
+                <span class="step-no">01</span><span class="step-text">定位品牌落点</span><span class="step-line"></span>
+              </div>
+
+              <div class="chain">
+                <div class="tool" data-kind="reason" data-state="done" data-open="false">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-spark" /></svg></span>
+                    <span class="title">思考</span>
+                    <span class="arg">品牌分散在打包配置、主进程常量和 UI 组件里</span>
+                    <span class="meta optional">12s</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="reason-text">
+                          <p>appId 和 productName 在 electron-builder 配置里，运行时还有一份常量；渲染层标题和 favicon 在 app 包。</p>
+                          <p>i18n 有 1589 处品牌文案，可以脚本批量替换，但要跳过 OpenCode Zen / Go / Console 这些上游服务名。</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-file" /></svg></span>
+                    <span class="title">读取</span>
+                    <code class="arg"><b>electron-builder.config.ts</b><span class="path"> · packages/desktop</span></code>
+                    <span class="meta optional">312 行</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>packages/desktop/electron-builder.config.ts</span><span>UTF-8</span></div>
+                          <pre class="code"><span class="ln">44</span><span class="kw">const</span> APP_IDS = {
+<span class="ln">45</span>  dev: <span class="str">"ai.opencode.desktop.dev"</span>,
+<span class="ln">46</span>  beta: <span class="str">"ai.opencode.desktop.beta"</span>,
+<span class="ln">47</span>  prod: <span class="str">"ai.opencode.desktop"</span>,
+<span class="ln">48</span>} <span class="kw">as const</span>
+<span class="ln">49</span>
+<span class="ln">50</span>artifactName: <span class="str">"opencode-desktop-${os}-${arch}.${ext}"</span>,
+<span class="ln">51</span>
+<span class="ln">52</span>protocols: { name: <span class="str">"OpenCode"</span>, schemes: [<span class="str">"opencode"</span>] },</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-search" /></svg></span>
+                    <span class="title">搜索</span>
+                    <code class="arg"><b>"OpenCode"</b><span class="path"> · packages/desktop/src</span></code>
+                    <span class="meta optional">9 处</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>9 处匹配 · 4 个文件</span><span>0.1s</span></div>
+                          <pre class="code">src/main/constants.ts                3 处
+src/main/windows/early.ts            1 处
+src/main/windows/appearance.ts       1 处
+src/shell/titlebar/windows-menu.tsx  1 处</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-file" /></svg></span>
+                    <span class="title">读取</span>
+                    <code class="arg"><b>constants.ts</b><span class="path"> · src/main</span></code>
+                    <span class="meta optional">42 行</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>packages/desktop/src/main/constants.ts</span><span>UTF-8</span></div>
+                          <pre class="code"><span class="ln">11</span><span class="kw">const</span> appNames = {
+<span class="ln">12</span>  dev: <span class="str">"OpenCode Dev"</span>,
+<span class="ln">13</span>  beta: <span class="str">"OpenCode Beta"</span>,
+<span class="ln">14</span>  prod: <span class="str">"OpenCode"</span>,
+<span class="ln">15</span>}
+<span class="ln">16</span>
+<span class="ln">17</span><span class="kw">export const</span> APP_NAME = app.isPackaged ? appNames[CHANNEL] : <span class="str">"OpenCode Dev"</span></pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-file" /></svg></span>
+                    <span class="title">读取</span>
+                    <code class="arg"><b>logo.tsx</b><span class="path"> · packages/ui/src/components</span></code>
+                    <span class="meta optional">61 行</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>packages/ui/src/components/logo.tsx</span><span>Mark / Splash / Logo</span></div>
+                          <pre class="code"><span class="ln">3</span><span class="kw">export const</span> Mark = (props) => (
+<span class="ln">4</span>  &lt;svg viewBox=<span class="str">"0 0 16 20"</span>&gt;
+<span class="ln">5</span>    &lt;path d=<span class="str">"M12 4H4V16H12V4ZM16 20H0V0H16V20Z"</span> /&gt;
+<span class="ln">6</span>  &lt;/svg&gt;
+<span class="ln">7</span>)</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="step-title">
+                <span class="step-no">02</span><span class="step-text">改名与换标</span><span class="step-line"></span>
+              </div>
+
+              <div class="chain">
+                <div class="tool" data-kind="reason" data-state="done" data-open="false">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-spark" /></svg></span>
+                    <span class="title">思考</span>
+                    <span class="arg">打包配置和运行时常量必须一起改</span>
+                    <span class="meta optional">8s</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="reason-text">
+                          <p>只改 electron-builder 的话，安装包名对了，但窗口标题和 userData 目录还是旧的，等于两套身份并存。</p>
+                          <p>logo 走组件引用位图，这样以后换图只替换 png，不用改代码。</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-pencil" /></svg></span>
+                    <span class="title">编辑</span>
+                    <code class="arg"><b>electron-builder.config.ts</b></code>
+                    <span class="meta"><span style="color: var(--add-fg)">+18</span> <span style="color: var(--del-fg)">−9</span></span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>packages/desktop/electron-builder.config.ts</span><span>已保存</span></div>
+                          <div class="diff">
+                            <div class="ctx"><span class="sign"></span>const APP_IDS = {</div>
+                            <div class="del"><span class="sign">−</span>  dev: "ai.opencode.desktop.dev",</div>
+                            <div class="del"><span class="sign">−</span>  prod: "ai.opencode.desktop",</div>
+                            <div class="add"><span class="sign">+</span>  dev: "com.sicode.desktop.dev",</div>
+                            <div class="add"><span class="sign">+</span>  prod: "com.sicode.desktop",</div>
+                            <div class="ctx"><span class="sign"></span>} as const</div>
+                            <div class="del"><span class="sign">−</span>artifactName: "opencode-desktop-${os}-${arch}.${ext}",</div>
+                            <div class="add"><span class="sign">+</span>artifactName: "sicode-desktop-${os}-${arch}.${ext}",</div>
+                            <div class="del"><span class="sign">−</span>protocols: { name: "OpenCode", schemes: ["opencode"] },</div>
+                            <div class="add"><span class="sign">+</span>protocols: { name: "SiCode", schemes: ["sicode"] },</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-pencil" /></svg></span>
+                    <span class="title">编辑</span>
+                    <code class="arg"><b>constants.ts</b><span class="path"> · src/main</span></code>
+                    <span class="meta"><span style="color: var(--add-fg)">+8</span> <span style="color: var(--del-fg)">−4</span></span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>packages/desktop/src/main/constants.ts</span><span>已保存</span></div>
+                          <div class="diff">
+                            <div class="del"><span class="sign">−</span>dev: "OpenCode Dev",</div>
+                            <div class="add"><span class="sign">+</span>dev: "SiCode Dev",</div>
+                            <div class="del"><span class="sign">−</span>export const APP_NAME = "OpenCode Dev"</div>
+                            <div class="add"><span class="sign">+</span>export const APP_NAME = "SiCode Dev"</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-file" /></svg></span>
+                    <span class="title">写入</span>
+                    <code class="arg"><b>logo.tsx</b><span class="path"> · packages/ui/src/components</span></code>
+                    <span class="meta optional">+52 −38</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>Mark / Splash / Logo 改为引用 logo-mark.png</span><span>已保存</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-file" /></svg></span>
+                    <span class="title">写入</span>
+                    <code class="arg"><b>generate-icons.mjs</b><span class="path"> · script/brand</span></code>
+                    <span class="meta optional">+186</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>源图裁圆角 → ico / icns / favicon 全尺寸</span><span>已保存</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="step-title">
+                <span class="step-no">03</span><span class="step-text">构建验证</span><span class="step-line"></span>
+              </div>
+
+              <div class="chain">
+                <div class="tool" data-kind="reason" data-state="done" data-open="false">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-spark" /></svg></span>
+                    <span class="title">思考</span>
+                    <span class="arg">先构建看产物，再跑测试确认没碰坏别的</span>
+                    <span class="meta optional">5s</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="reason-text">
+                          <p>构建只验证打包链路；测试能覆盖到 appId 变更带来的路径断言，所以两个都要跑。</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="running" data-open="true">
+                  <button class="row">
+                    <span class="ind"><span class="spinner"></span></span>
+                    <span class="title">正在运行</span>
+                    <code class="arg"><b>bun run build</b><span class="path"> · packages/desktop</span></code>
+                    <span class="meta">3.4s</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>bash</span><span class="live"><i></i>跟随输出</span></div>
+                          <div class="term">
+                            <div class="dim">$ bun run --cwd packages/desktop build</div>
+                            <div class="dim">Copied dev icons from ./icons/dev to resources/icons</div>
+                            <div class="dim">Generated metainfo for dev at resources/com.sicode.desktop.dev.metainfo.xml</div>
+                            <div>vite v8.2.2 building ssr environment for production...</div>
+                            <div class="dim">✓ 2235 modules transformed.</div>
+                            <div>rendering chunks...<span class="cursor"></span></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-terminal" /></svg></span>
+                    <span class="title">运行</span>
+                    <code class="arg"><b>bun test</b><span class="path"> · packages/desktop</span></code>
+                    <span class="meta">127 通过 · 2 失败</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>bash · 129 个用例</span><span>16.5s</span></div>
+                          <div class="term" style="max-height: 96px">
+                            <div class="ok">127 pass</div>
+                            <div class="bad">2 fail</div>
+                            <div class="dim">picker.test.ts · serves browser-loadable picker scripts</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+  </div></div></div>
+
+              <div class="turn">
+                <img class="turn-mark" data-mark alt="" />
+                <div class="turn-body">构建通过，产物是 <strong>sicode-desktop-win-x64.exe</strong>。测试 127 通过、2 个失败，失败的是 picker 用例，看起来和这次改动无关。</div>
+              </div>
+
+              <div class="msg user">picker 那个失败确认一下，别是咱们改坏的。</div>
+
+              <div class="chain">
+                <div class="tool" data-state="done" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-search" /></svg></span>
+                    <span class="title">搜索</span>
+                    <code class="arg"><b>opencodePickerUi</b><span class="path"> · packages/desktop/scripts</span></code>
+                    <span class="meta optional">1 处</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>picker.test.ts:66</span><span>断言</span></div>
+                          <pre class="code"><span class="ln">66</span>expect(html).toContain(<span class="str">"opencodePickerUi"</span>)</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-kind="reason" data-state="done" data-open="false">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-spark" /></svg></span>
+                    <span class="title">思考</span>
+                    <span class="arg">断言写死了注入脚本名，跟品牌无关</span>
+                    <span class="meta optional">3s</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="reason-text">
+                          <p>实际注入的是 bundledDevClient.mjs，用例还按旧名字断言，属于上游遗留问题。</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="turn">
+                <img class="turn-mark" data-mark alt="" />
+                <div class="turn-body">确认了，不是我们改坏的：用例断言注入的脚本叫 <strong>opencodePickerUi</strong>，实际注入 <strong>bundledDevClient.mjs</strong>，在上游原仓库上同样失败。</div>
+              </div>
+            </div>
+
+            <!-- ================= 案例二：构建报错 ================= -->
+            <div class="thread" data-scene="fix" hidden>
+              <div class="msg user">typecheck 挂了，帮我看看。</div>
+
+              <div class="turn">
+                <img class="turn-mark" data-mark alt="" />
+                <div class="turn-body">明白，先看报错原文。</div>
+              </div>
+
+              <div class="process" data-open="true">
+                <button class="process-head">
+                  <span class="p-ind">
+                    <svg class="p-open"><use href="#i-list" /></svg>
+                    <svg class="p-closed"><use href="#i-check" /></svg>
+                  </span>
+                  <span class="p-title p-open">过程 · 5 个工具</span>
+                  <span class="p-title p-closed">已完成 5 个工具</span>
+                  <span class="p-meta">13s</span>
+                  <span class="p-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="process-body"><div>
+
+              <div class="chain">
+                <div class="tool" data-state="error" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-terminal" /></svg></span>
+                    <span class="title">命令失败</span>
+                    <code class="arg"><b>bun run typecheck</b><span class="path"> · packages/desktop</span></code>
+                    <span class="meta bad">exit 2</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel bad">
+                          <div class="panel-head"><span>bash · stderr</span><span>2.4s</span></div>
+                          <div class="term" style="max-height: 110px">
+                            <div class="dim">$ tsc -b</div>
+                            <div class="bad">../app/src/custom-elements.d.ts(1,1): error TS1128: Declaration or statement expected.</div>
+                            <div class="bad">../app/src/custom-elements.d.ts(1,2): error TS1128: Declaration or statement expected.</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-file" /></svg></span>
+                    <span class="title">读取</span>
+                    <code class="arg"><b>custom-elements.d.ts</b><span class="path"> · packages/app/src</span></code>
+                    <span class="meta optional">1 行</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>packages/app/src/custom-elements.d.ts</span><span>不是 TypeScript</span></div>
+                          <pre class="code">../../ui/src/custom-elements.d.ts</pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-kind="reason" data-state="done" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-spark" /></svg></span>
+                    <span class="title">思考</span>
+                    <span class="arg">这个文件在上游是符号链接</span>
+                    <span class="meta optional">4s</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="reason-text">
+                          <p>文件内容只有一行路径，说明它是指向 ui 包的符号链接；Windows 检出时没有创建链接的权限，就落成了纯文本，TS 自然解析失败。</p>
+                          <p>把仓库里 43 个符号链接实体化成真实文件即可，内容从目标文件复制。</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-terminal" /></svg></span>
+                    <span class="title">运行</span>
+                    <code class="arg"><b>materialize-symlinks.mjs</b></code>
+                    <span class="meta optional">43 个</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>bash</span><span>0.2s</span></div>
+                          <div class="term" style="max-height: 80px">
+                            <div class="dim">$ node script/materialize-symlinks.mjs</div>
+                            <div>materialized 33 · already real 10</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tool" data-state="done" data-open="true">
+                  <button class="row">
+                    <span class="ind"><svg><use href="#i-terminal" /></svg></span>
+                    <span class="title">运行</span>
+                    <code class="arg"><b>bun run typecheck</b><span class="path"> · packages/desktop</span></code>
+                    <span class="meta">通过</span>
+                    <span class="chev"><svg><use href="#i-chev" /></svg></span>
+                  </button>
+                  <div class="tool-body">
+                    <div>
+                      <div class="body-pad">
+                        <div class="panel">
+                          <div class="panel-head"><span>bash</span><span>6.1s</span></div>
+                          <div class="term" style="max-height: 70px">
+                            <div class="dim">$ tsc -b</div>
+                            <div class="ok">✓ 0 error</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+  </div></div></div>
+
+              <div class="turn">
+                <img class="turn-mark" data-mark alt="" />
+                <div class="turn-body">修好了。类型检查通过，<strong>43 个符号链接</strong>已实体化，后续 Windows 上拉代码不会再出现这个错误。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="composer-inner">
+              <div class="ph">让 SiCode 做点什么…</div>
+              <div class="composer-bar">
+                <div class="cb-left">
+                  <button class="pill"><svg width="12" height="12" style="stroke: currentColor; fill: none; stroke-width: 1.6"><use href="#i-plus" /></svg></button>
+                  <button class="pill">claude-sonnet-4.6 ▾</button>
+                </div>
+                <button class="send"><svg><use href="#i-arrow" /></svg></button>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      const LOGO =
+        "data:image/png;base64,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"
+
+      document.getElementById("tbLogo").src = LOGO
+      document.querySelectorAll("[data-mark]").forEach((img) => (img.src = LOGO))
+
+      const win = document.getElementById("win")
+      const scroll = document.getElementById("scroll")
+      const chTitle = document.getElementById("chTitle")
+
+      const titles = { brand: "桌面端品牌改造", fix: "构建报错修复" }
+
+      function setScene(name) {
+        replayToken++
+        clearReplay()
+        document
+          .querySelectorAll(".thread .msg, .thread .turn, .thread .step-title, .thread .chain > .tool")
+          .forEach((el) => {
+            el.style.transition = ""
+            el.style.opacity = ""
+            el.style.transform = ""
+            delete el.dataset.replay
+            const body = el.querySelector(".turn-body")
+            if (body && body.dataset.text) body.textContent = body.dataset.text
+            if (el.classList.contains("tool")) {
+              if (el.dataset.initOpen) el.dataset.open = el.dataset.initOpen
+              else delete el.dataset.open
+            }
+          })
+        document.querySelectorAll("[data-scene]").forEach((el) => {
+          if (el.classList.contains("thread")) el.hidden = el.dataset.scene !== name
+        })
+        document.querySelectorAll(".demo button[data-scene]").forEach((el) => {
+          el.setAttribute("aria-pressed", String(el.dataset.scene === name))
+        })
+        chTitle.textContent = titles[name]
+        scroll.scrollTop = 0
+      }
+
+      // 折叠交互
+      document.addEventListener("click", (event) => {
+        const head = event.target.closest(".process-head")
+        if (head) {
+          const process = head.closest(".process")
+          process.dataset.open = process.dataset.open === "true" ? "false" : "true"
+          return
+        }
+
+        const row = event.target.closest(".row")
+        if (!row) return
+        const tool = row.closest(".tool")
+        if (!tool || !tool.querySelector(".tool-body")) return
+        tool.dataset.open = tool.dataset.open === "true" ? "false" : "true"
+      })
+
+      document.querySelectorAll(".demo button[data-scene]").forEach((btn) => {
+        btn.addEventListener("click", () => setScene(btn.dataset.scene))
+      })
+
+      // 重放：从用户消息开始，把整条过程演一遍
+      let replayTimers = []
+      let replayToken = 0
+
+      const sleep = (ms) =>
+        new Promise((resolve) => {
+          const id = setTimeout(resolve, ms)
+          replayTimers.push(id)
+        })
+
+      function clearReplay() {
+        replayTimers.forEach(clearTimeout)
+        replayTimers = []
+      }
+
+      async function typeText(el, alive) {
+        const full = el.dataset.text || el.textContent
+        el.dataset.text = full
+        el.textContent = ""
+        for (const char of full) {
+          el.textContent += char
+          await sleep(14)
+          if (!alive()) return
+        }
+      }
+
+      async function replay() {
+        const token = ++replayToken
+        const alive = () => token === replayToken
+        clearReplay()
+
+        const thread = [...document.querySelectorAll(".thread")].find((el) => !el.hidden)
+        if (!thread) return
+
+        thread.querySelectorAll(".process").forEach((el) => (el.dataset.open = "true"))
+
+        const items = [...thread.querySelectorAll(".msg, .turn, .step-title, .chain > .tool")]
+        const snapshot = [...thread.querySelectorAll(".chain > .tool")].map((el) => ({
+          el,
+          open: el.dataset.open,
+          state: el.dataset.state,
+        }))
+
+        items.forEach((el) => {
+          el.style.transition = "none"
+          el.style.opacity = "0"
+          el.style.transform = "translateY(6px)"
+          delete el.dataset.replay
+        })
+        scroll.scrollTop = 0
+        await sleep(40)
+        if (!alive()) return
+
+        for (const el of items) {
+          el.style.transition = "opacity 340ms cubic-bezier(.2,.8,.2,1), transform 340ms cubic-bezier(.2,.8,.2,1)"
+          el.style.opacity = "1"
+          el.style.transform = "none"
+          el.scrollIntoView({ block: "nearest" })
+
+          if (!el.classList.contains("tool")) {
+            if (el.classList.contains("turn")) {
+              const body = el.querySelector(".turn-body")
+              if (body && body.children.length === 0) await typeText(body, alive)
+            }
+            await sleep(el.classList.contains("step-title") ? 320 : 420)
+            if (!alive()) return
+            continue
+          }
+
+          const isReason = el.dataset.kind === "reason"
+          const wasOpen = el.dataset.open === "true"
+          const wasState = el.dataset.state
+
+          if (wasState !== "error") el.dataset.replay = "running"
+          el.dataset.open = "true"
+          await sleep(isReason ? 900 : 620)
+          if (!alive()) return
+
+          delete el.dataset.replay
+          if (isReason || !wasOpen) el.dataset.open = "false"
+          await sleep(120)
+          if (!alive()) return
+        }
+
+        const term = thread.querySelector(".term")
+        if (term) {
+          const lines = [...term.children]
+          lines.forEach((line) => {
+            line.style.transition = "none"
+            line.style.opacity = "0"
+          })
+          await sleep(30)
+          if (!alive()) return
+          for (const line of lines) {
+            line.style.transition = "opacity 170ms ease"
+            line.style.opacity = "1"
+            await sleep(90)
+            if (!alive()) return
+          }
+        }
+
+        await sleep(200)
+        if (!alive()) return
+
+        snapshot.forEach(({ el, open, state }) => {
+          if (open) el.dataset.open = open
+          else delete el.dataset.open
+          if (state) el.dataset.state = state
+          delete el.dataset.replay
+        })
+        items.forEach((el) => {
+          el.style.transition = ""
+          el.style.opacity = ""
+          el.style.transform = ""
+        })
+        scroll.scrollTop = scroll.scrollHeight
+      }
+
+      document.getElementById("collapse").addEventListener("click", () => {
+        const thread = [...document.querySelectorAll(".thread")].find((el) => !el.hidden)
+        if (!thread) return
+        const processes = [...thread.querySelectorAll(".process")]
+        const anyOpen = processes.some((el) => el.dataset.open === "true")
+        processes.forEach((el) => (el.dataset.open = anyOpen ? "false" : "true"))
+      })
+
+      document.getElementById("replay").addEventListener("click", replay)
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "1") setScene("brand")
+        if (event.key === "2") setScene("fix")
+        if (event.key.toLowerCase() === "r") replay()
+      })
+
+      document.querySelectorAll(".thread .tool").forEach((el) => {
+        if (el.dataset.open) el.dataset.initOpen = el.dataset.open
+      })
+
+      setScene("brand")
+    </script>
+  </body>
+</html>

@@ -460,3 +460,75 @@
     }
   }
 }
+
+/* ---------- SiCode tool chain ---------- */
+
+/* 28px 单行：图标 14 → 动词 → 等宽参数 → 右对齐元信息 → 箭头 */
+[data-component="collapsible"].tool-collapsible > [data-slot="collapsible-trigger"]:not([data-hide-details="true"]) {
+  height: 28px;
+}
+
+[data-component="tool-trigger"] {
+  min-height: 28px;
+  border-radius: 6px;
+  padding-inline-end: 2px;
+
+  [data-slot="basic-tool-tool-indicator"],
+  [data-slot="basic-tool-tool-spinner"] {
+    width: 14px;
+    height: 14px;
+
+    [data-component="spinner"] {
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  /* 参数走等宽字体，和正文拉开层次 */
+  [data-slot="basic-tool-tool-arg"] {
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    font-size: 11.5px;
+    letter-spacing: 0;
+    color: var(--v2-text-text-faint);
+  }
+
+  /* 右侧元信息（耗时 / 行数 / 退出码）贴右 */
+  [data-slot="basic-tool-tool-action"] {
+    margin-inline-start: auto;
+    padding-inline-start: 8px;
+    font-family: var(--font-family-mono);
+    font-size: 10px;
+    line-height: 1;
+    color: var(--v2-text-text-faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* 失败行整体转红，不再靠额外卡片 */
+  &[data-status="error"] {
+    [data-slot="basic-tool-tool-title"],
+    [data-slot="basic-tool-tool-subtitle"],
+    [data-slot="basic-tool-tool-arg"] {
+      color: var(--v2-state-fg-danger);
+    }
+
+    [data-slot="basic-tool-tool-action"] {
+      color: var(--v2-state-fg-danger);
+      opacity: 1;
+    }
+  }
+}
+
+/* 箭头在收起时保持低可见度，展开时旋转朝下 */
+[data-component="collapsible"].tool-collapsible > [data-slot="collapsible-trigger"] {
+  [data-slot="collapsible-arrow"] {
+    width: 16px;
+    opacity: 0.5;
+  }
+
+  &:hover [data-slot="collapsible-arrow"],
+  &[aria-expanded="true"] [data-slot="collapsible-arrow"] {
+    opacity: 0.85;
+  }
+}
