@@ -58,7 +58,7 @@ export function LoadingSplash(props: {
             "bg-v2-background-bg-base": !props.deep,
           }}
         >
-          <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+          <Splash class="w-20 h-20 opacity-90 animate-pulse select-none" />
         </div>
       }
     >

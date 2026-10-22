@@ -15,6 +15,7 @@ const ROOT = path.resolve(process.argv[3] ?? ".")
 const SRC = path.resolve(process.argv[2] ?? path.join(ROOT, "packages/desktop/branding/logo-source.png"))
 
 const WHITE = 246 // luminance above which a pixel counts as background
+const EDGE_INSET = 0.0027 // crop inside the white blend band so no white fringe survives on dark surfaces
 const MAC_PADDING = 0.08 // Big Sur style icons keep a small margin around the plate
 
 async function loadPlate() {
@@ -44,35 +45,54 @@ async function loadPlate() {
 
   if (maxX < 0) throw new Error(`No icon plate found in ${SRC}`)
 
-  // The plate's top row only starts after the corner radius, so the first opaque pixel is the radius.
-  let radius = 0
-  for (let x = minX; x <= maxX; x += 1) {
-    if (lum(x, minY + 1) < WHITE) {
-      radius = x - minX
-      break
-    }
+  // Corner radius from the left edge of each row below the top: with u = that row's inset and
+  // d = its depth, the quarter circle satisfies r² - 2r(u + d) + (u² + d²) = 0.
+  const samples = []
+  for (let d = 4; d <= 90; d += 1) {
+    let x = minX
+    while (x <= maxX && lum(x, minY + d) >= WHITE) x += 1
+    if (x > maxX) continue
+    const u = x - minX
+    samples.push(u + d + Math.sqrt(2 * u * d))
   }
+  samples.sort((a, b) => a - b)
 
-  return { minX, minY, size: Math.max(maxX - minX + 1, maxY - minY + 1), radius }
+  return {
+    minX,
+    minY,
+    size: Math.max(maxX - minX + 1, maxY - minY + 1),
+    radius: Math.round(samples[samples.length >> 1] ?? 0),
+    width,
+    height,
+  }
 }
 
 const plate = await loadPlate()
+const inset = Math.max(1, Math.round(plate.size * EDGE_INSET))
 
-const roundedMask = (size, radius) =>
-  Buffer.from(
-    `<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="#fff"/></svg>`,
-  )
+// Mask at source resolution, one inset inside the plate: the pixels on the plate boundary are a blend
+// of icon and white background, so cutting them off is what keeps the silhouette clean on dark.
+const roundedMask = Buffer.from(
+  `<svg width="${plate.width}" height="${plate.height}"><rect x="${plate.minX + inset}" y="${plate.minY + inset}" width="${plate.size - inset * 2}" height="${plate.size - inset * 2}" rx="${plate.radius - inset}" ry="${plate.radius - inset}" fill="#fff"/></svg>`,
+)
+
+// Mask once at source resolution; sharp applies extract before composite, so it cannot share a pipeline.
+const cut = await sharp(SRC)
+  .flatten({ background: "#ffffff" })
+  .composite([{ input: roundedMask, blend: "dest-in" }])
+  .png()
+  .toBuffer()
 
 async function master(size, padding) {
   const inner = Math.round(size * (1 - padding * 2))
-  const scaled = await sharp(SRC)
-    .flatten({ background: "#ffffff" })
-    .extract({ left: plate.minX, top: plate.minY, width: plate.size, height: plate.size })
+  const masked = await sharp(cut)
+    .extract({
+      left: plate.minX + inset,
+      top: plate.minY + inset,
+      width: plate.size - inset * 2,
+      height: plate.size - inset * 2,
+    })
     .resize(inner, inner, { fit: "fill", kernel: "lanczos3" })
-    .png()
-    .toBuffer()
-  const masked = await sharp(scaled)
-    .composite([{ input: roundedMask(inner, Math.round((plate.radius / plate.size) * inner * 0.92)), blend: "dest-in" }])
     .png()
     .toBuffer()
 
