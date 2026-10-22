@@ -1325,3 +1325,29 @@
     transition: none;
   }
 }
+
+/* ---------- SiCode tool chain：竖线 + 收紧 ---------- */
+
+[data-component="context-tool-group-list"] {
+  position: relative;
+  gap: 4px;
+}
+
+/* 连续工具之间用 1px 竖线串起来；只有一个工具时不画 */
+[data-component="context-tool-group-list"]:has(> :nth-child(2))::before {
+  content: "";
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 7px;
+  width: 1px;
+  background: var(--v2-border-border-base);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* 组头的计数走等宽，和右侧元信息同一套数字样式 */
+[data-component="context-tool-group-trigger"] [data-slot="context-tool-group-count"] {
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
