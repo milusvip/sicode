@@ -29,6 +29,7 @@ describe("settings timeline detail migration", () => {
     expect(settings.general.timelineDetail).toEqual({
       ...timelinePresets[2].value,
       shell: { placement: "separate", details: "expanded" },
+      edit: { placement: "grouped", details: "collapsed" },
       thinking: { placement: "separate", details: "expanded" },
     })
     expect(settings.appearance.fontSize).toBe(16)
