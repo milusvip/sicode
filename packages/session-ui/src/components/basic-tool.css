@@ -463,9 +463,19 @@
 
 /* ---------- SiCode tool chain ---------- */
 
+/* 工具之间收紧一点，让连续调用读成一条链 */
+[data-component="collapsible"].tool-collapsible {
+  --tool-content-gap: 2px;
+}
+
 /* 28px 单行：图标 14 → 动词 → 等宽参数 → 右对齐元信息 → 箭头 */
 [data-component="collapsible"].tool-collapsible > [data-slot="collapsible-trigger"]:not([data-hide-details="true"]) {
   height: 28px;
+}
+
+/* 整行可点，hover 给一层很淡的底色 */
+[data-component="collapsible"].tool-collapsible > [data-slot="collapsible-trigger"]:hover {
+  background-color: color-mix(in srgb, var(--v2-text-text-base) 4%, transparent);
 }
 
 [data-component="tool-trigger"] {
