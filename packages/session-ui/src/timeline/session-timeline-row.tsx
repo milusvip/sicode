@@ -243,15 +243,7 @@ export function createSessionTimelineRowRenderer(input: {
             }
             reasoningOpen={(id) => input.disclosure.value(id)}
             onReasoningOpenChange={(id, open) => input.disclosure.set(id, open)}
-            // Running tools open so their output streams into view; finished ones fall back to the
-            // timeline-detail policy and collapse again unless the user opened them explicitly.
-            toolDefaultOpen={(tool) =>
-              tool.state.status === "running" || tool.state.status === "streaming"
-                ? true
-                : input.timelineDetail
-                  ? contentDefaultOpen(tool)
-                  : false
-            }
+            toolDefaultOpen={(tool) => (input.timelineDetail ? contentDefaultOpen(tool) : false)}
             toolOpen={(id) => input.disclosure.value(`${row().group.key}:tool:${id}`)}
             onToolOpenChange={(id, open) => input.disclosure.set(`${row().group.key}:tool:${id}`, open)}
             fileOpen={(path) =>
