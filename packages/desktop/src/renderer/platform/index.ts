@@ -28,6 +28,12 @@ export function createDesktopPlatform(api: ElectronAPI, windowState: DesktopWind
     setForceFocus: (enabled) => api.setForceFocus(enabled),
     recordFatalRendererError: (error) => api.recordFatalRendererError(error),
     restart: async () => api.relaunch(),
+    // The initial connect's failure is cached in the main process, so a bare reload would fail the
+    // same way. Reconnect first: that restarts the local server and stores the new credentials.
+    hotRestart: async () => {
+      await api.reconnectService()
+      location.reload()
+    },
     notify: createDesktopNotify(api),
     fetch: (input, init) => {
       if (input instanceof Request) return fetch(input)

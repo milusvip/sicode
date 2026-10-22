@@ -53,6 +53,9 @@ type PlatformBase = {
   /** Restart the app  */
   restart(): Promise<void>
 
+  /** Restart the local server and reload the app in place, without relaunching it (desktop only) */
+  hotRestart?(): Promise<void>
+
   /** Send a system notification */
   notify(title: string, description?: string, onClick?: () => void): Promise<void>
 

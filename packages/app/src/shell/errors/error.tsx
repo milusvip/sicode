@@ -261,9 +261,11 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
 
   const [store, setStore] = createStore<{
     actionError: string | undefined
+    restarting: boolean
     captureException: typeof captureException | undefined
   }>({
     actionError: undefined,
+    restarting: false,
     captureException: undefined,
   })
 
@@ -327,6 +329,19 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
       })
   }
 
+  // The server keeps the credentials the initial connect failed to get, so restarting it in place
+  // is much cheaper than a relaunch: the page reloads onto a fresh connection.
+  function hotRestart() {
+    const restart = platform.hotRestart
+
+    if (!restart || store.restarting) return
+    setStore("restarting", true)
+    void restart().catch((err) => {
+      setStore("restarting", false)
+      setStore("actionError", formatError(err, language.t))
+    })
+  }
+
   return (
     <div
       class="relative flex-1 h-full w-full min-h-0 min-w-0 overflow-y-auto flex flex-col items-center justify-start sm:justify-center p-4 sm:p-8 font-sans"
@@ -353,7 +368,12 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           label={language.t("error.page.details.label")}
           hideLabel
         />
-        <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
+        <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-96">
+          <Show when={platform.hotRestart}>
+            <Button size="large" variant="ghost" icon="refresh" disabled={store.restarting} onClick={hotRestart}>
+              {language.t(store.restarting ? "error.page.action.hotRestarting" : "error.page.action.hotRestart")}
+            </Button>
+          </Show>
           <Button size="large" onClick={platform.restart}>
             {language.t(platform.platform === "web" ? "error.page.action.reload" : "error.page.action.restart")}
           </Button>
