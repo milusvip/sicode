@@ -35,11 +35,15 @@ export const makeUnresponsiveSampler = Effect.gen(function* () {
     const collect = async () => {
       if (!active()) return
 
-      const stack = await win.webContents.mainFrame.collectJavaScriptCallStack().catch((error) => {
-        runFork(scoped("window", Effect.logError("failed to collect unresponsive sample", { window: name, error })))
+      // Reading mainFrame throws synchronously once the renderer is gone, so the property access has
+      // to sit inside the promise chain — a bare `.catch()` would let it escape as an uncaught error.
+      const stack = await Promise.resolve()
+        .then(() => win.webContents.mainFrame.collectJavaScriptCallStack())
+        .catch((error) => {
+          runFork(scoped("window", Effect.logError("failed to collect unresponsive sample", { window: name, error })))
 
-        return undefined
-      })
+          return undefined
+        })
 
       if (!active()) return
 

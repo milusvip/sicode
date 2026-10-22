@@ -25,7 +25,12 @@ export function configureApplication() {
 
   // Sandboxed/remote Windows sessions have no usable GPU: Chromium's GPU process crash-loops and takes
   // the renderer with it. Opt out of hardware acceleration explicitly when asked.
-  if (process.env.OPENCODE_DESKTOP_DISABLE_GPU === "1") app.disableHardwareAcceleration()
+  if (process.env.OPENCODE_DESKTOP_DISABLE_GPU === "1") {
+    app.disableHardwareAcceleration()
+    app.commandLine.appendSwitch("no-sandbox")
+    app.commandLine.appendSwitch("disable-gpu-sandbox")
+    app.commandLine.appendSwitch("disable-features", "VizDisplayCompositor")
+  }
 
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
   const features = app.commandLine.getSwitchValue("enable-features")
