@@ -32,32 +32,29 @@ export const Splash = (props: Pick<ComponentProps<"svg">, "ref" | "class">) => {
   )
 }
 
-// Horizontal lockup: app mark on the left, wordmark on the right. The wordmark is live text so it
-// follows the theme's icon tokens (and the new-session shimmer) instead of a baked-in color.
+// Horizontal lockup drawn entirely as paths so every glyph follows the theme's icon tokens and the
+// new-session shimmer can blend over it without a baked-in color.
 export const Logo = (props: { class?: string }) => {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 156 42"
+      viewBox="0 0 174 42"
       fill="none"
       classList={{ [props.class ?? ""]: !!props.class }}
-      role="img"
-      aria-label="SiCode"
     >
-      <image data-slot="logo-mark-image" href={markUrl} x="0" y="0" width="42" height="42" />
-      <text
-        data-slot="logo-wordmark"
-        x="52"
-        y="21"
-        dominant-baseline="middle"
-        fill="var(--icon-strong-base)"
-        font-family="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
-        font-size="30"
-        font-weight="600"
-        letter-spacing="-0.6"
-      >
-        SiCode
-      </text>
+      <g>
+        <path d="M18 30H0V24H18V30Z" fill="var(--icon-weak-base)" />
+        <path d="M24 12H0V6H24V12ZM6 18H0V12H6V18ZM24 24H0V18H24V24ZM24 30H18V24H24V30ZM24 36H0V30H24V36Z" fill="var(--icon-base)" />
+        <path d="M45 12H39V6H45V12ZM45 36H39V18H45V36Z" fill="var(--icon-base)" />
+        <path d="M84 30H66V18H84V30Z" fill="var(--icon-weak-base)" />
+        <path d="M84 12H66V30H84V36H60V6H84V12Z" fill="var(--icon-base)" />
+        <path d="M108 30H96V18H108V30Z" fill="var(--icon-weak-base)" />
+        <path d="M108 12H96V30H108V12ZM114 36H90V6H114V36Z" fill="var(--icon-base)" />
+        <path d="M138 30H126V18H138V30Z" fill="var(--icon-weak-base)" />
+        <path d="M138 12H126V30H138V12ZM144 36H120V6H138V0H144V36Z" fill="var(--icon-base)" />
+        <path d="M174 24V30H156V24H174Z" fill="var(--icon-weak-base)" />
+        <path d="M174 24H156V30H174V36H150V6H174V24ZM156 18H168V12H156V18Z" fill="var(--icon-base)" />
+      </g>
     </svg>
   )
 }
