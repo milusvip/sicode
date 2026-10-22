@@ -28,7 +28,9 @@ Start-Sleep -Milliseconds 1500
 
 Write-Host "[2/5] stopping dev runner and sidecar..."
 Stop-ByCommandLine "*scripts\dev.ts*"
-Stop-ByCommandLine "*serve --service*SiCode*"
+# 3084 is a single-instance port. Any `serve --service` process holds it — including the packaged
+# opencode-cli that another desktop build (or the upstream app) left running in the background.
+Stop-ByCommandLine "*serve --service*"
 Start-Sleep -Milliseconds 500
 
 Write-Host "[3/5] waiting for port 3084..."
