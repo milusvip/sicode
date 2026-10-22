@@ -56,6 +56,12 @@ bun install --linker=hoisted
 bun run dev:desktop
 ```
 
+Windows 上直接双击根目录的 `dev.bat` 即可（再双击一次就是重启：会先停掉已在运行的实例、释放 3084 端口、清掉 `out/` 再启动）。它同时处理了本机常见的三个环境坑：
+
+- 清空 `ELECTRON_RUN_AS_NODE`（否则 Electron 会被当成 Node 跑）
+- `OPENCODE_DESKTOP_DISABLE_GPU=1`（沙箱/远程会话里 GPU 进程会带崩渲染进程）
+- `OPENCODE_DESKTOP_REMOTE_DEBUGGING_PORT=9333`（避开被占用的 9222）
+
 `dev:desktop` 默认从源码构建本地 server；也可以下载指定版本的 CLI：
 
 ```bash
