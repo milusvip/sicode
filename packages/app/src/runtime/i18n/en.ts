@@ -450,6 +450,8 @@ export const dict = {
   "error.page.description.localServerStartup": "An error occurred while starting the local server.",
   "error.page.details.label": "Error Details",
   "error.page.action.restart": "Restart",
+  "error.page.action.hotRestart": "Hot restart",
+  "error.page.action.hotRestarting": "Restarting…",
   "error.page.action.reload": "Reload",
   "error.page.action.report": "Report Error",
   "error.page.action.reported": "Error Reported",
