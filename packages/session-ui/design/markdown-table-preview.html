@@ -182,7 +182,7 @@
 
       /* ============ 建议：容器滚动 + sticky 表头 + 数字右对齐 ============ */
       .next .md-table {
-        margin: 28px 0 16px;
+        margin: 0;
         border: 1px solid var(--line);
         border-radius: 8px;
         overflow-x: auto;
@@ -335,8 +335,9 @@
 
 
       /* ============ 表格右上角操作条 ============ */
-      .md-table {
+      .md-block {
         position: relative;
+        margin: 28px 0 16px;
       }
 
       .md-actions {
@@ -348,25 +349,23 @@
         gap: 2px;
         padding: 2px;
         border-radius: 7px;
-        border: 1px solid var(--line-strong);
-        background: #17171b;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: #1c1c22;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
         opacity: 0;
         transform: translateY(-2px);
         transition: opacity 0.14s ease, transform 0.14s ease;
       }
 
-      .md-table:hover .md-actions,
-      .md-table:focus-within .md-actions,
-      .md-table.show-actions .md-actions {
+      .md-block:hover .md-actions,
+      .md-block:focus-within .md-actions,
+      .md-block.show-actions .md-actions {
         opacity: 1;
-        transform: none;
       }
 
       @media (hover: none) {
         .md-actions {
           opacity: 1;
-          transform: none;
         }
       }
 
@@ -903,6 +902,10 @@
       for (const wrap of document.querySelectorAll('.md-table')) {
         const table = wrap.querySelector('table')
         if (!table) continue
+        const block = document.createElement('div')
+        block.className = 'md-block'
+        wrap.parentNode.insertBefore(block, wrap)
+        block.appendChild(wrap)
         const bar = document.createElement('div')
         bar.className = 'md-actions'
         for (const kind of ['copy', 'csv', 'png', 'zoom']) {
@@ -917,7 +920,7 @@
           })
           bar.appendChild(btn)
         }
-        wrap.appendChild(bar)
+        block.appendChild(bar)
       }
 
       document.getElementById('zoom').addEventListener('click', (event) => {
@@ -929,7 +932,7 @@
       })
 
       // 让第一张表默认露出操作条，方便截图/首屏就能看到
-      document.querySelector('.md-table')?.classList.add('show-actions')
+      document.querySelector('.md-block')?.classList.add('show-actions')
     </script>
   </body>
 </html>
