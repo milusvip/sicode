@@ -27,6 +27,7 @@ import {
 } from "./markdown-worker"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
+import { disposeTables, enhanceTables } from "./markdown-table"
 import {
   getCachedMarkdown,
   getReadyMarkdown,
@@ -791,6 +792,14 @@ export function Markdown(
     if (!faviconCleanup) faviconCleanup = setupExternalLinkFavicons(container)
     container.toggleAttribute("data-local-links", !!markdown?.openLocalFile)
 
+    // Tables are plain HTML from the parser; wrap them in a card with a header once they land.
+    enhanceTables(container, {
+      size: (rows, columns) => i18n.t("ui.message.table.size", { rows, columns }),
+      copy: i18n.t("ui.message.table.copy"),
+      download: i18n.t("ui.message.table.download"),
+      expand: i18n.t("ui.message.table.expand"),
+    })
+
     if (result?.ready && result.text === local.text) container.dataset.markdownReady = ""
   })
 
@@ -806,6 +815,8 @@ export function Markdown(
 
     if (faviconCleanup) faviconCleanup()
     const container = root()
+
+    if (container) disposeTables(container)
 
     if (container) disposeRenderedMarkdown(container)
 

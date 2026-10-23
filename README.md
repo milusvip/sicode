@@ -1,125 +1,122 @@
 <p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The open source AI coding agent.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/@opencode/cli"><img alt="npm" src="https://img.shields.io/npm/v/@opencode/cli?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <img src="packages/desktop/branding/logo-source.png" alt="SiCode" width="128" height="128">
 </p>
 
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
-</p>
+<h1 align="center">SiCode</h1>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+<p align="center">OpenCode 桌面端的二开分支（Electron + SolidJS）。</p>
 
 ---
 
-### Installation
+## 这是什么
 
-```bash
-# YOLO
-curl -fsSL https://opencode.ai/v2/install | bash
+SiCode 基于 [opencode](https://github.com/sst/opencode) 源码，**只对桌面端应用做品牌化二开**：应用名、图标、应用标识、深链协议、更新通道全部换成 SiCode；内核（CLI / server / TUI）保持上游实现不变，以便持续同步上游修复。
 
-# Package managers
-npm i -g @opencode/cli@latest      # or bun/pnpm/yarn
-brew install anomalyco/tap/opencode-v2 # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-beta              # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run github:anomalyco/opencode  # Nix
+| 项目 | 上游 | SiCode |
+| --- | --- | --- |
+| 产品名 | OpenCode | **SiCode**（dev 为 `SiCode Dev`，beta 为 `SiCode Beta`） |
+| appId | `ai.opencode.desktop` | **`com.sicode.desktop`**（dev/beta 加 `.dev` / `.beta` 后缀） |
+| 安装包名 | `opencode-desktop-*` | **`sicode-desktop-*`** |
+| 深链协议 | `opencode://` | **`sicode://`**（同时兼容解析 `opencode://`） |
+| 更新源 | `opencode.ai/update/...` | **GitHub Releases**（`milusvip/sicode`） |
+| 图标 | 上游 logo | `packages/desktop/icons/**` 全套图标 + `packages/ui/src/assets/brand/logo-mark.png` |
+
+上游的托管服务（OpenCode Zen / OpenCode Go / OpenCode Console 账号体系）仍是外部服务，代码里保留了原名，不影响登录与计费。
+
+## 目录
+
+```
+packages/
+  desktop/          桌面端（Electron 主进程 + preload + renderer 启动壳）← 二开重点
+  app/              共享前端 UI（SolidJS，桌面端与 Web 共用）
+  ui/               设计系统与 Logo / Wordmark 组件
+  cli/ server/ core/ …  引擎与 CLI（上游原样保留）
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+品牌相关改动点集中在：
 
-### Desktop App (BETA)
+- `packages/desktop/electron-builder.config.ts`：productName / appId / 协议 / 更新源 / 安装包名
+- `packages/desktop/src/main/constants.ts`：运行时应用名、appId、协议常量
+- `packages/desktop/scripts/copy-metainfo.ts`：Linux metainfo
+- `packages/desktop/icons/{dev,beta,prod}/**`：安装包与窗口图标
+- `packages/ui/src/components/logo.tsx`、`packages/ui/src/typography/wordmark/wordmark.tsx`：应用内标识
+- `packages/app/src/runtime/i18n/*`、`packages/gui-extensions/src/**/i18n/*`：界面文案
 
-OpenCode is also available as a desktop application. Download it from [opencode.ai/download](https://opencode.ai/download).
+## 开发
 
-| Platform              | Download                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-win-x64.exe`     |
-| Linux                 | `.deb`, `.rpm`, or `.AppImage`     |
-
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-```
-
-#### Installation Directory
-
-The install script respects the following priority order for the installation path:
-
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+要求：Bun 1.4+、Node 22+。Windows 上建议用扁平依赖布局安装（隔离布局在部分环境下不会链接无 scope 的包）：
 
 ```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/v2/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/v2/install | bash
+bun install --linker=hoisted
 ```
 
-### Agents
+启动桌面端开发模式：
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+```bash
+bun run dev:desktop
+```
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+Windows 上直接双击根目录的 `dev.bat` 即可（再双击一次就是重启：会先停掉已在运行的实例、释放 3084 端口、清掉 `out/` 再启动）。它同时处理了本机常见的三个环境坑：
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+- 清空 `ELECTRON_RUN_AS_NODE`（否则 Electron 会被当成 Node 跑）
+- `OPENCODE_DESKTOP_DISABLE_GPU=1`（沙箱/远程会话里 GPU 进程会带崩渲染进程）
+- `OPENCODE_DESKTOP_REMOTE_DEBUGGING_PORT=9333`（避开被占用的 9222）
 
-Learn more about [agents](https://opencode.ai/docs/agents).
+`dev:desktop` 默认从源码构建本地 server；也可以下载指定版本的 CLI：
 
-### Documentation
+```bash
+bun run dev:desktop -- --download-server 2.1.3
+```
 
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
+只构建产物（不启动）：
 
-### Contributing
+```bash
+bun run --cwd packages/desktop build
+```
 
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
+类型检查与测试：
 
-### Building on OpenCode
+```bash
+bun run --cwd packages/desktop typecheck
+bun test --cwd packages/desktop
+```
 
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
+## 打包
 
----
+```bash
+# dev 渠道（下载上游 CLI 到 resources/）
+OPENCODE_CHANNEL=dev bun run --cwd packages/desktop package
 
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+# 正式渠道（需要先构建 CLI 并指定产物目录）
+OPENCODE_CHANNEL=prod OPENCODE_CLI_DIST=<cli 构建输出> bun run --cwd packages/desktop package:win
+```
+
+产物输出在 `packages/desktop/dist/`，命名为 `sicode-desktop-<os>-<arch>.<ext>`。
+
+> 打包会使用上游 `opencode-cli` 二进制作为 sidecar（`resources/opencode-cli*`）。如需完全自研内核，替换 `packages/desktop/scripts/utils.ts` 中的 CLI 解析逻辑即可。
+
+## 替换 Logo
+
+1. 把新图（1024×1024 以上、正方形、圆角外为纯白背景）放到 `packages/desktop/branding/logo-source.png`；
+2. 重新生成全套图标（脚本会裁切圆角、生成 ico/icns/png/favicon）：
+
+```bash
+bun add -d sharp png2icons   # 仅生成图标时需要
+node script/brand/generate-icons.mjs packages/desktop/branding/logo-source.png .
+```
+
+生成结果会覆盖 `packages/desktop/icons/{dev,beta,prod}`、`packages/ui/src/assets/brand`、`packages/ui/src/assets/favicon`、`packages/app/public`。
+
+## 同步上游
+
+```bash
+git remote add upstream git@github.com:sst/opencode.git
+git fetch upstream
+git merge upstream/dev        # 或 git rebase upstream/dev
+```
+
+品牌相关文件是本地改动，冲突时以 SiCode 为准（见上文改动点清单）。
+
+## 许可
+
+MIT，见 [LICENSE](LICENSE)。原始版权归 OpenCode / Anomaly Innovations Inc. 所有；SiCode 仅做桌面端品牌与配置层面的二次开发。

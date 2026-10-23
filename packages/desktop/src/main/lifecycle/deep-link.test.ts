@@ -7,6 +7,10 @@ describe("Console return deep links", () => {
     expect(consoleReturnWindow("opencode://console/authorized?window=window%20b")).toBe("window b")
   })
 
+  test("accepts the SiCode scheme", () => {
+    expect(consoleReturnWindow("sicode://console/authorized?window=window-c")).toBe("window-c")
+  })
+
   test("rejects unrelated and malformed links", () => {
     expect(consoleReturnWindow("opencode://console/other?window=window-a")).toBeUndefined()
     expect(consoleReturnWindow("opencode://other/authorized?window=window-a")).toBeUndefined()

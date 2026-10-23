@@ -398,24 +398,66 @@
     width: 100%;
     border-collapse: collapse;
     margin: 16px 0;
-    font-size: var(--font-size-base);
+    font-size: 12.5px;
+    line-height: 1.55;
     display: block;
     overflow-x: auto;
   }
 
   th,
   td {
-    /* Minimal borders for structure, matching TUI "lines" roughly but keeping it web-clean */
     border-bottom: 0.5px solid var(--v2-border-border-muted);
-    padding: 12px;
+    border-right: 1px solid var(--v2-border-border-base);
+    padding: 8px 12px;
     text-align: start;
     vertical-align: top;
   }
 
+  th:last-child,
+  td:last-child {
+    border-right: 0;
+  }
+
   th {
-    color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
-    border-bottom: 0.5px solid var(--v2-border-border-base);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    color: var(--v2-text-text-muted);
+    font-weight: 550;
+    font-size: 11.5px;
+    white-space: nowrap;
+    background: var(--v2-background-bg-layer-01);
+    border-bottom: 1px solid var(--v2-border-border-base);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--v2-text-text-base) 1.8%, transparent);
+  }
+
+  tbody tr:hover {
+    background: color-mix(in srgb, var(--v2-text-text-base) 4%, transparent);
+  }
+
+  /* marked 会把 `| ---: |` 输出成 align="right"，让对齐真正生效并统一数字字形 */
+  th[align="right"],
+  td[align="right"] {
+    text-align: end;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  th[align="center"],
+  td[align="center"] {
+    text-align: center;
+  }
+
+  td code {
+    white-space: nowrap;
   }
 
   /* Images */
@@ -474,4 +516,134 @@
 [data-component="markdown"] a.external-link:hover > code {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* ---------- 表格卡片：顶栏承载工具 ---------- */
+
+[data-component="markdown-table"] {
+  margin: 18px 0;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+[data-slot="markdown-table-head"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 30px;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+  background: color-mix(in srgb, var(--v2-text-text-base) 3%, transparent);
+}
+
+[data-slot="markdown-table-label"] {
+  font-family: var(--font-family-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--v2-text-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-slot="markdown-table-tools"] {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+/* 滚动交给外层，表格恢复表格布局，列宽才算得准 */
+[data-slot="markdown-table-scroll"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+[data-component="markdown-table"] table {
+  display: table;
+  /* 按内容撑宽，最少占满容器：列不会被压扁，超宽时由外层横向滚动 */
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+/* 放大查看 */
+[data-slot="markdown-table-zoom"] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 36px;
+  background: color-mix(in srgb, var(--v2-background-bg-base) 76%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+[data-slot="markdown-table-zoom-panel"] {
+  width: min(1280px, 94vw);
+  max-width: none;
+  max-height: 86vh;
+  overflow: auto;
+  padding: 20px 22px;
+  border-radius: 12px;
+  border: 1px solid var(--v2-border-border-base);
+  background: var(--v2-background-bg-base);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+[data-slot="markdown-table-zoom-panel"] table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+[data-slot="markdown-table-zoom-panel"] th,
+[data-slot="markdown-table-zoom-panel"] td {
+  border-bottom: 1px solid var(--v2-border-border-muted);
+  border-right: 1px solid var(--v2-border-border-base);
+  padding: 10px 16px;
+  text-align: start;
+  vertical-align: top;
+  line-height: 1.65;
+}
+
+[data-slot="markdown-table-zoom-panel"] th:last-child,
+[data-slot="markdown-table-zoom-panel"] td:last-child {
+  border-right: 0;
+}
+
+[data-slot="markdown-table-zoom-panel"] th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--v2-text-text-muted);
+  font-weight: 550;
+  font-size: 11.5px;
+  white-space: nowrap;
+  background: var(--v2-background-bg-layer-01);
+  border-bottom: 1px solid var(--v2-border-border-base);
+}
+
+[data-slot="markdown-table-zoom-panel"] tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+[data-slot="markdown-table-zoom-panel"] tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--v2-text-text-base) 1.8%, transparent);
+}
+
+[data-slot="markdown-table-zoom-panel"] th[align="right"],
+[data-slot="markdown-table-zoom-panel"] td[align="right"] {
+  text-align: end;
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }

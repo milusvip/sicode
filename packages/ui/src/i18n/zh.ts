@@ -66,6 +66,7 @@ export const dict = {
   "ui.sessionTurn.diffs.showAll": "全部显示",
   "ui.sessionTurn.diffs.showLess": "收起",
   "ui.sessionTurn.diffs.more": "+{{count}} 个文件",
+  "ui.sessionTurn.diffs.openInSidebar": "在侧边栏中打开",
 
   "ui.sessionTurn.retry.retrying": "重试中",
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} 秒后",
@@ -184,6 +185,10 @@ export const dict = {
   "ui.message.expand": "展开消息",
   "ui.message.collapse": "收起消息",
   "ui.message.copy": "复制",
+  "ui.message.table.size": "{{rows}} 行 × {{columns}} 列",
+  "ui.message.table.copy": "复制表格",
+  "ui.message.table.download": "下载 CSV",
+  "ui.message.table.expand": "放大查看",
   "ui.message.copyMessage": "复制消息",
   "ui.message.forkMessage": "从此消息创建新会话",
   "ui.message.revertMessage": "撤销此消息",
