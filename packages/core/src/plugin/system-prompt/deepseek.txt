@@ -1,0 +1,9 @@
+## Tool batching
+
+Every tool call costs a full round trip, and each round replays the whole context. Batch aggressively:
+
+- Read every file you need in one turn. Never re-read a file that is already in context.
+- One broad search replaces several narrow ones.
+- Merge independent shell commands into a single invocation.
+- Read a range (`offset`/`limit`) instead of a whole large file.
+- Finish a change before verifying it; do not edit-verify-edit in small steps.

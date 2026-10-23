@@ -12,6 +12,7 @@ import PROMPT_KIMI from "./system-prompt/kimi.txt"
 import PROMPT_META from "./system-prompt/meta.txt"
 import PROMPT_TRINITY from "./system-prompt/trinity.txt"
 import PROMPT_ANTHROPIC from "./system-prompt/anthropic.txt"
+import PROMPT_DEEPSEEK from "./system-prompt/deepseek.txt"
 
 export const OpenAIPlugin = make("opencode.prompt.openai", (model) => {
   const id = model.id.toLowerCase()
@@ -59,7 +60,22 @@ export const MetaPlugin = make("opencode.prompt.meta", (model) => {
   return PROMPT_META.replaceAll("{{MODEL_NAME}}", model.name)
 })
 
-export const Plugins = [OpenAIPlugin, AnthropicPlugin, KimiPlugin, ArceePlugin, MetaPlugin] as const
+// Appended rather than replacing the default prompt: the rules are additive and the default prompt
+// already carries the quality-sensitive instructions. Kept short because it ships on every turn.
+export const DeepSeekPlugin = make(
+  "opencode.prompt.deepseek",
+  (model) => (model.id.toLowerCase().includes("deepseek") ? PROMPT_DEEPSEEK : undefined),
+  "append",
+)
+
+export const Plugins = [
+  OpenAIPlugin,
+  AnthropicPlugin,
+  KimiPlugin,
+  ArceePlugin,
+  MetaPlugin,
+  DeepSeekPlugin,
+] as const
 
 function make(
   id: string,
