@@ -407,7 +407,7 @@
   th,
   td {
     border-bottom: 0.5px solid var(--v2-border-border-muted);
-    border-right: 1px solid var(--v2-border-border-muted);
+    border-right: 1px solid var(--v2-border-border-base);
     padding: 8px 12px;
     text-align: start;
     vertical-align: top;
@@ -585,7 +585,8 @@
 }
 
 [data-slot="markdown-table-zoom-panel"] {
-  max-width: min(1100px, 92vw);
+  width: min(1280px, 94vw);
+  max-width: none;
   max-height: 86vh;
   overflow: auto;
   padding: 20px 22px;
@@ -606,11 +607,12 @@
 
 [data-slot="markdown-table-zoom-panel"] th,
 [data-slot="markdown-table-zoom-panel"] td {
-  border-bottom: 0.5px solid var(--v2-border-border-muted);
-  border-right: 1px solid var(--v2-border-border-muted);
-  padding: 9px 14px;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+  border-right: 1px solid var(--v2-border-border-base);
+  padding: 10px 16px;
   text-align: start;
   vertical-align: top;
+  line-height: 1.65;
 }
 
 [data-slot="markdown-table-zoom-panel"] th:last-child,
