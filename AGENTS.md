@@ -2,6 +2,8 @@
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk` composes Client, Core, and Server.
 - This repository does not use Changesets. Do not add `.changeset` files; follow the existing release workflow instead.
 - The default branch is `dev`. Base branches and worktrees on `origin/dev`, target PRs at `dev`, and diff against `origin/dev` unless told otherwise.
+- **SiCode fork**: the working branch is `main-sicode`, upstream is the `upstream` remote (`sst/opencode`, branch `dev`), and the fork baseline is `76fd05ff45`. The `dev`-branch rules above apply to upstream PRs only. Read `UPSTREAM.md` before touching `packages/core` or `packages/ai`: it holds the sync flow, conflict policy, and the order in which to prefer change sites. **Any edit to an upstream-owned file must carry a `// SiCode:` comment** explaining why, so a future upstream merge can tell our edits from theirs.
+- **Investigation notes**: read `.sicode/notes.md` before starting a task; if it already covers the area, start from its conclusion instead of searching again. After any investigation longer than five rounds, append what you learned there — the files involved, what renders what, and why the change belongs where it does. Keep it append-only and factual. Do not record project status, progress, or "what I am doing now": that goes stale, and stale notes are worse than none.
 
 ## Live TUI Testing
 
