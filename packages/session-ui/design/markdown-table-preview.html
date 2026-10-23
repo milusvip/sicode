@@ -183,8 +183,8 @@
       /* ============ 建议：容器滚动 + sticky 表头 + 数字右对齐 ============ */
       .next .md-table {
         margin: 0;
-        border: 1px solid var(--line);
-        border-radius: 8px;
+        border: 0;
+        border-radius: 0;
         overflow-x: auto;
         overflow-y: hidden;
       }
@@ -334,39 +334,40 @@
       }
 
 
-      /* ============ 表格右上角操作条 ============ */
+      /* ============ 表格卡片：顶栏 + 内容 ============ */
       .md-block {
-        position: relative;
-        margin: 28px 0 16px;
+        margin: 18px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.012);
+      }
+
+      .md-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        height: 30px;
+        padding: 0 5px 0 11px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.032);
+      }
+
+      .md-label {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.02em;
+        color: var(--faint);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .md-actions {
-        position: absolute;
-        top: -27px;
-        right: 10px;
-        z-index: 3;
         display: flex;
-        gap: 2px;
-        padding: 2px;
-        border-radius: 7px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        background: #1c1c22;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-        opacity: 0;
-        transform: translateY(-2px);
-        transition: opacity 0.14s ease, transform 0.14s ease;
-      }
-
-      .md-block:hover .md-actions,
-      .md-block:focus-within .md-actions,
-      .md-block.show-actions .md-actions {
-        opacity: 1;
-      }
-
-      @media (hover: none) {
-        .md-actions {
-          opacity: 1;
-        }
+        gap: 1px;
+        flex-shrink: 0;
       }
 
       .md-actions button {
@@ -377,7 +378,7 @@
         border: 0;
         border-radius: 5px;
         background: transparent;
-        color: var(--muted);
+        color: var(--faint);
         cursor: pointer;
         transition: background 0.12s ease, color 0.12s ease;
       }
@@ -385,6 +386,10 @@
       .md-actions button:hover {
         background: rgba(255, 255, 255, 0.08);
         color: var(--text);
+      }
+
+      .md-actions button:active {
+        background: rgba(255, 255, 255, 0.12);
       }
 
       .md-actions button svg {
@@ -905,9 +910,16 @@
         const block = document.createElement('div')
         block.className = 'md-block'
         wrap.parentNode.insertBefore(block, wrap)
-        block.appendChild(wrap)
+
+        const head = document.createElement('div')
+        head.className = 'md-head'
+        const label = document.createElement('span')
+        label.className = 'md-label'
+        label.textContent = '表格 · ' + table.rows.length + ' 行 × ' + table.rows[0].cells.length + ' 列'
         const bar = document.createElement('div')
         bar.className = 'md-actions'
+        head.append(label, bar)
+        block.append(head, wrap)
         for (const kind of ['copy', 'csv', 'png', 'zoom']) {
           const btn = document.createElement('button')
           btn.type = 'button'
@@ -920,7 +932,6 @@
           })
           bar.appendChild(btn)
         }
-        block.appendChild(bar)
       }
 
       document.getElementById('zoom').addEventListener('click', (event) => {
@@ -931,8 +942,6 @@
         if (event.key === 'Escape') document.getElementById('zoom').dataset.open = 'false'
       })
 
-      // 让第一张表默认露出操作条，方便截图/首屏就能看到
-      document.querySelector('.md-block')?.classList.add('show-actions')
     </script>
   </body>
 </html>
