@@ -64,6 +64,7 @@ const source = {
   "ui.sessionTurn.diffs.showAll": "Show all",
   "ui.sessionTurn.diffs.showLess": "Show less",
   "ui.sessionTurn.diffs.more": "+{{count}} more files",
+  "ui.sessionTurn.diffs.openInSidebar": "Open in sidebar",
 
   "ui.sessionTurn.retry.retrying": "retrying",
   "ui.sessionTurn.retry.inSeconds": "in {{seconds}}s",
@@ -243,6 +244,10 @@ const source = {
   "ui.message.expand": "Expand message",
   "ui.message.collapse": "Collapse message",
   "ui.message.copy": "Copy",
+  "ui.message.table.size": "{{rows}} rows × {{columns}} columns",
+  "ui.message.table.copy": "Copy table",
+  "ui.message.table.download": "Download CSV",
+  "ui.message.table.expand": "Expand",
   "ui.message.copyMessage": "Copy message",
   "ui.message.copyFullMessage": "Copy full message",
   "ui.message.forkMessage": "Fork to new session",

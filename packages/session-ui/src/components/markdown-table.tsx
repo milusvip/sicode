@@ -3,10 +3,11 @@ import { IconButton } from "@opencode/ui/icon-button"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { render } from "solid-js/web"
 
-const LABELS = {
-  copy: "Copy table",
-  csv: "Download CSV",
-  expand: "Expand",
+export type TableLabels = {
+  size: (rows: number, columns: number) => string
+  copy: string
+  download: string
+  expand: string
 }
 
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -60,7 +61,7 @@ function expand(table: HTMLTableElement) {
   document.body.appendChild(overlay)
 }
 
-function TableTools(props: { table: HTMLTableElement }) {
+function TableTools(props: { table: HTMLTableElement; labels: TableLabels }) {
   const action = (label: string, icon: string, onClick: () => void) => (
     <Tooltip placement="top" value={label}>
       <IconButton
@@ -76,11 +77,11 @@ function TableTools(props: { table: HTMLTableElement }) {
 
   return (
     <div data-slot="markdown-table-tools">
-      {action(LABELS.copy, "outline-copy", () => void navigator.clipboard.writeText(tsv(props.table)))}
-      {action(LABELS.csv, "outline-square-arrow", () =>
+      {action(props.labels.copy, "outline-copy", () => void navigator.clipboard.writeText(tsv(props.table)))}
+      {action(props.labels.download, "outline-square-arrow", () =>
         save("table.csv", "\ufeff" + csv(props.table), "text/csv;charset=utf-8"),
       )}
-      {action(LABELS.expand, "outline-arrow-to-corner-top-right", () => expand(props.table))}
+      {action(props.labels.expand, "outline-arrow-to-corner-top-right", () => expand(props.table))}
     </div>
   )
 }
@@ -90,7 +91,7 @@ function TableTools(props: { table: HTMLTableElement }) {
  * pipeline injects HTML, so this runs after the fact and is idempotent — the observer fires on
  * every streamed block, and already-enhanced tables are skipped.
  */
-export function enhanceTables(root: HTMLElement) {
+export function enhanceTables(root: HTMLElement, labels: TableLabels) {
   for (const element of Array.from(root.querySelectorAll("table"))) {
     if (!(element instanceof HTMLTableElement)) continue
     if (element.closest('[data-component="markdown-table"]')) continue
@@ -104,10 +105,10 @@ export function enhanceTables(root: HTMLElement) {
     const label = document.createElement("span")
     label.setAttribute("data-slot", "markdown-table-label")
     const columns = element.rows[0]?.cells.length ?? 0
-    label.textContent = `${element.rows.length} 行 × ${columns} 列`
+    label.textContent = labels.size(element.rows.length, columns)
 
     const tools = document.createElement("div")
-    disposers.set(block, render(() => <TableTools table={element} />, tools))
+    disposers.set(block, render(() => <TableTools table={element} labels={labels} />, tools))
 
     head.append(label, tools)
 
