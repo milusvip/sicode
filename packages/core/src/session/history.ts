@@ -11,6 +11,7 @@ import { Instructions } from "../instructions/index.js"
 import { InstructionState } from "./instruction-state.js"
 import { SessionRecentText } from "./recent-text.js"
 import { SessionMessageTable } from "./sql.js"
+import { degradeHistory } from "./history-degrade.js"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -186,7 +187,8 @@ export const load = Effect.fn("SessionHistory.load")(function* (
   sessionID: SessionSchema.ID,
   boundary: Boundary,
 ) {
-  return (yield* messageEntries(db, sessionID, boundary)).map((entry) => entry.message)
+  // Only the model sees the degraded view; the stored session and the UI keep full tool output.
+  return degradeHistory((yield* messageEntries(db, sessionID, boundary)).map((entry) => entry.message))
 })
 
 export const entriesForRunner = Effect.fn("SessionHistory.entriesForRunner")(function* (
