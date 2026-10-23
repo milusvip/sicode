@@ -1315,10 +1315,39 @@ describe("Config", () => {
               {
                 type: "entries",
                 path: tmp.path,
-                names: [".agents", ".claude", ".opencode", "opencode.json", "opencode.jsonc"],
+                names: [".agents", ".claude", ".opencode", ".sicode", "opencode.json", "opencode.jsonc"],
               },
             ])
           }).pipe(Effect.provide(testLayer(tmp.path, undefined, undefined, undefined, Watcher.testLayer)))
+        }),
+      ),
+    ),
+  )
+
+  // SiCode: `.sicode` is the fork's own project directory and must behave like `.opencode`.
+  it.live("discovers .sicode as a project config directory", () =>
+    Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            await fs.mkdir(path.join(tmp.path, ".sicode"), { recursive: true })
+            await fs.writeFile(
+              path.join(tmp.path, ".sicode", "opencode.json"),
+              JSON.stringify({ $schema: "sicode" }),
+            )
+          })
+          return yield* Effect.gen(function* () {
+            const config = yield* Config.Service
+            const entries = (yield* config.entries()).filter((entry) => !entry.path || inFixture(tmp.path, entry.path))
+
+            expect(entries.filter((entry) => entry.type === "directory").map((entry) => entry.path)).toEqual([
+              AbsolutePath.make(path.join(tmp.path, "global")),
+              AbsolutePath.make(path.join(tmp.path, ".sicode")),
+            ])
+            expect(entries.filter((entry) => entry.type === "document").map((entry) => entry.info.$schema)).toEqual([
+              "sicode",
+            ])
+          }).pipe(Effect.provide(testLayer(tmp.path)))
         }),
       ),
     ),
@@ -1919,7 +1948,7 @@ describe("Config", () => {
             expect(yield* watcher.subscriptions()).toContainEqual({
               path: tmp.path,
               type: "entries",
-              names: [".agents", ".claude", ".opencode", "opencode.json", "opencode.jsonc"],
+              names: [".agents", ".claude", ".opencode", ".sicode", "opencode.json", "opencode.jsonc"],
             })
           }).pipe(Effect.provide(testLayer(tmp.path)))
         }),

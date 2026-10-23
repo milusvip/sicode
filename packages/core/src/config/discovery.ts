@@ -11,6 +11,11 @@ import type { Options } from "../config.js"
 
 export const names = ["opencode.json", "opencode.jsonc"]
 
+// SiCode: `.sicode` is this fork's own project directory. It is discovered exactly like `.opencode`
+// (config files, agents, commands, skills, tools, plugins, themes) and is listed first so it wins
+// when both exist.
+const projectDirectories = [".sicode", ".opencode"]
+
 /** Eligible sources in priority order, including paths that may appear later. */
 export interface Sources {
   readonly system?: { readonly path: AbsolutePath; readonly present: boolean }
@@ -82,7 +87,7 @@ export const discover = Effect.fn("ConfigDiscovery.discover")(function* (options
     Effect.gen(function* () {
       // Resolve the parent too: missing children must honor symlinked global roots.
       const parent = yield* fs.resolve(directory)
-      return yield* Effect.forEach([".claude", ".agents", ".opencode", ...names.toReversed()], (name) =>
+      return yield* Effect.forEach([".claude", ".agents", ...projectDirectories, ...names.toReversed()], (name) =>
         fs
           .resolve(path.join(parent, name))
           .pipe(Effect.map((resolved) => ({ item: AbsolutePath.make(path.join(directory, name)), resolved }))),
@@ -121,9 +126,9 @@ export const discover = Effect.fn("ConfigDiscovery.discover")(function* (options
     preferences,
     global: globalEnabled ? globalDirectory : undefined,
     explicit: options?.file ? AbsolutePath.make(path.resolve(options.file)) : undefined,
-    direct: visible.filter((item) => ![".agents", ".claude", ".opencode"].includes(path.basename(item))).toReversed(),
+    direct: visible.filter((item) => ![".agents", ".claude", ...projectDirectories].includes(path.basename(item))).toReversed(),
     project: yield* Effect.forEach(
-      visible.filter((item) => path.basename(item) === ".opencode").toReversed(),
+      visible.filter((item) => projectDirectories.includes(path.basename(item))).toReversed(),
       (directory) => fs.isDir(directory).pipe(Effect.map((present) => ({ path: directory, present }))),
     ),
     claude:
