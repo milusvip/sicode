@@ -19,7 +19,6 @@ import { ImagePreview } from "@opencode/ui/image-preview"
 import { getFilename } from "@opencode/util/path"
 import { AttachmentCard } from "./attachment-card"
 import { CommentCard } from "./comment-card"
-import { TimelineSeparator } from "../components/timeline-separator"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
@@ -566,105 +565,22 @@ type HighlightSegment = { text: string; type?: "file" | "agent" }
 
 /** A compaction the server admitted but has not started, drawn as the divider a started one opens with. */
 export function SessionCompactionQueued() {
-  const i18n = useI18n()
-
-  return (
-    <div data-component="session-compaction-message">
-      <CompactionDivider label={i18n.t("ui.messagePart.compaction.queued")} />
-    </div>
-  )
-}
-
-function CompactionDivider(props: { label: string }) {
-  return (
-    <div class="py-2">
-      <TimelineSeparator label={props.label} />
-    </div>
-  )
+  return null
 }
 
 export function SessionCompactionMessage(props: { message: SessionMessageCompaction; error: string }) {
-  const i18n = useI18n()
-  const summary = () => (props.message.status === "failed" ? "" : props.message.summary)
-
-  const error = () => {
-    if (props.message.status !== "failed") return ""
-
-    if (props.message.error.type === "aborted" || props.message.error.type === "compaction.interrupted") return ""
-
-    return props.error
-  }
-
-  const compact = createMemo(
-    () => new Intl.NumberFormat(i18n.locale(), { notation: "compact", maximumFractionDigits: 1 }),
-  )
-
-  // Usage of the compaction request itself; the resulting context size only shows on the next assistant step.
-  const usage = () => {
-    if (props.message.status === "running" || !props.message.tokens) return ""
-    const tokens = props.message.tokens
-    const input = tokens.input + tokens.cache.read + tokens.cache.write
-    const output = tokens.output + tokens.reasoning
-
-    if (input + output <= 0) return ""
-
-    return i18n.t("ui.messagePart.compaction.usage", {
-      input: compact().format(input),
-      output: compact().format(output),
-    })
-  }
-
-  const outcome = () => {
-    if (props.message.status !== "failed")
-      return props.message.status === "completed" && props.message.native?.messages
-        ? "ui.messagePart.providerCompaction"
-        : "ui.messagePart.compaction"
-
-    if (props.message.error.type === "aborted") return "ui.messagePart.compaction.cancelled"
-
-    if (props.message.error.type === "compaction.interrupted") return "ui.messagePart.compaction.interrupted"
-
-    return "ui.messagePart.compaction.failed"
-  }
-
-  const label = createMemo(() => [i18n.t(outcome()), usage()].filter(Boolean).join(" · "))
-
+  // Compaction is silent by design: a successful pass leaves no divider, no summary and no usage
+  // line in the timeline, so the conversation reads as if it never happened. Only a failure
+  // surfaces, because then the context changed without the summary landing and the user needs to
+  // know their history was affected.
   return (
-    <div data-component="session-compaction-message">
-      <CompactionDivider label={i18n.t("ui.messagePart.compaction.started")} />
-      <Show when={summary().trim()}>
-        <div data-component="text-part" data-timeline-part-id={props.message.id}>
-          <div data-slot="text-part-body">
-            <PacedMarkdown
-              text={summary()}
-              cacheKey={props.message.id}
-              streaming={props.message.status === "running"}
-            />
-          </div>
-        </div>
-      </Show>
-      <Show when={props.message.status === "running"}>
-        <div role="status" class="py-2">
-          <BasicTool
-            icon="archive"
-            trigger={{ title: i18n.t("ui.messagePart.compaction.running") }}
-            status="running"
-            locked
-            hideDetails
-          />
-        </div>
-      </Show>
-      <Show when={props.message.status !== "running"}>
-        <div class="py-2">
-          <TimelineSeparator label={label()} />
-        </div>
-      </Show>
-      <Show when={error()}>
+    <Show when={props.message.status === "failed" && props.error}>
+      <div data-component="session-compaction-message">
         <Card variant="error" class="error-card">
-          {error()}
+          {props.error}
         </Card>
-      </Show>
-    </div>
+      </div>
+    </Show>
   )
 }
 
