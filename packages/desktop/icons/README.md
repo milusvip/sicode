@@ -1,4 +1,7 @@
-# Tauri Icons
+# Desktop Icons
+
+Startup splash uses a copy at `src/renderer/startup/assets/splash-logo.png`.
+After changing `icons/{channel}/icon.png`, copy it there too (or re-run your icon pipeline and sync that file).
 
 Here's the process I've been using to create icons:
 
