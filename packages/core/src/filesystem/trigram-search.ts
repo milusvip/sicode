@@ -206,10 +206,12 @@ const layer = Layer.effect(
 
     const build = Effect.gen(function* () {
       const db = (index ??= TrigramIndex.open({ file }))
-      // Reuse a compatible index from a previous run; the watcher keeps it fresh from here on.
-      if (db.getMeta("root") === location.directory && db.getMeta("version") === String(SCHEMA_VERSION) && db.size > 0)
-        return
-
+      // Enumerate the current file set first: reuse is only sound if the index covers
+      // exactly these files. A previous run may have exited before its watcher flushed
+      // (crash, kill), so trusting root+version+size alone can silently miss files that
+      // changed in that gap — the prefilter would then drop them from candidates and the
+      // search would return wrong results. The enumeration is also the rebuild input, so a
+      // stale index pays for it once, not twice.
       const entries = yield* ripgrep.find({
         cwd: location.directory,
         pattern: "*",
@@ -218,6 +220,18 @@ const layer = Layer.effect(
         hidden: true,
         limit: Number.MAX_SAFE_INTEGER,
       })
+      const current = new Set(entries.map((entry) => normalize(entry.path)))
+
+      if (
+        db.getMeta("root") === location.directory &&
+        db.getMeta("version") === String(SCHEMA_VERSION) &&
+        db.size > 0
+      ) {
+        const indexed = new Set(db.paths())
+        const same = indexed.size === current.size && [...current].every((p) => indexed.has(p))
+        if (same) return
+      }
+
       const contents = yield* Effect.forEach(entries, (entry) => read(entry.path), {
         concurrency: BUILD_CONCURRENCY,
         discard: false,

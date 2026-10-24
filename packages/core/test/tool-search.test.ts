@@ -692,4 +692,39 @@ describe("two-stage grep prefilter", () => {
       }),
     { timeout: 30_000 },
   )
+
+  it.live(
+    "reindexes when the file set drifted since the last run (crash before watcher flush)",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped("sicode-trigram-drift-")
+        const cache = yield* tmpdirScoped("sicode-trigram-drift-cache-")
+        yield* Effect.promise(() => Bun.write(path.join(tmp.path, "a.ts"), "export const tokenAAA = 1\n"))
+
+        // First run: build the index, then let the scope close (simulating process exit).
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            const first = yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))
+            expect(first.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+          }),
+        )
+
+        // Drift the file set while no watcher is alive — the exact gap the reuse check guards.
+        yield* Effect.promise(() => Bun.write(path.join(tmp.path, "b.ts"), "export const tokenBBB = 2\n"))
+
+        // Second run on the same cache: the reuse check must notice b.ts is new and reindex,
+        // so tokenBBB is searchable even though no watcher ever saw the write.
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            const added = yield* executeTool(registry, call("grep", { pattern: "tokenBBB" }))
+            expect(added.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+            const kept = yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))
+            expect(kept.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+          }),
+        )
+      }),
+    { timeout: 30_000 },
+  )
 })
