@@ -235,6 +235,9 @@ export const Plugin = {
               const global = literal ? yield* trigram.candidates(literal) : null
               const candidates = global ? scopedCandidates(global, cwd, location.directory) : null
               const chunks = candidates ? chunkPaths(candidates) : undefined
+              // Rebase a cwd-relative path onto the location root, as every source of rows must.
+              const rebase = (entryPath: string) =>
+                RelativePath.make(path.relative(location.directory, path.resolve(cwd, entryPath)))
               const sweep = (paths?: readonly string[]) =>
                 ripgrep
                   .grep({
@@ -267,16 +270,46 @@ export const Plugin = {
                           ...row.match,
                           entry: FileSystem.Entry.make({
                             ...row.match.entry,
-                            path: RelativePath.make(
-                              path.relative(location.directory, path.resolve(cwd, row.match.entry.path)),
-                            ),
+                            path: rebase(row.match.entry.path),
                           }),
                         }),
                       })),
                     ),
                   )
               let rows: Ripgrep.GrepRow[] = []
-              if (chunks) {
+              // SiCode: in-process literal match. For a small candidate set of literal content
+              // (or files) searches without context, reading the candidates and scanning in
+              // memory skips the ~150ms ripgrep process startup, cutting a rare-symbol search
+              // from ~200ms to ~30ms. Regex, count mode, context, and oversized candidate sets
+              // keep the rg path — same results, only faster.
+              const useInMemory =
+                literal !== null &&
+                chunks !== undefined &&
+                candidates !== null &&
+                candidates.length > 0 &&
+                candidates.length <= TrigramSearch.IN_MEMORY_MATCH_MAX_FILES &&
+                (mode === "content" || mode === "files_with_matches") &&
+                !input.context &&
+                !input.include
+              if (useInMemory) {
+                rows = [
+                  ...(yield* TrigramSearch.matchLiteralInMemory(cwd, candidates, literal, {
+                    caseSensitive: input.caseSensitive,
+                    mode: mode === "files_with_matches" ? "files" : "content",
+                    limit: wanted + 1,
+                  }).pipe(
+                    Effect.map((result) =>
+                      result.map((row) => ({
+                        kind: row.kind,
+                        match: FileSystem.Match.make({
+                          ...row.match,
+                          entry: FileSystem.Entry.make({ ...row.match.entry, path: rebase(row.match.entry.path) }),
+                        }),
+                      })),
+                    ),
+                  )),
+                ]
+              } else if (chunks) {
                 for (const chunk of chunks) {
                   rows.push(...(yield* sweep(chunk)))
                   const counted = mode === "content" ? groupByMatch(rows).length : rows.length

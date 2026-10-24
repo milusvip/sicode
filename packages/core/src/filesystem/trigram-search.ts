@@ -12,6 +12,8 @@ import fs from "node:fs"
 import fsp from "node:fs/promises"
 import path from "path"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
+import { Match } from "@opencode/schema/filesystem"
+import { RelativePath } from "../schema.js"
 import { SCHEMA_VERSION, TrigramIndex } from "#trigram"
 import { Global } from "@opencode/util/global"
 import { Location } from "../location.js"
@@ -98,6 +100,77 @@ export const chunkPaths = (paths: readonly string[], maxChars = 32_000): string[
 }
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
+
+/**
+ * Above this many candidate files, spawning one ripgrep process is comparable to (or
+ * cheaper than) reading and scanning each file in-process, so stage two falls back to rg.
+ * Measured on this repo: reading + indexOf over N files costs ~0.3ms/file (85 files ≈ 27ms),
+ * while an rg spawn is a flat ~150-160ms on Windows — so the in-process path wins clearly
+ * until the candidate set is large enough that rg's native scan outruns the reads.
+ */
+export const IN_MEMORY_MATCH_MAX_FILES = 120
+
+/**
+ * Stage two, fast path: match a literal against a small set of candidate files in-process,
+ * avoiding the ~150ms ripgrep process startup on Windows. Sound only for literal text (no
+ * regex metacharacters, no context lines, no count aggregation) — the caller guarantees the
+ * pattern is a literal and the mode is "content" or "files". Produces the same row shape as
+ * ripgrep so downstream formatting is unchanged. Binary or unreadable files are skipped, as
+ * rg would.
+ */
+export const matchLiteralInMemory = (
+  cwd: string,
+  paths: readonly string[],
+  pattern: string,
+  options: { readonly caseSensitive?: boolean; readonly mode?: "content" | "files"; readonly limit: number },
+): Effect.Effect<readonly Ripgrep.GrepRow[], Ripgrep.Error> =>
+  Effect.gen(function* () {
+    const needle = options.caseSensitive === false ? pattern.toLowerCase() : pattern
+    const limit = options.limit
+    const rows: Ripgrep.GrepRow[] = []
+    const matchesPerFile = options.mode === "files" ? 1 : Number.POSITIVE_INFINITY
+
+    for (const rawPath of paths) {
+      if (rows.length >= limit) break
+      const absolute = path.resolve(cwd, rawPath)
+      let content: string
+      try {
+        content = yield* Effect.promise(() => fsp.readFile(absolute, "utf8"))
+      } catch {
+        continue // unreadable / binary / deleted mid-search: rg would skip it too
+      }
+      if (content.includes("\0")) continue
+
+      const lines = content.split("\n")
+      let matched = 0
+      for (let i = 0; i < lines.length && matched < matchesPerFile; i++) {
+        const line = lines[i]!
+        const haystack = options.caseSensitive === false ? line.toLowerCase() : line
+        let from = 0
+        let index = haystack.indexOf(needle, from)
+        if (index === -1) continue
+        const submatches: Array<{ text: string; start: number; end: number }> = []
+        while (index !== -1) {
+          submatches.push({ text: line.slice(index, index + pattern.length), start: index, end: index + pattern.length })
+          from = index + pattern.length
+          index = haystack.indexOf(needle, from)
+        }
+        rows.push({
+          kind: "match",
+          match: Match.make({
+            entry: { path: RelativePath.make(normalize(rawPath)), type: "file" },
+            line: i + 1,
+            offset: 0,
+            text: line.length > 2_000 ? line.slice(0, 2_000) + "..." : line,
+            submatches,
+          }),
+        })
+        matched++
+        if (rows.length >= limit) break
+      }
+    }
+    return rows
+  }).pipe(Effect.orDie)
 
 const layer = Layer.effect(
   Service,
