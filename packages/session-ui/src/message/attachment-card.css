@@ -1,3 +1,5 @@
+/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+
 [data-component="attachment-card"] {
   display: flex;
   flex-direction: column;
@@ -35,7 +37,7 @@
     max-width: 100%;
     font-family: var(--v2-font-family-sans, "Inter", sans-serif);
     font-style: normal;
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     line-height: 12px;
     letter-spacing: 0.05px;
     font-variation-settings: "slnt" 0;
@@ -58,7 +60,7 @@
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     color: var(--v2-text-text-muted);
 
     [data-component="file-icon"],

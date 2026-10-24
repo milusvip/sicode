@@ -30,7 +30,8 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
-    font-size: 13px;
+    /* SiCode: token-based sizing for CJK legibility on Windows */
+    font-size: var(--font-size-small);
     line-height: var(--line-height-base);
     letter-spacing: -0.04px;
   }

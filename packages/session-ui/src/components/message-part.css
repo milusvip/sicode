@@ -196,7 +196,7 @@
         border-radius: 9999px;
         border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
         background: color-mix(in srgb, currentColor 12%, transparent);
-        font-size: 11px;
+        font-size: var(--font-size-x-small);
         font-weight: 530;
         line-height: 1.35;
         letter-spacing: 0.02em;
@@ -351,7 +351,7 @@
   [data-component="markdown"] {
     margin-top: 0;
     font-style: normal;
-    font-size: 13px;
+    font-size: var(--font-size-small);
     line-height: var(--line-height-base);
     color: var(--v2-text-text-muted);
 
@@ -517,7 +517,7 @@
   [data-slot="bash-pre"] code {
     font-family: var(--font-family-mono);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
-    font-size: 13px;
+    font-size: var(--font-size-small);
     line-height: var(--line-height-large);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -532,7 +532,7 @@
 
     [data-slot="bash-pre"] code {
       font-family: var(--v2-font-family-code);
-      font-weight: 440;
+      font-weight: var(--font-weight-regular);
       line-height: var(--line-height-base);
       letter-spacing: -0.04px;
     }
@@ -615,7 +615,7 @@
   min-width: 0;
   width: 100%;
   font-family: var(--font-family-sans);
-  font-size: 13px;
+  font-size: var(--font-size-small);
   line-height: 16px;
   color: var(--v2-text-text-muted);
 }
@@ -648,7 +648,7 @@
   cursor: pointer;
   width: fit-content;
   font-family: var(--font-family-sans);
-  font-size: 13px;
+  font-size: var(--font-size-small);
   font-weight: var(--font-weight-regular, 440);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
@@ -898,12 +898,15 @@
    click can grow the row instead of teleporting the transcript under the pointer. Scoped to the
    process shell on purpose: the timeline above it is virtualized and the rest of the app keeps its
    snap-open behaviour. `overflow` rides inside the keyframes — a discrete property held at `hidden`
-   in both frames clips the reveal, then reverts to the `visible` the chain needs for its rail. */
-[data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-content"][data-expanded] {
+   in both frames clips the reveal, then reverts to the `visible` the chain needs for its rail.
+   SiCode: gated on [data-animating] (set by the user's toggle, cleared after ~200ms) — otherwise
+   the animation also plays whenever an expanded shell mounts (session open, failed-turn default
+   open) and slides the whole transcript on every entry. */
+[data-component="collapsed-tool-group"][data-process-shell][data-animating] [data-slot="collapsible-content"][data-expanded] {
   animation: process-shell-open 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-[data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-content"][data-closed] {
+[data-component="collapsed-tool-group"][data-process-shell][data-animating] [data-slot="collapsible-content"][data-closed] {
   animation: process-shell-close 140ms cubic-bezier(0.4, 0, 1, 1);
 }
 
@@ -934,7 +937,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-content"] {
+  [data-component="collapsed-tool-group"][data-process-shell][data-animating] [data-slot="collapsible-content"] {
     animation: none;
   }
 }
@@ -1236,13 +1239,13 @@
       line-height: var(--process-shell-leading, var(--line-height-compact));
 
       [data-slot="tool-loaded-label"] {
-        font-weight: 440;
+        font-weight: var(--font-weight-regular);
         color: var(--v2-text-text-faint);
       }
 
       [data-slot="tool-loaded-value"],
       [data-slot="tool-loaded-kind"] {
-        font-weight: 440;
+        font-weight: var(--font-weight-regular);
         color: var(--v2-text-text-faint);
         opacity: 0.9;
       }
@@ -1725,7 +1728,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    font-size: 13px;
+    font-size: var(--font-size-small);
 
     [data-slot="question-text"] {
       font-size: 12.5px;
@@ -1740,8 +1743,8 @@
       padding-inline-start: 10px;
       border-inline-start: 2px solid var(--v2-border-border-strong, var(--v2-border-border-base));
       border-radius: 2px;
-      font-size: 13px;
-      font-weight: 440;
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight-regular);
       line-height: var(--line-height-compact);
       letter-spacing: -0.04px;
       color: var(--v2-text-text-base);
@@ -2061,7 +2064,7 @@
   color: var(--v2-text-text-faint);
   font-family: var(--v2-font-family-sans);
   font-size: 12.5px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   letter-spacing: -0.04px;
   cursor: pointer;
   transition:
@@ -2086,7 +2089,7 @@
   min-width: 0;
   max-width: 100%;
   font-family: var(--font-family-sans);
-  font-size: 13px;
+  font-size: var(--font-size-small);
   /* Loaded values truncate, so they require the full compact line box for descenders. */
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
@@ -2102,13 +2105,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
   }
 
   [data-slot="tool-loaded-kind"] {
     flex-shrink: 0;
     margin-inline-start: -2px;
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     color: var(--v2-text-text-muted);
   }
 }
@@ -2198,7 +2201,7 @@
 }
 
 :root body [data-component="user-message"] {
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
 
   [data-slot="user-message-text"] {
     background: var(--v2-background-bg-layer-01);

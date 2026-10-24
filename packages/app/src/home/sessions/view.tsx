@@ -339,32 +339,43 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
         </Show>
       </div>
       <Show when={selection.active}>
-        <div class="pointer-events-none sticky bottom-0 z-40 flex justify-center pb-3">
+        <div class="pointer-events-none sticky bottom-0 z-40 flex justify-center pb-4">
           <div
             data-component="home-session-selection-bar"
+            role="toolbar"
+            aria-label={props.language.t("home.sessions.select")}
             class={`
-              pointer-events-auto flex h-11 min-w-0 items-center gap-1 rounded-[10px] px-1.5 ps-3
-              bg-v2-background-bg-layer-02 shadow-[var(--v2-elevation-floating)]
+              pointer-events-auto flex h-11 max-w-full items-center gap-0.5 rounded-full
+              bg-v2-background-bg-base ps-0.5 pe-1.5
+              shadow-[var(--v2-elevation-floating),inset_0_0_0_0.5px_var(--v2-border-border-base)]
+              animate-in fade-in slide-in-from-bottom-2 duration-150 ease-out motion-reduce:animate-none
             `}
           >
-            <span class="me-1 shrink-0 text-[13px] leading-text-compact text-v2-text-text-muted [font-weight:440]">
-              {selection.ids.length === 0
-                ? props.language.t("home.sessions.select.hint")
-                : props.language.plural("home.sessions.select.count", selection.ids.length)}
+            <span
+              data-slot="home-session-selection-count"
+              aria-live="polite"
+              class={`
+                me-1.5 ms-2 shrink-0 text-[13px] leading-text-compact tabular-nums
+                text-v2-text-text-base [font-weight:530]
+              `}
+            >
+              {props.language.plural("home.sessions.select.count", selection.ids.length)}
             </span>
             <Button
               data-action="home-sessions-select-all"
-              variant="ghost-muted"
+              variant="ghost"
               size="small"
+              class="shrink-0"
               onClick={toggleAll}
             >
               {props.language.t(allSelected() ? "home.sessions.select.none" : "home.sessions.select.all")}
             </Button>
             <Button
               data-action="home-sessions-delete-selected"
-              variant="danger"
+              variant="ghost"
               size="small"
               icon="outline-trash"
+              class="shrink-0 text-v2-state-fg-danger"
               disabled={selection.ids.length === 0}
               onClick={deleteSelected}
             >
@@ -372,8 +383,9 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
             </Button>
             <Button
               data-action="home-sessions-select-cancel"
-              variant="ghost-muted"
+              variant="ghost"
               size="small"
+              class="shrink-0"
               onClick={exitSelection}
             >
               {props.language.t("common.cancel")}
@@ -795,7 +807,7 @@ function HomeSessionRow(
       data-project-name={!!showProjectName()}
       data-session-id={props.record.session.id}
       data-selected={selected() || undefined}
-      class="group/session relative flex h-10 min-w-0 items-center rounded-[6px] outline-none focus:outline-none focus-visible:outline-none"
+      class="group/session relative flex h-10 min-w-0 items-center rounded-[6px] outline-none transition-[background-color] duration-[120ms] ease-out focus:outline-none focus-visible:outline-none"
       classList={{ "bg-v2-overlay-simple-overlay-pressed": selected() }}
       onContextMenu={(event) => {
         // While renaming, keep the native menu so paste and spelling work.
@@ -878,7 +890,6 @@ function HomeSessionRow(
           classList={{
             "gap-1.5": props.desktop,
             "gap-2": !props.desktop,
-            "bg-v2-overlay-simple-overlay-hover": selected(),
           }}
           onMouseDown={(event) => {
             if (event.button === 1) event.preventDefault()
@@ -965,12 +976,12 @@ function HomeSessionRow(
               data-slot="home-session-select-indicator"
               aria-hidden="true"
               class={`
-                flex size-4 shrink-0 items-center justify-center rounded-[4px] border
-                transition-[background-color,border-color] duration-[120ms] ease-in-out
+                flex size-4 shrink-0 items-center justify-center rounded-[5px] border
+                transition-[background-color,border-color,color,transform] duration-[120ms] ease-out
               `}
               classList={{
-                "border-v2-border-border-strong bg-v2-background-bg-layer-04 text-v2-text-text-inverse": selected(),
-                "border-v2-border-border-base text-transparent": !selected(),
+                "border-transparent bg-v2-background-bg-accent text-v2-text-text-contrast": selected(),
+                "border-v2-border-border-strong bg-transparent text-transparent": !selected(),
               }}
             >
               <Icon name="check" size="small" />

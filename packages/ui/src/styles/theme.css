@@ -1,7 +1,12 @@
 :root {
+  /* SiCode: was Source Han Sans-first for cross-platform consistency; user found its Windows
+     Chromium rendering less crisp than workbuddy's, so the stack now mirrors workbuddy's
+     system-first order — mac gets PingFang, Windows gets Microsoft YaHei, bundled Noto only
+     as last-resort fallback (Linux / machines without YaHei). */
   --font-family-sans:
-    "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui,
-    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC",
+    ui-sans-serif, system-ui, sans-serif;
   --font-family-sans--font-feature-settings: normal;
   /* SiCode: CJK glyphs fall through to the UI default face. */
   --font-family-mono:
@@ -9,12 +14,15 @@
     SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-family-mono--font-feature-settings: normal;
 
-  --font-size-x-small: 11px;
-  --font-size-small: 13px;
-  --font-size-base: 14px;
+  /* SiCode: sizes/weights tuned up for CJK legibility on Windows — Noto Sans SC Variable renders
+     thin at small sizes in Chromium; workbuddy-comparable readability needs base=15, small=14,
+     x-small=12, regular=460. Chat content (markdown/message-part/session-turn) hangs off base. */
+  --font-size-x-small: 12px;
+  --font-size-small: 14px;
+  --font-size-base: 15px;
   --font-size-large: 16px;
   --font-size-x-large: 20px;
-  --font-weight-regular: 400;
+  --font-weight-regular: 460;
   --font-weight-medium: 500;
   --font-weight-bold: 670;
   --line-height-normal: 130%;

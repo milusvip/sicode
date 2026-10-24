@@ -627,9 +627,19 @@ export function CurrentContextToolGroup(props: {
     return keys
   })
 
+  // SiCode: the open/close height animation must only play on user toggles. Without this gate the
+  // animation also replays whenever an expanded shell mounts (session open, failed-turn default
+  // open), sliding the transcript below it on every entry.
+  const [animating, setAnimating] = createSignal(false)
+  let animatingTimer: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => clearTimeout(animatingTimer))
+
   const change = (open: boolean) => {
     props.onOpenChange(open)
     props.onSizeChange?.()
+    setAnimating(true)
+    clearTimeout(animatingTimer)
+    animatingTimer = setTimeout(() => setAnimating(false), 240)
   }
 
   return (
@@ -637,6 +647,7 @@ export function CurrentContextToolGroup(props: {
       data-component="collapsed-tool-group"
       data-process-shell=""
       data-open={props.open ? "true" : "false"}
+      data-animating={animating() ? "true" : undefined}
       data-pending={pending() ? "true" : "false"}
       data-failed={failed() ? "true" : "false"}
       data-timeline-part-ids={props.parts.map((part) => part.id).join(",")}

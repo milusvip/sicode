@@ -1,3 +1,5 @@
+/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+
 [data-component="work-shell-head"] {
   display: flex;
   align-items: center;
@@ -152,7 +154,7 @@
   margin-inline-start: auto;
   font-family: var(--v2-font-family-sans);
   font-size: 12.5px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact, 16px);
   letter-spacing: -0.04px;
   font-variant-numeric: tabular-nums;

@@ -1,3 +1,5 @@
+/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+
 [data-component="card"][data-kind="tool-error-card"] {
   --card-pad-y: 0px;
   --card-line-pad: 0px;
@@ -11,7 +13,7 @@
   /* Figma's leading-none would clip Inter descenders at 13px; keep the compact metric. */
   [data-slot="basic-tool-tool-title"] {
     font-family: var(--v2-font-family-sans);
-    font-size: 13px;
+    font-size: var(--font-size-small);
     font-weight: 530;
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
@@ -20,8 +22,8 @@
 
   [data-slot="basic-tool-tool-subtitle"] {
     font-family: var(--v2-font-family-sans);
-    font-size: 13px;
-    font-weight: 440;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-regular);
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
     color: var(--v2-text-text-muted);
@@ -29,8 +31,8 @@
 
   [data-slot="tool-error-card-summary"] {
     font-family: var(--v2-font-family-sans);
-    font-size: 13px;
-    font-weight: 440;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-regular);
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
     color: var(--v2-state-fg-danger);
@@ -101,8 +103,8 @@
   [data-slot="tool-error-card-content"] [data-slot="card-description"] {
     margin: 0;
     font-family: var(--v2-font-family-sans);
-    font-size: 13px;
-    font-weight: 440;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-regular);
     line-height: var(--line-height-base);
     letter-spacing: -0.04px;
     white-space: pre-wrap;

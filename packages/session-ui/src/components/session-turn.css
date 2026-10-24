@@ -1,3 +1,5 @@
+/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+
 [data-component="session-turn"] {
   --sticky-header-height: calc(var(--session-title-height, 0px) + 24px);
   height: 100%;
@@ -84,7 +86,7 @@
   }
 
   [data-component="card"]:is([data-kind="session-retry-card"], [data-kind="session-error-card"]) {
-    font-size: 13px;
+    font-size: var(--font-size-small);
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
   }
@@ -108,8 +110,8 @@
       margin-top: 4px;
       color: var(--v2-text-text-faint);
       font-family: var(--v2-font-family-sans);
-      font-size: 13px;
-      font-weight: 440;
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight-regular);
       line-height: var(--line-height-compact);
       letter-spacing: -0.04px;
     }

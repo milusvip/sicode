@@ -110,8 +110,9 @@
     background: transparent;
     color: var(--v2-text-text-base);
     font: inherit;
-    font-size: 13px;
-    font-weight: 440;
+    /* SiCode: token-based sizing for CJK legibility on Windows */
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-regular);
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
     text-align: start;

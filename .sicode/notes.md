@@ -471,3 +471,17 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 生效条件卡得很死（`search.ts:195-207`）：`location.workspaceID` 有值 → 必须 ripgrep（远程沙箱，fff 只索引本地目录）；`options.fff === false` 或未指定且 `process.platform === "win32"` 或 `!Fff.available()` → ripgrep；非 VCS 或 home 目录 → ripgrep。⇒ **本机（Windows）开发时 fff 一次都没跑过**，任何基于本机的对比都要显式打开。
 - 类型面在 `packages/core/src/filesystem/fff.ts`（只声明了 `Picker` 的三种搜索），`GrepOptions` / `GrepResult` 等类型没有进这层适配，接 grep 需要在 `fff.ts` 补接口、三套后端（`.bun.ts` / `.node.ts` / `.workerd.ts`）里 `.workerd.ts` 仍需保持 unavailable 降级。
 - 与已量化痛点的对应关系：`classifyDefinitions` 对"grep 命中排第 1 仅 35%"；`pageSize` + `nextCursor` 对 24% 截断；`multiGrep` 一次搜多个同义词对 45% 的多轮试探；内容索引预热对"一次给出代码块"。⇒ 这条路不需要自建切块索引（那套是 19,941 块 / 10.4s 的既有成本），也不涉及 embedding。
+
+## 字体与排版
+
+- 会话面字号/字重的唯一调节点是 packages/ui/src/styles/theme.css（:root 的 --font-size-small/-x-small/--font-weight-regular）；组件层 CSS 一律应引用 var()，勿硬编码 px。
+- 2026-10-25 起 token 值为 small=14px、x-small=12px、regular=460（针对 Windows Chromium 下思源黑体可变字体小字号发虚的问题调大），14 个会话面 CSS 已从硬编码 13px/11px/440 切到 token。
+- packages/app/src/index.css 里 IBM Plex Mono 的 @font-face（weight 400/440 两段）是字体注册，不是文本样式。
+- 终端默认字体 JetBrainsMono Nerd Font Mono 定义在 packages/app/src/settings/model.tsx（bundled woff2）。
+- 对照组 WorkBuddy（本机安装目录实测）：无内置 webfont，UI 走系统栈 PingFang SC/微软雅黑（--sc-ui-font-family，--sc-content-font-family 同栈带 emoji 兜底），等宽 ui-monospace/Menlo/Consolas、部分组件 Source Code Pro；有用户可调的字体大小滑块（--sc-font-scale）。
+- 2026-10-25 深夜：用户嫌思源黑体不如 WorkBuddy 好看，--font-family-sans 已改为 WorkBuddy 同序的系统栈（-apple-system/PingFang SC/微软雅黑优先，Noto 系降到末位兜底）。Windows 上 UI/正文实际渲染=微软雅黑；weight 460 在雅黑下回落 Regular 400（雅黑只有 300/400/700），medium 500 同理回落 400。IBM Plex Mono 等宽栈未动。bundled @fontsource Noto 仍在 index.css 里注册，作为无雅黑机器的兜底。
+
+## 过程壳与时间线
+
+- 过程壳展开动画现由 data-animating 门控（tool-renderer.tsx change() 设置，240ms 自清除；message-part.css 选择器同步）：只在用户点击折叠/展开时播放，会话打开/失败回合默认展开/流式自动展开均不播。
+- 会话打开文字跳动根因（2026-10-25）：virtualizer.tsx 冷挂载 visibility:hidden 保护仅限 pinned 会话，非 pinned（滚动停在中间）冷首开裸奔——行高先按 60px 估算渲染、ResizeObserver 实测后逐行纠正，可见区文字整体下移。修复：coldMount(=!cache) 广义门控 reveal，拆 coldRevealPending（reveal）/coldPending（pinned bottom-settle）。已 tsc 通过。

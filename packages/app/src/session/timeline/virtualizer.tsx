@@ -112,7 +112,13 @@ export function createTimelineVirtualizer(input: Input) {
   const entry = cache.get(ownerSessionKey)
   const cached = entry?.presentationKey === input.presentationKey?.() ? entry : undefined
   const initialMeasurements = cached?.measurements
-  const coldBottomMount = !initialMeasurements?.length && input.pinned()
+  // SiCode: cold mounts are hidden until the first screenful is measured, regardless of pin state.
+  // Previously only pinned (scroll-to-end) sessions were hidden; unpinned sessions scrolled to an
+  // earlier position rendered at the 60px estimate and then reflowed in view when ResizeObserver
+  // delivered real row heights — the "text jumps on first open" bug. `coldBottomMount` keeps its
+  // pinned meaning (settle to the end) while `coldMount` gates the reveal for every first open.
+  const coldMount = !initialMeasurements?.length
+  const coldBottomMount = coldMount && input.pinned()
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const patchGroupKeys = cached?.patchGroupKeys ?? new Map<string, string>()
@@ -581,7 +587,11 @@ export function createTimelineVirtualizer(input: Input) {
     })
   })
 
+  // SiCode: `coldPending` keeps its original meaning — a pinned cold mount that must settle to the
+  // bottom. `coldRevealPending` gates the visibility reveal for every uncached first open (pinned
+  // or not), so an unpinned session scrolled to an earlier position no longer reflows in view.
   let coldPending = coldBottomMount
+  let coldRevealPending = coldMount
   let settleQueued = false
   let contentObserver: MutationObserver | undefined
   let viewportObserver: ResizeObserver | undefined
@@ -611,13 +621,13 @@ export function createTimelineVirtualizer(input: Input) {
   }
 
   const settleColdBottom = () => {
-    if (!active() || !coldPending || settleQueued) return
+    if (!active() || (!coldRevealPending && !coldPending) || settleQueued) return
     settleQueued = true
     queueMicrotask(() => {
       settleQueued = false
       const root = listRoot()
 
-      if (!coldPending || !virtualContent?.isConnected || !root) return
+      if ((!coldRevealPending && !coldPending) || !virtualContent?.isConnected || !root) return
 
       if (virtualContent.querySelector(pendingMarkdown)) return
 
@@ -630,7 +640,7 @@ export function createTimelineVirtualizer(input: Input) {
       })
 
       if (pendingSizes.size || pendingMeasurements()) return
-      pinColdBottom()
+      if (coldPending) pinColdBottom()
 
       if (input.pinned() && Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > 1) return
 
@@ -647,6 +657,7 @@ export function createTimelineVirtualizer(input: Input) {
 
       if (pendingSizes.size || pendingMeasurements() || virtualContent.querySelector(pendingMarkdown)) return
       coldPending = false
+      coldRevealPending = false
       contentObserver?.disconnect()
       viewportObserver?.disconnect()
       virtualContent.style.removeProperty("visibility")
@@ -654,7 +665,7 @@ export function createTimelineVirtualizer(input: Input) {
   }
 
   onMount(() => {
-    if (!coldPending || !virtualContent) return
+    if (!coldRevealPending || !virtualContent) return
     contentObserver = new MutationObserver(settleColdBottom)
     contentObserver.observe(virtualContent, {
       childList: true,
@@ -1061,7 +1072,8 @@ export function createTimelineVirtualizer(input: Input) {
               height: `${virtualizer.getTotalSize() - rendering.scrollAdjustment}px`,
               position: "relative",
               width: "100%",
-              visibility: coldBottomMount ? "hidden" : undefined,
+              // SiCode: hidden for every cold (uncached) first open, not just pinned ones.
+              visibility: coldMount ? "hidden" : undefined,
             }}
           >
             <For each={virtualRowKeys()}>{(rowKey) => <VirtualRow rowKey={rowKey} />}</For>
@@ -1089,6 +1101,7 @@ export function createTimelineVirtualizer(input: Input) {
 
     while (cache.size > 16) cache.delete(cache.keys().next().value!)
     coldPending = false
+    coldRevealPending = false
     contentObserver?.disconnect()
     viewportObserver?.disconnect()
 

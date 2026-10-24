@@ -1,3 +1,5 @@
+/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+
 [data-component="session-websearch-dock"] {
   width: 100%;
   border: 0.5px solid var(--v2-border-border-base);
@@ -32,7 +34,7 @@
     gap: 8px;
     margin-inline-end: auto;
     color: var(--v2-text-text-base);
-    font-size: 13px;
+    font-size: var(--font-size-small);
     line-height: var(--line-height-compact);
   }
 

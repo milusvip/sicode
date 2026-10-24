@@ -1,3 +1,5 @@
+/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+
 [data-component="session-turn-rail"] {
   position: absolute;
   inset-block: 56px 12px;
@@ -115,8 +117,8 @@
   background: var(--v2-background-bg-layer-01);
   box-shadow: var(--v2-elevation-floating);
   color: var(--v2-text-text-base);
-  font-size: 13px;
-  font-weight: 440;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-base, 20px);
   letter-spacing: -0.04px;
   white-space: normal;
