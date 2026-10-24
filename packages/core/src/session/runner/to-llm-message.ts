@@ -152,7 +152,12 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
   }
 }
 
-const assistant = (message: SessionMessage.Assistant, model: Model.Ref, providerMetadataKey: string) => {
+const assistant = (
+  message: SessionMessage.Assistant,
+  model: Model.Ref,
+  providerMetadataKey: string,
+  keepReasoning: boolean,
+) => {
   const sameProvider = message.model.providerID === model.providerID
   const sameModel = sameProvider && message.model.id === model.id
   const reuseProviderMetadata = sameModel && message.error === undefined
@@ -171,18 +176,26 @@ const assistant = (message: SessionMessage.Assistant, model: Model.Ref, provider
         },
       ]
     // Let the destination adapter handle readable reasoning after a model/provider switch.
-    if (item.type === "reasoning")
+    if (item.type === "reasoning") {
+      // SiCode: see toLLMMessages. `reasoningField` only names the wire field the text arrived in,
+      // so a part carrying nothing else is plain reasoning and is not replayed. A part carrying
+      // real state (Gemini thought signature, encrypted reasoning) cannot be reconstructed and
+      // always survives.
+      const stateful = item.native !== undefined && Object.keys(item.native).some((key) => key !== "reasoningField")
+      if (!keepReasoning && !stateful) return []
+      const native = providerMetadata(providerMetadataKey, item.native)
       return reuseProviderMetadata && !reasoningInterrupted
         ? [
             {
               type: "reasoning",
               text: item.text,
-              providerMetadata: providerMetadata(providerMetadataKey, item.native),
+              providerMetadata: native,
             },
           ]
         : item.text.length > 0
           ? [{ type: message.error === undefined && !reasoningInterrupted ? "reasoning" : "text", text: item.text }]
           : []
+    }
     // Call-side metadata is model-scoped proof of generation (Gemini thought
     // signatures, OpenAI encrypted reasoning): only the producing model may
     // replay it.
@@ -237,7 +250,12 @@ const modelSwitched = (message: SessionMessage.ModelSelected, model: Model.Ref):
   return [Message.effort({ effort: to.effort, previous: from.effort })]
 }
 
-function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMetadataKey: string): Message[] {
+function toLLMMessage(
+  message: SessionMessage.Info,
+  model: Model.Ref,
+  providerMetadataKey: string,
+  keepReasoning: boolean,
+): Message[] {
   switch (message.type) {
     case "agent-switched":
     case "idle":
@@ -289,7 +307,7 @@ function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMe
         }),
       ]
     case "assistant":
-      return assistant(message, model, providerMetadataKey)
+      return assistant(message, model, providerMetadataKey, keepReasoning)
     case "compaction": {
       if (message.status !== "completed") return []
       // History selection only keeps native windows the target model can replay.
@@ -319,4 +337,16 @@ export const toLLMMessages = (
   messages: readonly SessionMessage.Info[],
   model: Model.Ref,
   providerMetadataKey: string = model.providerID,
-) => messages.flatMap((message) => toLLMMessage(message, model, providerMetadataKey))
+) => {
+  // SiCode: only the newest assistant message replays its readable reasoning.
+  //
+  // Every turn used to carry the thinking of every earlier turn, which measured at 30% of a
+  // 100K prompt in a 48-turn session, and nothing needs it: DeepSeek documents that
+  // `reasoning_content` must not be sent back, and Anthropic only requires the thinking blocks
+  // of the message it is continuing. Parts that carry provider state still survive regardless
+  // (see `assistant`), so Gemini thought signatures and encrypted reasoning stay intact.
+  const latest = messages.findLastIndex((message) => message.type === "assistant")
+  return messages.flatMap((message, index) =>
+    toLLMMessage(message, model, providerMetadataKey, message.type === "assistant" && index === latest),
+  )
+}

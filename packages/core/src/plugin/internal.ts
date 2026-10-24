@@ -17,6 +17,10 @@ import { llmClient } from "../effect/app-node-platform.js"
 import { ConfigAgentPlugin } from "../config/plugin/agent.js"
 import { ConfigCommandPlugin } from "../config/plugin/command.js"
 import { ConfigCompactionPlugin } from "../config/plugin/compaction.js"
+// SiCode: project memory, kept from compaction summaries (see config/plugin/project-memory.ts).
+import { ConfigProjectMemoryPlugin } from "../config/plugin/project-memory.js"
+// SiCode: repo map and notes index injected into every request (see config/plugin/project-map.ts).
+import { ConfigProjectMapPlugin } from "../config/plugin/project-map.js"
 import { ConfigFormatterPlugin } from "../config/plugin/formatter.js"
 import { ConfigImagePlugin } from "../config/plugin/image.js"
 import { ConfigInstructionPlugin } from "../config/plugin/instruction.js"
@@ -78,6 +82,8 @@ import { OpenCodeTools } from "../tool/plugin/opencode.js"
 import { QuestionTool } from "../tool/plugin/question.js"
 import { ReadToolFileSystem } from "../tool/read-filesystem.js"
 import { ReadTool } from "../tool/plugin/read.js"
+// SiCode: reads what compactions kept as project memory.
+import { RecallTool } from "../tool/plugin/recall.js"
 import { ShellTool } from "../tool/plugin/shell.js"
 import { SkillTool } from "../tool/plugin/skill.js"
 import { SubagentTool } from "../tool/plugin/subagent.js"
@@ -244,6 +250,7 @@ const pre = [
   McpResourceTools.Plugin,
   QuestionTool.Plugin,
   ReadTool.Plugin,
+  RecallTool.Plugin,
   ShellTool.Plugin,
   SkillTool.Plugin,
   SubagentTool.Plugin,
@@ -261,6 +268,10 @@ const post = [
   BrowserPlugin,
   ConfigCommandPlugin.Plugin,
   ConfigCompactionPlugin.Plugin,
+  // SiCode: after compaction, so a summary's facts land in project memory.
+  ConfigProjectMemoryPlugin.Plugin,
+  // SiCode: appends the repo map and notes index to every model request.
+  ConfigProjectMapPlugin.Plugin,
   ConfigFormatterPlugin.Plugin,
   ConfigImagePlugin.Plugin,
   ConfigLocationWatcherPlugin.Plugin,

@@ -87,8 +87,20 @@ function manualThinking(model: Model.Info): Overlay | undefined {
   return { settings: { thinking: { type: "enabled", budgetTokens: tokens } } }
 }
 
-const openaiChat: Protocol = (_, support) => {
+const openaiChat: Protocol = (model, support) => {
   if (support.type !== "effort") return []
+  // SiCode: an OpenAI-compatible route to a DeepSeek model ignores `reasoning_effort`, so the
+  // strength control changed nothing — measured across sessions, low, medium and the provider
+  // default all produced the same reasoning volume and the same per-turn latency. DeepSeek reads
+  // its own switch, so the "no thinking" strength sends that too. Only that one strength carries
+  // the extra field: thinking is already on by default, so enabling it would change nothing, and
+  // keeping the field off every other path leaves them byte-identical to before.
+  if (modelID(model).toLowerCase().includes("deepseek"))
+    return efforts(support.values ?? EFFORTS, (effort) =>
+      effort === "none"
+        ? { settings: { reasoningEffort: effort }, body: { thinking: { type: "disabled" } } }
+        : { settings: { reasoningEffort: effort } },
+    )
   return efforts(support.values ?? EFFORTS, (effort) => ({ settings: { reasoningEffort: effort } }))
 }
 

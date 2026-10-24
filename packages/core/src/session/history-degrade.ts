@@ -44,7 +44,9 @@ function degradeToolPart(part: unknown, tool: string) {
   if (lines.length <= MIN_LINES) return part
 
   const omitted = lines.length - HEAD_LINES - TAIL_LINES
-  const note = `[... ${omitted} lines omitted from this earlier ${tool} result; run it again if you need them ...]`
+  // SiCode: 原文是 "run it again if you need them"，等于明示模型把整个工具重跑一遍。实测同一文件
+  // 因此被读了 21 次、每次只跟读 40-110 行。改成引导它用 offset/limit 只重开需要的那一段。
+  const note = `[... ${omitted} lines omitted from this earlier ${tool} result; re-open only the range you need (for read, pass offset and limit) rather than running the whole tool again ...]`
 
   return {
     ...candidate,

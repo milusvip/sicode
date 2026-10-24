@@ -30,12 +30,34 @@ import { SessionStep } from "./step.js"
 import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
+import { NARRATE_EVERY_STEPS, NARRATE_PROMPT } from "./narrate.js"
+import { EXPLORE_BUDGET_PROMPT, EXPLORE_HARD_STEPS, EXPLORE_SOFT_PROMPT, EXPLORE_SOFT_STEPS, readOnlySteps } from "./explore-budget.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
 
 const CONTINUE_AFTER_OUTPUT_LIMIT =
   "Your last response hit the output token limit (stop reason: length). Do not apologize, recap, or repeat yourself. Break the remaining work into smaller pieces."
+
+/**
+ * Trailing assistant steps of the current turn that produced no text. A step counts as silent when
+ * its message carries tools or reasoning but no non-empty text part; the walk stops at the first
+ * step that spoke, or at the user message that opened the turn.
+ */
+function silentSteps(messages: ReadonlyArray<SessionMessage.Info>) {
+  let count = 0
+
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]!
+    if (message.type === "user") break
+    if (message.type !== "assistant") continue
+    if (message.content.some((part) => part.type === "text" && part.text.trim().length > 0)) break
+
+    count += 1
+  }
+
+  return count
+}
 
 const layer = Layer.effect(
   Service,
@@ -219,6 +241,14 @@ const layer = Layer.effect(
         }
         yield* compaction.precompute(Effect.succeed(loaded))
         const stepLimitReached = loaded.agent.info.steps !== undefined && step >= loaded.agent.info.steps
+        // Say something before the silence gets long: a turn that only speaks at the end leaves an
+        // interrupted conversation with no assistant text at all.
+        const silent = silentSteps(loaded.messages)
+        const narrate = !stepLimitReached && silent > 0 && silent % NARRATE_EVERY_STEPS === 0
+        // SiCode: 连续只读太多步就要求汇报，而不是一直读到用户放弃。硬阈值和步数上限一样收掉回合。
+        const exploring = readOnlySteps(loaded.messages)
+        const exploreHard = !stepLimitReached && exploring >= EXPLORE_HARD_STEPS
+        const exploreSoft = !stepLimitReached && !exploreHard && exploring > 0 && exploring % EXPLORE_SOFT_STEPS === 0
         const transcript = SessionModelRequest.baseTranscript({
           agent: loaded.agent.info,
           model: loaded.model,
@@ -234,9 +264,15 @@ const layer = Layer.effect(
           system: transcript.system,
           messages: stepLimitReached
             ? [...transcript.messages, Message.assistant(MAX_STEPS_PROMPT)]
-            : transcript.messages,
+            : exploreHard
+              ? [...transcript.messages, Message.assistant(EXPLORE_BUDGET_PROMPT)]
+              : narrate
+                ? [...transcript.messages, Message.system(NARRATE_PROMPT)]
+                : exploreSoft
+                  ? [...transcript.messages, Message.system(EXPLORE_SOFT_PROMPT)]
+                  : transcript.messages,
           // Keep tool definitions on the final Step to preserve the provider's cached prefix.
-          toolChoice: stepLimitReached ? "none" : undefined,
+          toolChoice: stepLimitReached || exploreHard ? "none" : undefined,
           webSocket: "session",
           inputTokens: SessionCompaction.estimatePrompt(loaded),
         })

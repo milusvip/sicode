@@ -386,14 +386,29 @@ export const layer = (options?: Options) =>
           const filepath =
             (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, "opencode.jsonc")
           const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
+          const formattingOptions = { tabSize: 2, insertSpaces: true }
           const updated = yield* Effect.try({
-            try: () =>
-              applyEdits(
-                text,
-                modify(text, ["shell"], patch.shell ?? undefined, {
-                  formattingOptions: { tabSize: 2, insertSpaces: true },
-                }),
-              ),
+            try: () => {
+              // SiCode: also patch providers so the app can create/edit/delete custom OpenAI-compatible ones.
+              // Apply edits one path at a time so a missing `providers` object is created before nested keys.
+              let next = text
+
+              if (Object.hasOwn(patch, "shell")) {
+                next = applyEdits(
+                  next,
+                  modify(next, ["shell"], patch.shell ?? undefined, { formattingOptions }),
+                )
+              }
+
+              for (const [id, value] of Object.entries(patch.providers ?? {})) {
+                next = applyEdits(
+                  next,
+                  modify(next, ["providers", id], value ?? undefined, { formattingOptions }),
+                )
+              }
+
+              return next
+            },
             catch: (cause) => new FSUtil.FileSystemError({ method: "config.update", cause }),
           })
           yield* fs.writeWithDirs(filepath, updated.endsWith("\n") ? updated : `${updated}\n`)

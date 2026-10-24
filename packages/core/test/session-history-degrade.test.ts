@@ -65,7 +65,9 @@ describe("degradeHistory", () => {
       content: [{ type: "tool", name: "shell", state: { status: "running", content: [{ type: "text", text: text(500) }] } }],
     } as unknown as SessionMessage.Info
     const messages = [...filler(2), running, ...filler(8)]
-    const result = degradeHistory(messages) as unknown as { content: Array<{ state: { content: Array<{ text: string }> } }> }
+    const result = degradeHistory(messages) as unknown as Array<{
+      content: Array<{ state: { content: Array<{ text: string }> } }>
+    }>
     expect(result[2].content[0].state.content[0].text.split("\n")).toHaveLength(500)
   })
 })

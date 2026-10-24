@@ -82,6 +82,51 @@ describe("toLLMMessages", () => {
     expect(messages.map((message) => message.id)).toEqual([id("text"), id("reasoning")])
   })
 
+  // SiCode: every turn used to replay the thinking of every earlier turn.
+  describe("reasoning replay", () => {
+    const assistant = (value: string, native?: Record<string, unknown>) =>
+      SessionMessage.Assistant.make({
+        id: id(value),
+        type: "assistant",
+        agent: build,
+        model: { id: Model.ID.make("model"), providerID: Provider.ID.make("provider") },
+        content: [
+          SessionMessage.AssistantText.make({ type: "text", text: value }),
+          SessionMessage.AssistantReasoning.make({ type: "reasoning", text: `think ${value}`, native }),
+        ],
+        time: { created, completed: created },
+      })
+    const shape = (messages: ReturnType<typeof toLLMMessages>) =>
+      messages.map((message) => (Array.isArray(message.content) ? message.content.map((part) => part.type) : []))
+
+    test("replays readable reasoning only for the newest assistant message", () => {
+      expect(shape(toLLMMessages([assistant("older"), assistant("newest")], model))).toEqual([
+        ["text"],
+        ["text", "reasoning"],
+      ])
+    })
+
+    test("keeps reasoning that carries provider state on an earlier message", () => {
+      expect(
+        shape(toLLMMessages([assistant("older", { signature: "sig_1" }), assistant("newest")], model)),
+      ).toEqual([
+        ["text", "reasoning"],
+        ["text", "reasoning"],
+      ])
+    })
+
+    // Every DeepSeek reasoning part is stamped with the wire field it arrived in. That names where
+    // the text goes back, it is not state, so treating it as state would replay everything.
+    test("drops an earlier message whose native state only names the wire field", () => {
+      expect(
+        shape(toLLMMessages([assistant("older", { reasoningField: "reasoning_content" }), assistant("newest")], model)),
+      ).toEqual([
+        ["text"],
+        ["text", "reasoning"],
+      ])
+    })
+  })
+
   test("maps every top-level Session message type", () => {
     const file = FileAttachment.make({
       data: Base64.make("aGVsbG8="),
