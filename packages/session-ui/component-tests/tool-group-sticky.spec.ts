@@ -3,7 +3,7 @@ import { expect, story } from "../../storybook/playwright/story"
 story("keeps the open Used header below the session title while scrolling", async ({ mount }) => {
   const root = await mount("current-tool-group--sticky-header", { args: { height: "720" } })
   const scroller = root.locator('[data-story="sticky-header-scroll"]')
-  const header = root.getByRole("button", { name: "Used 37 Write, Shell, Grep, Edit", exact: true })
+  const header = root.getByRole("button", { name: "Process · Write, Shell, Grep, Edit · 37 tools", exact: true })
 
   const top = (locator: typeof header) =>
     locator.evaluate((node) => {

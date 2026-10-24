@@ -504,16 +504,18 @@ story("lists recent pages on a blank tab and opens one", async ({ page }) => {
   await expect(address).toHaveValue("http://localhost:5173/settings")
 })
 
-story("adds the whole page to the session and keeps the draft when the button is pressed again", async ({ page }) => {
+story("adds the whole page to the session and keeps the draft when the item is picked again", async ({ page }) => {
   const root = page.getByTestId("browser-pane-fixture")
-  const field = root.locator('[data-component="browser-address"]')
-  const add = root.getByRole("button", { name: "Add page to session", exact: true })
-  await field.hover()
-  await add.click()
+  const options = root.getByRole("button", { name: "Browser options", exact: true })
+  const add = async () => {
+    await options.click()
+    await page.getByRole("menuitem", { name: "Add page to session", exact: true }).click()
+  }
+
+  await add()
   const editor = root.locator('[data-slot="browser-comment-editor"] textarea')
   await editor.fill("Check the header layout")
-  await field.hover()
-  await add.click()
+  await add()
   await expect(editor).toHaveValue("Check the header layout")
   await editor.press("Enter")
   await expect(root.getByTestId("fixture-comments").getByRole("listitem")).toHaveText([/: Check the header layout$/])
@@ -534,6 +536,62 @@ story("shows the page's cookies in the site information and clears them", async 
   await expect(site).toContainText("3 cookies in use")
   await site.getByRole("button", { name: "Clear", exact: true }).click()
   await expect(site).toContainText("0 cookies in use")
+})
+
+story("signs the page in by writing pasted cookies and reloading it", async ({ page }) => {
+  const root = page.getByTestId("browser-pane-fixture")
+  const paste = root.getByRole("button", { name: "Paste login cookies", exact: true })
+  // The entry sits with the page's tools, not inside the address field.
+  await expect(root.locator('[data-component="browser-address"] [aria-label="Paste login cookies"]')).toHaveCount(0)
+  await paste.click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toContainText("Sign in with cookies")
+  // The paste names the site it is written for, and the field takes focus ready for it.
+  await expect(dialog).toContainText("alpha.example")
+  const input = dialog.locator('[data-slot="browser-cookies-input"]')
+  await expect(input).toBeFocused()
+  await expect(dialog.getByRole("button", { name: "Write and reload", exact: true })).toBeDisabled()
+
+  await input.fill("session=abc; token=xyz")
+  await input.press("ControlOrMeta+Enter")
+  await expect(dialog).toHaveCount(0)
+
+  // Main wrote both cookies for the page's site, so site information counts them.
+  await root.getByRole("button", { name: "Site information", exact: true }).click()
+  await expect(page.getByRole("dialog")).toContainText("2 cookies in use")
+})
+
+story("closes the login paste on cancel and offers it on a blank tab too", async ({ page }) => {
+  const root = page.getByTestId("browser-pane-fixture")
+  const paste = root.getByRole("button", { name: "Paste login cookies", exact: true })
+  await paste.click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+
+  // A blank tab has no site to name, so the paste has to carry its own domains.
+  await root.getByRole("button", { name: "Blank page", exact: true }).click()
+  await paste.click()
+  await expect(page.getByRole("dialog")).toContainText("No page open")
+  await expect(page.getByRole("dialog")).toContainText("must name its own domain")
+})
+
+story("searches with the engine picked in the browser options", async ({ page }) => {
+  const root = page.getByTestId("browser-pane-fixture")
+  const address = root.getByRole("combobox", { name: "Browser address", exact: true })
+  const options = root.getByRole("button", { name: "Browser options", exact: true })
+
+  await address.fill("color format")
+  await address.press("Enter")
+  await expect(address).toHaveValue("https://www.google.com/search?q=color%20format")
+
+  await options.click()
+  await page.getByRole("menuitem", { name: "Search engine", exact: true }).click()
+  await page.getByRole("menuitemradio", { name: "Bing", exact: true }).click()
+
+  await address.fill("color format")
+  await address.press("Enter")
+  await expect(address).toHaveValue("https://www.bing.com/search?q=color%20format")
 })
 
 story("zooms the page from the browser options in view and keeps its zoom in the address field", async ({ page }) => {

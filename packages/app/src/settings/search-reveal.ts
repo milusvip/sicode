@@ -25,7 +25,7 @@ export function revealSettingsSearch(root: HTMLElement, view: SettingsView) {
     const panel = root.querySelector<HTMLElement>(".settings-panel:not([hidden])")
 
     const control = panel?.querySelector<HTMLElement>(
-      view.target ? `[data-action="${CSS.escape(view.target)}"]` : ".settings-tab-header-row, .settings-about-intro",
+      view.target ? `[data-action="${CSS.escape(view.target)}"]` : ".settings-tab-header-row, .settings-about-brand",
     )
 
     if (!panel || !control || !control.getClientRects().length) return false

@@ -252,6 +252,24 @@ export function createTimelineController(input: { session: TimelineSessionSource
     }
   }
 
+  const copyID = async (id: string) => {
+    try {
+      await (platform.writeClipboardText?.(id) ?? navigator.clipboard.writeText(id))
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("common.copied"),
+        description: id,
+      })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("toast.session.copyID.failed.title"),
+        description: error instanceof Error ? error.message : language.t("toast.session.copyID.failed.description"),
+      })
+    }
+  }
+
   const remove = async (id: string) => {
     const session = data.session.get(id)
 
@@ -341,6 +359,7 @@ export function createTimelineController(input: { session: TimelineSessionSource
     action: {
       rename,
       export: exportSession,
+      copyID,
       showDelete: (id: string) => dialog.show(() => <DeleteDialog sessionID={id} />),
       navigateParent: () => {
         const id = input.session.data.parentID()

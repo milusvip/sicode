@@ -5,10 +5,171 @@ const decodeInput = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Reco
 
 const empty = {}
 
+const whitespace = /\s/
+
+/**
+ * Reads the arguments a streaming tool call has written so far. `JSON.parse` only accepts a finished
+ * object, so a running edit had no path and no line counts until its arguments stopped arriving — the
+ * row sat there as a bare "编辑". Values still being written come back as they stand, which is what lets
+ * the counts climb while the model types.
+ */
+export function partialToolInput(raw: string): Record<string, unknown> {
+  const input: Record<string, unknown> = {}
+  let at = 0
+
+  const skip = () => {
+    while (at < raw.length && whitespace.test(raw[at]!)) at++
+  }
+
+  const readString = () => {
+    at++
+    let value = ""
+
+    while (at < raw.length) {
+      const char = raw[at]!
+
+      if (char === "\\") {
+        const escape = raw[at + 1]
+
+        if (escape === undefined) {
+          at = raw.length
+
+          break
+        }
+
+        if (escape === "u") {
+          const code = raw.slice(at + 2, at + 6)
+
+          if (code.length < 4) {
+            at = raw.length
+
+            break
+          }
+
+          value += String.fromCharCode(Number.parseInt(code, 16) || 0)
+          at += 6
+
+          continue
+        }
+
+        value += escape === "n" ? "\n" : escape === "t" ? "\t" : escape === "r" ? "\r" : escape
+        at += 2
+
+        continue
+      }
+
+      if (char === '"') {
+        at++
+
+        return value
+      }
+
+      value += char
+      at++
+    }
+
+    return value
+  }
+
+  // Nested values are rare in tool arguments; take the slice when it is already balanced, else stop.
+  const readNested = () => {
+    const start = at
+    const opening = raw[at]
+    const closing = opening === "{" ? "}" : "]"
+    let depth = 0
+    let quoted = false
+
+    while (at < raw.length) {
+      const char = raw[at]!
+
+      if (quoted) {
+        if (char === "\\") at++
+        else if (char === '"') quoted = false
+      } else if (char === '"') quoted = true
+      else if (char === opening) depth++
+      else if (char === closing && --depth === 0) {
+        at++
+
+        try {
+          return { done: true, value: JSON.parse(raw.slice(start, at)) as unknown }
+        } catch {
+          return { done: true, value: undefined }
+        }
+      }
+
+      at++
+    }
+
+    return { done: false, value: undefined }
+  }
+
+  const readLiteral = () => {
+    const start = at
+
+    while (at < raw.length && !/[\s,}\]]/.test(raw[at]!)) at++
+
+    const token = raw.slice(start, at)
+
+    if (token === "true") return { done: true, value: true }
+    if (token === "false") return { done: true, value: false }
+    if (token === "null") return { done: true, value: null }
+    const number = Number(token)
+
+    return Number.isFinite(number) && token.length > 0 ? { done: true, value: number } : { done: false, value: undefined }
+  }
+
+  skip()
+  if (raw[at] !== "{") return input
+  at++
+
+  for (;;) {
+    skip()
+    if (raw[at] !== '"') break
+
+    const key = readString()
+
+    skip()
+    if (raw[at] !== ":") break
+    at++
+    skip()
+
+    const char = raw[at]
+
+    if (char === '"') {
+      // A value still being written is kept: that is the text the counts are drawn from.
+      input[key] = readString()
+    } else if (char === "{" || char === "[") {
+      const nested = readNested()
+      if (!nested.done) break
+      input[key] = nested.value
+    } else {
+      const literal = readLiteral()
+      if (!literal.done) break
+      input[key] = literal.value
+    }
+
+    skip()
+
+    if (raw[at] === ",") {
+      at++
+
+      continue
+    }
+
+    break
+  }
+
+  return input
+}
+
 export function currentToolInput(tool: SessionMessageAssistantTool): Record<string, unknown> {
   if (tool.state.status !== "streaming") return tool.state.input
 
-  return Option.getOrElse(decodeInput(tool.state.input), () => empty)
+  const raw = tool.state.input
+
+  if (typeof raw !== "string") return raw
+
+  return Option.getOrElse(decodeInput(raw), () => partialToolInput(raw))
 }
 
 export function currentToolMetadata(tool: SessionMessageAssistantTool): Record<string, unknown> {
@@ -42,6 +203,17 @@ export function currentToolFailed(tool: SessionMessageAssistantTool) {
     (tool.name === "execute" && executeToolFailed(currentToolMetadata(tool))) ||
     (tool.name === "shell" && tool.state.status === "completed" && shellResultFailed(currentToolMetadata(tool)))
   )
+}
+
+/**
+ * Status the row should paint with. A shell that exits non-zero stays `completed` at the tool level,
+ * so the row used to render a failing test run exactly like a passing one.
+ */
+export function currentToolStatus(tool: SessionMessageAssistantTool) {
+  if (tool.name === "shell" && tool.state.status === "completed" && shellResultFailed(currentToolMetadata(tool)))
+    return "error"
+
+  return tool.state.status
 }
 
 export function shellResultFailed(metadata: Record<string, unknown>) {

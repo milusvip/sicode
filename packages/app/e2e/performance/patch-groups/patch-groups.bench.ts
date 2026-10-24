@@ -5,7 +5,7 @@ for (const scenario of ["complete", "partial", "chained", "multi", "direct"]) {
     await page.goto(`/?scenario=${scenario}`)
     await expect(page.getByRole("button", { name: "Mount tools", exact: true })).toBeEnabled()
     await page.evaluate(() => document.fonts.ready)
-    expect(await page.evaluate(() => document.fonts.check('13px "Inter"'))).toBe(true)
+    expect(await page.evaluate(() => document.fonts.check('13px "思源黑体"') || document.fonts.check('13px "Noto Sans SC Variable"'))).toBe(true)
 
     const shape = await page.evaluate(() => {
       const { grouping, ...shape } = window.patchBenchmark

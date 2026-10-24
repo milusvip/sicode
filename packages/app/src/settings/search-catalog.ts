@@ -20,7 +20,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
   { tab: "appearance", label: "settings.general.section.appearance" },
   { tab: "notifications", label: "settings.tab.notifications" },
   { tab: "shortcuts", label: "settings.shortcuts.title", keywords: "keybind keyboard hotkey" },
-  { tab: "about", label: "settings.tab.about", keywords: "version license credits" },
+  { tab: "about", label: "settings.tab.about", keywords: "version license upstream opencode sicode" },
   { tab: "general", label: "settings.general.row.language.title", target: "settings-language" },
   {
     tab: "general",
@@ -86,6 +86,12 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     keywords: "dark mode light mode system",
   },
   { tab: "appearance", label: "settings.general.row.theme.title", target: "settings-theme" },
+  {
+    tab: "appearance",
+    label: "settings.appearance.row.sessionWidth.title",
+    target: "settings-session-width",
+    keywords: "conversation width timeline composer session",
+  },
   {
     tab: "appearance",
     label: "settings.general.row.uiFont.title",

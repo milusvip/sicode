@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { addressParts, resolveAddress } from "./address"
+import { addressParts, connection, resolveAddress, SEARCH_ENGINES, searchQuery } from "./address"
 import { remember, suggest } from "./history"
 
 test("the address field navigates to what reads as an address and searches for anything else", () => {
@@ -32,7 +32,7 @@ test("the address field navigates to what reads as an address and searches for a
       "user@example.com",
       ":8080",
       "error: cannot find module",
-    ].map(resolveAddress),
+    ].map((input) => resolveAddress(input)),
   ).toEqual([
     "about:blank",
     "https://example.com/a b",
@@ -58,6 +58,29 @@ test("the address field navigates to what reads as an address and searches for a
     search(":8080"),
     search("error: cannot find module"),
   ])
+})
+
+test("HTTPS with an accepted untrusted certificate reads as insecure in site information", () => {
+  expect(connection("https://self-signed.example/")).toBe("secure")
+  expect(connection("https://self-signed.example/", { certificateWarning: true })).toBe("insecure")
+  expect(connection("http://localhost:3000/")).toBe("local")
+  expect(connection("http://example.com/")).toBe("insecure")
+})
+
+test("text that is not an address searches with the chosen engine, Google by default", () => {
+  const bing = SEARCH_ENGINES.find((engine) => engine.id === "bing")
+  const baidu = SEARCH_ENGINES.find((engine) => engine.id === "baidu")
+
+  expect(SEARCH_ENGINES[0].id).toBe("google")
+  expect(resolveAddress("css grid gap")).toBe("https://www.google.com/search?q=css%20grid%20gap")
+  expect(bing && resolveAddress("css grid gap", bing)).toBe("https://www.bing.com/search?q=css%20grid%20gap")
+  expect(baidu && resolveAddress("css grid gap", baidu)).toBe("https://www.baidu.com/s?wd=css%20grid%20gap")
+  // An address never searches, whichever engine is chosen.
+  expect(bing && resolveAddress("developer.mozilla.org", bing)).toBe("developer.mozilla.org")
+  // A search URL names the query it carries, and only for its own engine.
+  expect(bing && searchQuery(bing, "https://www.bing.com/search?q=css%20grid%20gap")).toBe("css grid gap")
+  expect(bing && searchQuery(bing, "https://www.google.com/search?q=css")).toBeUndefined()
+  expect(bing && searchQuery(bing, "https://www.bing.com/search?q=%E0%A4%A")).toBe("%E0%A4%A")
 })
 
 test("the field draws the whole URL, split around its host, in exactly the input's characters", () => {

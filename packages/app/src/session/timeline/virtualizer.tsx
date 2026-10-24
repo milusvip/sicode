@@ -8,7 +8,15 @@ import {
 } from "@tanstack/solid-virtual"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@opencode/ui/scroll-view"
 import { Predicate } from "effect"
-import { Timeline, TimelineRow } from "@opencode/session-ui/timeline/projection"
+import {
+  filterCollapsedWorkShellRows,
+  openWorkShellOnly,
+  Timeline,
+  TimelineRow,
+  WorkShellHead,
+  workShellDefaultOpen,
+  workShellDisclosureKey,
+} from "@opencode/session-ui/timeline/projection"
 import { useLanguage } from "@/runtime/i18n/language"
 import {
   batch,
@@ -80,6 +88,11 @@ type Input = {
   setScrollToEnd?: (fn: () => void) => void
   /** A tool call the route asks this timeline to open on; `done` clears it once revealed. */
   reveal?: { target: () => string | undefined; done: () => void }
+  /** When false, a running work shell paints as disconnected on the floating pin. */
+  connected?: Accessor<boolean>
+  /** Horizontal padding for the floating work-shell pin (matches timeline turn padding). */
+  workShellPinClass?: Accessor<string>
+  centered?: Accessor<boolean>
 }
 
 type ViewProps = {
@@ -118,8 +131,33 @@ export function createTimelineVirtualizer(input: Input) {
     anchor?: { key: string; partID: string }
   }>({ initialTail: coldBottomMount, scrollAdjustment: 0 })
 
-  const rows = input.projection.rows
+  // A turn's overview bar is open when the user stored a choice for it, else when its status opens by
+  // default (a live, failed or disconnected turn). Kept as one reader so the rows and the floating pin
+  // never disagree about whether a shell is expanded.
+  const workShellOpen = (userMessageID: string, status: TimelineRow.WorkShell["status"]) => {
+    const stored = toolOpen[workShellDisclosureKey(userMessageID)]
+    if (stored !== undefined) return stored
+    return workShellDefaultOpen(status)
+  }
+
+  const rows = createMemo(() =>
+    filterCollapsedWorkShellRows(input.projection.rows(), workShellOpen),
+  )
   const rowByKey = input.projection.rowByKey
+
+  // Absolute VirtualRows break CSS sticky — the overview bar is re-rendered as a floating copy once
+  // its own head scrolls under the top inset. Any turn qualifies, not just the live one: scrolling
+  // back through a finished turn keeps its "已完成 N 个工具" bar as the section header.
+  const stickyInset = () => (input.showHeader() ? 48 : isDesktop() ? 0 : 16)
+  const [stuckShellID, setStuckShellID] = createSignal<string | undefined>(undefined)
+
+  const stuckWorkShell = createMemo(() => {
+    const id = stuckShellID()
+    if (!id) return undefined
+    return input.projection
+      .rows()
+      .find((row): row is TimelineRow.WorkShell => Predicate.isTagged(row, "WorkShell") && row.userMessageID === id)
+  })
 
   const rowKeys = createMemo(() => rows().map(TimelineRow.key), undefined, {
     equals: (previous, next) => previous.length === next.length && previous.every((key, index) => key === next[index]),
@@ -142,7 +180,8 @@ export function createTimelineVirtualizer(input: Input) {
 
   const rangeExtractor = createMemo(() => {
     const id = input.projection.activeMessageID()
-    const active = id ? (input.projection.messageLastRowIndex().get(id) ?? -1) : -1
+    const visible = rows()
+    const active = id ? visible.findLastIndex((row) => row.userMessageID === id) : -1
     const initialTail = rendering.initialTail && input.pinned()
     const anchored = rendering.anchor ? rowKeys().indexOf(rendering.anchor.key) : -1
 
@@ -152,7 +191,7 @@ export function createTimelineVirtualizer(input: Input) {
       const start = Math.max(0, range.startIndex - 2)
 
       const boundary = initialTail
-        ? rows()
+        ? visible
             .slice(start, range.count)
             .findLastIndex(
               (row) =>
@@ -522,11 +561,17 @@ export function createTimelineVirtualizer(input: Input) {
           )
         : -1
 
-      const index = partIndex >= 0 ? partIndex : input.projection.messageRowIndex().get(id)
+      // Index into the rows this virtualizer actually renders: `projection.messageRowIndex` counts the
+      // unfiltered projection, so every row a collapsed shell hides shifted the jump downwards — the
+      // turn opened past its bubble instead of on it.
+      const index =
+        partIndex >= 0
+          ? partIndex
+          : rows().findIndex((row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === id)
 
-      if (index === undefined) return
+      if (index < 0) return
       prepareNavigation()
-      virtualizer.scrollToIndex(index, { align: "center" })
+      virtualizer.scrollToIndex(index, { align: "start" })
     })
     input.setScrollToEnd?.(() => {
       if (!active() || !listRoot()?.isConnected) return
@@ -754,6 +799,46 @@ export function createTimelineVirtualizer(input: Input) {
     if (upwardKeys.has(key)) input.onUnpin()
   }
 
+  function syncWorkShellSticky() {
+    const root = listRoot()
+    const all = rows()
+    if (!root) {
+      setStuckShellID(undefined)
+      return
+    }
+
+    const edge = root.scrollTop + stickyInset()
+    let stuck: string | undefined
+
+    for (let index = 0; index < all.length; index++) {
+      const row = all[index]!
+      if (!Predicate.isTagged(row, "WorkShell")) continue
+      // A collapsed shell is one summary line the reader has already read: it scrolls away with the
+      // turn instead of hovering over the tools and the answer below it.
+      if (!workShellOpen(row.userMessageID, row.status)) continue
+
+      const head = virtualizer.measurementsCache[index]
+      if (!head) continue
+      // Rows are ordered, so nothing further down can contain the edge.
+      if (edge < head.start) break
+
+      // Stick through the whole turn — its tools and the reply under them — so the bar keeps saying
+      // which turn the reader is in.
+      let end = head.end
+      for (let next = index + 1; next < all.length; next++) {
+        const member = all[next]!
+        if (Predicate.isTagged(member, "UserMessage") || Predicate.isTagged(member, "WorkShell")) break
+        if (member.userMessageID !== row.userMessageID) break
+        const item = virtualizer.measurementsCache[next]
+        if (item) end = item.end
+      }
+
+      if (edge >= head.start && edge + head.size < end) stuck = row.userMessageID
+    }
+
+    setStuckShellID(stuck)
+  }
+
   // Following resumes by arriving at the end, either by scrolling there or by content shrinking
   // under a viewport that was already there. Merely resting near the end is not enough, otherwise
   // a later scroll would overwrite an upward intent expressed a pixel short of the bottom.
@@ -773,7 +858,16 @@ export function createTimelineVirtualizer(input: Input) {
     settleColdBottom()
     input.onScheduleScrollState(root)
     input.onHistoryScroll()
+    syncWorkShellSticky()
   }
+
+  createEffect(() => {
+    rows()
+    virtualizer.getTotalSize()
+    listRoot()
+    stickyInset()
+    syncWorkShellSticky()
+  })
 
   function View(props: ViewProps) {
     function VirtualRow(rowProps: { rowKey: string }) {
@@ -793,17 +887,33 @@ export function createTimelineVirtualizer(input: Input) {
         queueMicrotask(() => virtualizer.measureElement(null))
       })
 
+      // Process chains draw rail stubs between tool rows; clip would shave them off.
+      const current = row()
+      const clip =
+        Predicate.isTagged(current, "AssistantPart") &&
+        (current.group.type === "context" || current.group.type === "read" || current.group.type === "file")
+          ? "visible"
+          : "clip"
+
       return (
         <div
           data-timeline-key={rowProps.rowKey}
+          /* The floating copy replaces this row's own head; hiding it by row keeps every other
+             turn's bar intact (the old selector hid every head with a pinned status). */
+          data-work-shell-pinned={
+            Predicate.isTagged(current, "WorkShell") && stuckWorkShell()?.userMessageID === current.userMessageID
+              ? "true"
+              : undefined
+          }
           style={{
             position: "absolute",
             top: `${item().start - topOffset() - rendering.scrollAdjustment}px`,
             left: "0",
             width: "100%",
             height: `${item().size}px`,
-            overflow: "clip",
-            "overflow-clip-margin": Predicate.isTagged(row(), "TurnGap") ? undefined : "0.5px",
+            overflow: clip,
+            "overflow-clip-margin":
+              clip === "clip" && !Predicate.isTagged(current, "TurnGap") ? "0.5px" : undefined,
           }}
         >
           <div
@@ -881,8 +991,51 @@ export function createTimelineVirtualizer(input: Input) {
             </svg>
           </button>
         </div>
+        {/* Keyed on the turn id: scrolling from one turn into the next swaps the pinned bar, and a
+            fresh mount is what lets the CSS fade it in instead of cutting to a different label. */}
+        <Show when={stuckShellID()} keyed>
+          <Show when={stuckWorkShell()}>
+            {(shell) => {
+              const key = () => workShellDisclosureKey(shell().userMessageID)
+              const status = () => {
+                if (shell().status === "running" && input.connected && !input.connected()) return "disconnected" as const
+                return shell().status
+              }
+              const open = () => workShellOpen(shell().userMessageID, status())
+
+              return (
+              <div
+                data-slot="work-shell-pin"
+                class="absolute left-0 right-0 z-[22] pointer-events-none"
+                style={{ top: `${stickyInset()}px` }}
+              >
+                <div
+                  class={`pointer-events-auto min-w-0 w-full max-w-full ${input.workShellPinClass?.() ?? ""}`}
+                  classList={{ "md:max-w-session md:mx-auto": input.centered?.() }}
+                >
+                  <WorkShellHead
+                    status={status()}
+                    startedAt={shell().startedAt}
+                    endedAt={shell().endedAt}
+                    toolCount={shell().toolCount}
+                    failedCount={shell().failedCount}
+                    hasReply={shell().hasReply}
+                    open={open()}
+                    onToggle={() => {
+                      const next = !open()
+                      if (next) openWorkShell(shell().userMessageID)
+                      else setToolOpen(key(), next)
+                    }}
+                  />
+                </div>
+              </div>
+              )
+            }}
+          </Show>
+        </Show>
         <ScrollView
           data-slot="session-timeline-scroll"
+          data-work-shell-pinned={stuckWorkShell()?.userMessageID}
           viewportRef={bindListRoot}
           onBeforeScroll={prepareNavigation}
           verticalScrollAdjustment={rendering.scrollAdjustment}
@@ -946,11 +1099,33 @@ export function createTimelineVirtualizer(input: Input) {
     }
   })
 
+  /**
+   * Open one turn's overview bar and close the rest. Closing a long span above the clicked bar
+   * removes its height, which would fling the bar the user just clicked off screen — so the clicked
+   * row is re-anchored to the same viewport position once the row set settles.
+   */
+  function openWorkShell(userMessageID: string) {
+    const root = listRoot()
+    const row = root?.querySelector<HTMLElement>(`[data-timeline-key="work-shell:${userMessageID}"]`)
+    const before = row?.getBoundingClientRect().top
+
+    openWorkShellOnly(input.projection.rows(), { set: (key, value) => setToolOpen(key, value) }, userMessageID)
+    setToolOpen(workShellDisclosureKey(userMessageID), true)
+
+    if (!row || before === undefined) return
+
+    requestAnimationFrame(() => {
+      const delta = row.getBoundingClientRect().top - before
+      if (root && Math.abs(delta) > 1) root.scrollTop += delta
+    })
+  }
+
   return {
     disclosure: {
       patchGroupKeys,
       value: (key: string) => toolOpen[key],
       set: (key: string, open: boolean) => setToolOpen(key, open),
+      openWorkShell,
     },
     revealPart,
     View,

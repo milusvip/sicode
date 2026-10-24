@@ -420,39 +420,263 @@
         color: var(--text);
       }
 
-      .turn {
-        display: flex;
-        gap: 10px;
-      }
-
-      .turn-mark {
-        flex: 0 0 20px;
-        width: 20px;
-        height: 20px;
-        border-radius: 5px;
-        margin-top: 2px;
-      }
-
-      .turn-body {
+      /* SiCode AssistantTextContent → [data-component="text-part"]
+         Text parts stay outside .process (timeline siblings). Process only wraps a contiguous tool run.
+         Copy/meta only on the part that would get showAssistantCopyPartID. */
+      .text-part {
+        width: 100%;
         min-width: 0;
-        flex: 1;
-        font-size: 13px;
-        line-height: 1.72;
-        color: var(--muted);
       }
 
-      .turn-body strong {
+      .text-part-body {
+        font-size: 13px;
+        line-height: 20px;
+        letter-spacing: -0.04px;
+        color: var(--text);
+      }
+
+      .text-part-body strong {
         color: var(--text);
         font-weight: 550;
       }
 
-      /* ---------- process shell（整段过程可收起） ---------- */
+      .text-part-actions {
+        min-height: 24px;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 120ms ease;
+      }
+
+      .text-part:hover .text-part-actions,
+      .text-part:focus-within .text-part-actions {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .text-part-copy {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+      }
+
+      .text-part-copy:hover {
+        background: var(--hover);
+        color: var(--muted);
+      }
+
+      .text-part-copy svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .text-part-meta {
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--faint);
+        user-select: none;
+      }
+
+      /* ---------- 总壳：一段工作的外层；顶栏左「工作中」右秒数；收起后过程都收进顶栏 ---------- */
+
+      .work-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin: 2px 0;
+      }
+
+      .work-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 30px;
+        padding: 6px 8px 6px 4px;
+        border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--panel) 70%, transparent);
+        color: inherit;
+        font: inherit;
+        text-align: start;
+        cursor: pointer;
+      }
+
+      .work-head:hover {
+        background: var(--hover);
+      }
+
+      .work-shell[data-status="running"] .work-head {
+        border-color: color-mix(in srgb, var(--line) 80%, transparent);
+      }
+
+      .work-shell[data-status="error"] .work-head,
+      .work-shell[data-status="disconnected"] .work-head {
+        border-color: color-mix(in srgb, var(--err) 35%, transparent);
+      }
+
+      .w-ind {
+        flex: 0 0 19px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+      }
+
+      .w-ind > * {
+        display: none;
+        grid-area: 1 / 1;
+      }
+
+      .work-shell[data-status="running"] .w-ind .w-ic-running,
+      .work-shell[data-status="done"] .w-ind .w-ic-done,
+      .work-shell[data-status="disconnected"] .w-ind .w-ic-disconnected,
+      .work-shell[data-status="interrupted"] .w-ind .w-ic-interrupted,
+      .work-shell[data-status="error"] .w-ind .w-ic-error {
+        display: grid;
+        place-items: center;
+      }
+
+      .w-ind svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .w-ind .spinner {
+        width: 12px;
+        height: 12px;
+      }
+
+      .work-shell[data-status="running"] .w-ind {
+        color: var(--text);
+      }
+
+      .work-shell[data-status="done"] .w-ind {
+        color: var(--add-fg);
+      }
+
+      .work-shell[data-status="disconnected"] .w-ind,
+      .work-shell[data-status="error"] .w-ind {
+        color: var(--err);
+      }
+
+      .work-shell[data-status="interrupted"] .w-ind {
+        color: var(--muted);
+      }
+
+      .w-title {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 12.5px;
+        color: var(--faint);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .w-title > [data-for] {
+        display: none;
+      }
+
+      .work-shell[data-status="running"] .w-title > [data-for="running"],
+      .work-shell[data-status="done"] .w-title > [data-for="done"],
+      .work-shell[data-status="disconnected"] .w-title > [data-for="disconnected"],
+      .work-shell[data-status="interrupted"] .w-title > [data-for="interrupted"],
+      .work-shell[data-status="error"] .w-title > [data-for="error"] {
+        display: inline;
+      }
+
+      .work-shell[data-status="running"] .w-title {
+        color: var(--text);
+      }
+
+      .work-shell[data-status="error"] .w-title,
+      .work-shell[data-status="disconnected"] .w-title {
+        color: color-mix(in srgb, var(--err) 85%, var(--text));
+      }
+
+      .w-meta {
+        flex: 0 0 auto;
+        margin-inline-start: auto;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--faint);
+        opacity: 0.85;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .w-chev {
+        flex: 0 0 12px;
+        display: grid;
+        place-items: center;
+        color: var(--faint);
+        opacity: 0.75;
+        transition: transform 200ms ease;
+      }
+
+      .w-chev svg {
+        width: 11px;
+        height: 11px;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        fill: none;
+      }
+
+      .work-shell[data-open="true"] .w-chev {
+        transform: rotate(90deg);
+      }
+
+      .work-body {
+        display: grid;
+        grid-template-rows: 1fr;
+        transition: grid-template-rows 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .work-shell[data-open="false"] .work-body {
+        grid-template-rows: 0fr;
+      }
+
+      .work-body > .work-inner {
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 4px 0 2px;
+      }
+
+      /* ---------- process：总壳内的一段连续工具（可再收起） ---------- */
+
+      .process {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
 
       .process-head {
         display: flex;
         align-items: center;
         gap: 8px;
         width: 100%;
+        min-height: 26px;
         padding: 3px 6px 3px 0;
         border: 0;
         border-radius: 6px;
@@ -486,6 +710,8 @@
       }
 
       .p-title {
+        flex: 1 1 auto;
+        min-width: 0;
         font-size: 12.5px;
         color: var(--faint);
         white-space: nowrap;
@@ -495,14 +721,15 @@
 
       .p-meta {
         flex: 0 0 auto;
+        margin-inline-start: auto;
         font-family: var(--mono);
         font-size: 10px;
         color: var(--faint);
-        opacity: 0.8;
+        opacity: 0.85;
+        font-variant-numeric: tabular-nums;
       }
 
       .p-chev {
-        margin-inline-start: auto;
         flex: 0 0 12px;
         display: grid;
         place-items: center;
@@ -526,10 +753,6 @@
       .process[data-open="true"] .p-closed,
       .process[data-open="false"] .p-open {
         display: none;
-      }
-
-      .process[data-open="false"] .process-head {
-        padding-block: 5px;
       }
 
       .process-body {
@@ -578,24 +801,34 @@
       /* ---------- tool chain ---------- */
 
       .chain {
+        /* .ind is 19px wide; row min-height drives vertical center. Rail threads icon centers. */
+        --ind-col: 19px;
+        --row-min: 28px;
+        --rail-x: calc(var(--ind-col) / 2);
+        --rail-y: calc(var(--row-min) / 2);
         position: relative;
         display: flex;
         flex-direction: column;
         gap: 1px;
       }
 
-      .chain::before {
-        content: "";
-        position: absolute;
-        inset-block: 8px;
-        left: 9px;
-        width: 1px;
-        background: var(--rail);
-        opacity: 0.6;
-      }
-
       .tool {
         position: relative;
+      }
+
+      /* Segment per tool: this icon center → next icon center. Last tool has no stub into its body. */
+      .tool:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        left: var(--rail-x);
+        top: var(--rail-y);
+        bottom: calc(var(--rail-y) * -1);
+        width: 1px;
+        transform: translateX(-50%);
+        background: var(--rail);
+        opacity: 0.6;
+        pointer-events: none;
+        z-index: 0;
       }
 
       .row {
@@ -891,6 +1124,7 @@
 
       .reason-text {
         position: relative;
+        z-index: 1;
         padding: 2px 0 4px 19px;
         font-size: 12.5px;
         line-height: 1.76;
@@ -900,10 +1134,11 @@
       .reason-text::before {
         content: "";
         position: absolute;
-        left: 9px;
+        left: var(--rail-x, calc(19px / 2));
         top: 6px;
-        bottom: 8px;
+        bottom: 2px;
         width: 2px;
+        transform: translateX(-50%);
         border-radius: 2px;
         background: linear-gradient(var(--rail), transparent);
       }
@@ -916,8 +1151,12 @@
         margin: 0;
       }
 
+      /* Mask the chain rail through thinking bodies; only the fading accent shows. */
       .tool[data-kind="reason"] .body-pad {
+        position: relative;
+        z-index: 1;
         padding: 0;
+        background: var(--bg);
       }
 
       .tool[data-kind="reason"] .title {
@@ -1162,14 +1401,14 @@
           font-size: 12.5px;
         }
 
-        .turn-body {
+        .text-part-body {
           font-size: 12.5px;
+          line-height: 18px;
         }
 
-        .turn-mark {
-          width: 17px;
-          height: 17px;
-          flex-basis: 17px;
+        .text-part-actions {
+          opacity: 0.85;
+          pointer-events: auto;
         }
 
         .arg .path {
@@ -1180,22 +1419,21 @@
           min-height: 38px;
         }
 
+        .chain {
+          --row-min: 38px;
+        }
+
         .chev {
           opacity: 0.55;
         }
 
         .body-pad {
-          padding-left: 15px;
+          padding-left: 19px;
         }
 
         .reason-text {
-          padding-left: 15px;
+          padding-left: 19px;
           font-size: 12px;
-        }
-
-        .reason-text::before,
-        .chain::before {
-          left: 7px;
         }
 
         pre.code,
@@ -1225,12 +1463,14 @@
           font-size: 11.5px;
         }
 
-        .p-title {
+        .p-title,
+        .w-title {
           font-size: 11.5px;
         }
 
-        .p-meta {
-          display: none;
+        .p-meta,
+        .w-meta {
+          font-size: 9.5px;
         }
 
         .demo {
@@ -1291,6 +1531,18 @@
       <symbol id="i-check" viewBox="0 0 16 16">
         <path d="m3.4 8.4 3 3 6.2-6.6" />
       </symbol>
+      <symbol id="i-unlink" viewBox="0 0 16 16">
+        <path d="M6.5 9.5 4.2 11.8a2.3 2.3 0 1 1-3.25-3.25L3.2 6.3" />
+        <path d="M9.5 6.5 11.8 4.2a2.3 2.3 0 1 1 3.25 3.25L12.8 9.7" />
+        <path d="M2.5 2.5 13.5 13.5" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 16 16">
+        <rect x="4" y="4" width="8" height="8" rx="1.2" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 16 16">
+        <path d="M8 2.8 14.2 13.2H1.8L8 2.8Z" />
+        <path d="M8 6.4v3.2M8 11.4h.01" />
+      </symbol>
       <symbol id="i-list" viewBox="0 0 16 16">
         <path d="M6 4.2h7M6 8h7M6 11.8h7M3 4.2h.01M3 8h.01M3 11.8h.01" />
       </symbol>
@@ -1305,6 +1557,10 @@
       </symbol>
       <symbol id="i-sliders" viewBox="0 0 16 16">
         <path d="M2.6 5h10.8M2.6 11h10.8M5.6 3v4M10.4 9v4" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 16 16">
+        <rect x="5.2" y="5.2" width="7.2" height="7.2" rx="1.2" />
+        <path d="M3.6 10.8V3.6A1.2 1.2 0 0 1 4.8 2.4h7.2" />
       </symbol>
       <symbol id="i-close" viewBox="0 0 10 10">
         <path d="M2.4 2.4l5.2 5.2M7.6 2.4L2.4 7.6" />
@@ -1321,7 +1577,8 @@
       <button data-scene="brand" aria-pressed="true">品牌改造</button>
       <button data-scene="fix" aria-pressed="false">构建报错</button>
       <span class="sep"></span>
-      <button id="collapse">收起过程</button>
+      <button id="collapse">收起总壳</button>
+      <button id="statusCycle" title="切换总壳状态">状态 · 工作中</button>
       <button id="replay">重放</button>
     </div>
 
@@ -1348,11 +1605,11 @@
           <div class="side-label">最近</div>
           <div class="conv" data-active="true">
             <span class="conv-title">桌面端品牌改造</span>
-            <span class="conv-meta">刚刚 · 4 个工具</span>
+            <span class="conv-meta">刚刚 · 15 个工具</span>
           </div>
           <div class="conv">
             <span class="conv-title">构建报错修复</span>
-            <span class="conv-meta">12 分钟前 · 3 个工具</span>
+            <span class="conv-meta">12 分钟前 · 5 个工具</span>
           </div>
           <div class="conv">
             <span class="conv-title">图标生成脚本</span>
@@ -1385,28 +1642,44 @@
             <div class="thread" data-scene="brand">
               <div class="msg user">logo 换成这个，名字改为 SiCode，我的仓库是 git@github.com:milusvip/sicode.git</div>
 
-              <div class="turn">
-                <img class="turn-mark" data-mark alt="" />
-                <div class="turn-body">明白，先摸清 desktop 包的品牌落点，再统一替换；内核保持上游原样，方便以后同步。</div>
+              <div class="text-part" data-component="text-part">
+                <div class="text-part-body">明白，先摸清 desktop 包的品牌落点，再统一替换；内核保持上游原样，方便以后同步。</div>
               </div>
 
-              <div class="process" data-open="true">
-                <button class="process-head">
+              <!-- 总壳：UI 外层包住本轮工作里的过程（及夹在中间的助手短句）；顶栏 = 工作中|秒数 -->
+              <div class="work-shell" data-status="running" data-init-status="running" data-open="true" data-init-open="true">
+                <button class="work-head" type="button" aria-expanded="true">
+                  <span class="w-ind">
+                    <span class="w-ic-running"><span class="spinner"></span></span>
+                    <svg class="w-ic-done"><use href="#i-check" /></svg>
+                    <svg class="w-ic-disconnected"><use href="#i-unlink" /></svg>
+                    <svg class="w-ic-interrupted"><use href="#i-stop" /></svg>
+                    <svg class="w-ic-error"><use href="#i-alert" /></svg>
+                  </span>
+                  <span class="w-title">
+                    <span data-for="running">工作中</span>
+                    <span data-for="done">已完成 13 个工具 · 品牌改造</span>
+                    <span data-for="disconnected">已断开</span>
+                    <span data-for="interrupted">已中断</span>
+                    <span data-for="error">出错了</span>
+                  </span>
+                  <span class="w-meta">26s</span>
+                  <span class="w-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="work-body"><div class="work-inner">
+
+              <div class="process" data-open="false" data-init-open="false">
+                <button class="process-head" type="button" aria-expanded="false">
                   <span class="p-ind">
                     <svg class="p-open"><use href="#i-list" /></svg>
                     <svg class="p-closed"><use href="#i-check" /></svg>
                   </span>
-                  <span class="p-title p-open">过程 · 3 个阶段 / 15 个工具</span>
-                  <span class="p-title p-closed">已完成 15 个工具 · 3 个阶段</span>
-                  <span class="p-meta">34s</span>
+                  <span class="p-title p-open">过程 · 定位品牌落点 · 5 个工具</span>
+                  <span class="p-title p-closed">已完成 5 个工具 · 定位品牌落点</span>
+                  <span class="p-meta">12s</span>
                   <span class="p-chev"><svg><use href="#i-chev" /></svg></span>
                 </button>
                 <div class="process-body"><div>
-
-              <div class="step-title">
-                <span class="step-no">01</span><span class="step-text">定位品牌落点</span><span class="step-line"></span>
-              </div>
-
               <div class="chain">
                 <div class="tool" data-kind="reason" data-state="done" data-open="false">
                   <button class="row">
@@ -1529,11 +1802,24 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
                   </div>
                 </div>
               </div>
+  </div></div></div>
 
-              <div class="step-title">
-                <span class="step-no">02</span><span class="step-text">改名与换标</span><span class="step-line"></span>
+              <div class="text-part" data-component="text-part">
+                <div class="text-part-body">落点摸清了：打包配置、主进程常量和 logo 组件。接下来一起改名换标。</div>
               </div>
 
+              <div class="process" data-open="false" data-init-open="false">
+                <button class="process-head" type="button" aria-expanded="false">
+                  <span class="p-ind">
+                    <svg class="p-open"><use href="#i-list" /></svg>
+                    <svg class="p-closed"><use href="#i-check" /></svg>
+                  </span>
+                  <span class="p-title p-open">过程 · 改名与换标 · 5 个工具</span>
+                  <span class="p-title p-closed">已完成 5 个工具 · 改名与换标</span>
+                  <span class="p-meta">14s</span>
+                  <span class="p-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="process-body"><div>
               <div class="chain">
                 <div class="tool" data-kind="reason" data-state="done" data-open="false">
                   <button class="row">
@@ -1649,11 +1935,24 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
                   </div>
                 </div>
               </div>
+  </div></div></div>
 
-              <div class="step-title">
-                <span class="step-no">03</span><span class="step-text">构建验证</span><span class="step-line"></span>
+              <div class="text-part" data-component="text-part">
+                <div class="text-part-body">改名和换标写完了，跑构建和测试确认一下。</div>
               </div>
 
+              <div class="process" data-open="true" data-init-open="true">
+                <button class="process-head" type="button" aria-expanded="true">
+                  <span class="p-ind">
+                    <svg class="p-open"><use href="#i-list" /></svg>
+                    <svg class="p-closed"><use href="#i-check" /></svg>
+                  </span>
+                  <span class="p-title p-open">过程 · 构建验证 · 3 个工具</span>
+                  <span class="p-title p-closed">已完成 3 个工具 · 构建验证</span>
+                  <span class="p-meta">8s</span>
+                  <span class="p-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="process-body"><div>
               <div class="chain">
                 <div class="tool" data-kind="reason" data-state="done" data-open="false">
                   <button class="row">
@@ -1728,13 +2027,52 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
 
   </div></div></div>
 
-              <div class="turn">
-                <img class="turn-mark" data-mark alt="" />
-                <div class="turn-body">构建通过，产物是 <strong>sicode-desktop-win-x64.exe</strong>。测试 127 通过、2 个失败，失败的是 picker 用例，看起来和这次改动无关。</div>
+                </div></div>
+              </div>
+
+              <div class="text-part" data-component="text-part" data-copy>
+                <div class="text-part-body">构建通过，产物是 <strong>sicode-desktop-win-x64.exe</strong>。测试 127 通过、2 个失败，失败的是 picker 用例，看起来和这次改动无关。</div>
+                <div class="text-part-actions">
+                  <button type="button" class="text-part-copy" aria-label="复制回复"><svg><use href="#i-copy" /></svg></button>
+                  <span class="text-part-meta">Build · claude-sonnet-4.6 · 34s</span>
+                </div>
               </div>
 
               <div class="msg user">picker 那个失败确认一下，别是咱们改坏的。</div>
 
+              <div class="work-shell" data-status="done" data-init-status="done" data-open="false" data-init-open="false">
+                <button class="work-head" type="button" aria-expanded="false">
+                  <span class="w-ind">
+                    <span class="w-ic-running"><span class="spinner"></span></span>
+                    <svg class="w-ic-done"><use href="#i-check" /></svg>
+                    <svg class="w-ic-disconnected"><use href="#i-unlink" /></svg>
+                    <svg class="w-ic-interrupted"><use href="#i-stop" /></svg>
+                    <svg class="w-ic-error"><use href="#i-alert" /></svg>
+                  </span>
+                  <span class="w-title">
+                    <span data-for="running">工作中</span>
+                    <span data-for="done">已完成 2 个工具</span>
+                    <span data-for="disconnected">已断开</span>
+                    <span data-for="interrupted">已中断</span>
+                    <span data-for="error">出错了</span>
+                  </span>
+                  <span class="w-meta">3s</span>
+                  <span class="w-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="work-body"><div class="work-inner">
+
+              <div class="process" data-open="true" data-init-open="true">
+                <button class="process-head" type="button" aria-expanded="true">
+                  <span class="p-ind">
+                    <svg class="p-open"><use href="#i-list" /></svg>
+                    <svg class="p-closed"><use href="#i-check" /></svg>
+                  </span>
+                  <span class="p-title p-open">过程 · 2 个工具</span>
+                  <span class="p-title p-closed">已完成 2 个工具</span>
+                  <span class="p-meta">3s</span>
+                  <span class="p-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="process-body"><div>
               <div class="chain">
                 <div class="tool" data-state="done" data-open="true">
                   <button class="row">
@@ -1775,10 +2113,17 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
                   </div>
                 </div>
               </div>
+  </div></div></div>
 
-              <div class="turn">
-                <img class="turn-mark" data-mark alt="" />
-                <div class="turn-body">确认了，不是我们改坏的：用例断言注入的脚本叫 <strong>opencodePickerUi</strong>，实际注入 <strong>bundledDevClient.mjs</strong>，在上游原仓库上同样失败。</div>
+                </div></div>
+              </div>
+
+              <div class="text-part" data-component="text-part" data-copy>
+                <div class="text-part-body">确认了，不是我们改坏的：用例断言注入的脚本叫 <strong>opencodePickerUi</strong>，实际注入 <strong>bundledDevClient.mjs</strong>，在上游原仓库上同样失败。</div>
+                <div class="text-part-actions">
+                  <button type="button" class="text-part-copy" aria-label="复制回复"><svg><use href="#i-copy" /></svg></button>
+                  <span class="text-part-meta">Build · claude-sonnet-4.6 · 8s</span>
+                </div>
               </div>
             </div>
 
@@ -1786,13 +2131,33 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
             <div class="thread" data-scene="fix" hidden>
               <div class="msg user">typecheck 挂了，帮我看看。</div>
 
-              <div class="turn">
-                <img class="turn-mark" data-mark alt="" />
-                <div class="turn-body">明白，先看报错原文。</div>
+              <div class="text-part" data-component="text-part">
+                <div class="text-part-body">明白，先看报错原文。</div>
               </div>
 
-              <div class="process" data-open="true">
-                <button class="process-head">
+              <div class="work-shell" data-status="done" data-init-status="done" data-open="true" data-init-open="true">
+                <button class="work-head" type="button" aria-expanded="true">
+                  <span class="w-ind">
+                    <span class="w-ic-running"><span class="spinner"></span></span>
+                    <svg class="w-ic-done"><use href="#i-check" /></svg>
+                    <svg class="w-ic-disconnected"><use href="#i-unlink" /></svg>
+                    <svg class="w-ic-interrupted"><use href="#i-stop" /></svg>
+                    <svg class="w-ic-error"><use href="#i-alert" /></svg>
+                  </span>
+                  <span class="w-title">
+                    <span data-for="running">工作中</span>
+                    <span data-for="done">已完成 5 个工具</span>
+                    <span data-for="disconnected">已断开</span>
+                    <span data-for="interrupted">已中断</span>
+                    <span data-for="error">出错了</span>
+                  </span>
+                  <span class="w-meta">13s</span>
+                  <span class="w-chev"><svg><use href="#i-chev" /></svg></span>
+                </button>
+                <div class="work-body"><div class="work-inner">
+
+              <div class="process" data-open="true" data-init-open="true">
+                <button class="process-head" type="button" aria-expanded="true">
                   <span class="p-ind">
                     <svg class="p-open"><use href="#i-list" /></svg>
                     <svg class="p-closed"><use href="#i-check" /></svg>
@@ -1918,9 +2283,15 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
 
   </div></div></div>
 
-              <div class="turn">
-                <img class="turn-mark" data-mark alt="" />
-                <div class="turn-body">修好了。类型检查通过，<strong>43 个符号链接</strong>已实体化，后续 Windows 上拉代码不会再出现这个错误。</div>
+                </div></div>
+              </div>
+
+              <div class="text-part" data-component="text-part" data-copy>
+                <div class="text-part-body">修好了。类型检查通过，<strong>43 个符号链接</strong>已实体化，后续 Windows 上拉代码不会再出现这个错误。</div>
+                <div class="text-part-actions">
+                  <button type="button" class="text-part-copy" aria-label="复制回复"><svg><use href="#i-copy" /></svg></button>
+                  <span class="text-part-meta">Build · claude-sonnet-4.6 · 13s</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1946,7 +2317,6 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
         "data:image/png;base64,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"
 
       document.getElementById("tbLogo").src = LOGO
-      document.querySelectorAll("[data-mark]").forEach((img) => (img.src = LOGO))
 
       const win = document.getElementById("win")
       const scroll = document.getElementById("scroll")
@@ -1954,23 +2324,59 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
 
       const titles = { brand: "桌面端品牌改造", fix: "构建报错修复" }
 
+      const collapseBtn = document.getElementById("collapse")
+      const statusCycleBtn = document.getElementById("statusCycle")
+
+      const WORK_STATUSES = [
+        { id: "running", label: "工作中" },
+        { id: "done", label: "已完成" },
+        { id: "disconnected", label: "已断开" },
+        { id: "interrupted", label: "已中断" },
+        { id: "error", label: "出错了" },
+      ]
+
+      function syncCollapseLabel(thread) {
+        const open = [...thread.querySelectorAll(".work-shell")].some((el) => el.dataset.open === "true")
+        collapseBtn.textContent = open ? "收起总壳" : "展开总壳"
+      }
+
+      function syncStatusLabel(thread) {
+        const shell = thread.querySelector(".work-shell")
+        const status = shell?.dataset.status || "running"
+        const entry = WORK_STATUSES.find((item) => item.id === status) || WORK_STATUSES[0]
+        statusCycleBtn.textContent = `状态 · ${entry.label}`
+      }
+
+      function restoreToolOpen(el) {
+        if (el.dataset.initOpen === "true") el.dataset.open = "true"
+        else delete el.dataset.open
+      }
+
+      function restoreOpen(el, headSel) {
+        el.dataset.open = el.dataset.initOpen === "true" ? "true" : "false"
+        const head = el.querySelector(headSel)
+        if (head) head.setAttribute("aria-expanded", el.dataset.open)
+      }
+
       function setScene(name) {
         replayToken++
         clearReplay()
         document
-          .querySelectorAll(".thread .msg, .thread .turn, .thread .step-title, .thread .chain > .tool")
+          .querySelectorAll(".thread .msg, .thread .text-part, .thread .chain > .tool")
           .forEach((el) => {
             el.style.transition = ""
             el.style.opacity = ""
             el.style.transform = ""
             delete el.dataset.replay
-            const body = el.querySelector(".turn-body")
+            const body = el.querySelector(".text-part-body")
             if (body && body.dataset.text) body.textContent = body.dataset.text
-            if (el.classList.contains("tool")) {
-              if (el.dataset.initOpen) el.dataset.open = el.dataset.initOpen
-              else delete el.dataset.open
-            }
+            if (el.classList.contains("tool")) restoreToolOpen(el)
           })
+        document.querySelectorAll(".thread .work-shell").forEach((el) => {
+          if (el.dataset.initStatus) el.dataset.status = el.dataset.initStatus
+          restoreOpen(el, ".work-head")
+        })
+        document.querySelectorAll(".thread .process").forEach((el) => restoreOpen(el, ".process-head"))
         document.querySelectorAll("[data-scene]").forEach((el) => {
           if (el.classList.contains("thread")) el.hidden = el.dataset.scene !== name
         })
@@ -1979,14 +2385,36 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
         })
         chTitle.textContent = titles[name]
         scroll.scrollTop = 0
+        const thread = [...document.querySelectorAll(".thread")].find((el) => !el.hidden)
+        if (thread) {
+          syncCollapseLabel(thread)
+          syncStatusLabel(thread)
+        }
       }
 
-      // 折叠交互
+      // 折叠 / 复制
       document.addEventListener("click", (event) => {
+        const copy = event.target.closest(".text-part-copy")
+        if (copy) {
+          const body = copy.closest(".text-part")?.querySelector(".text-part-body")
+          if (body) void navigator.clipboard?.writeText(body.innerText)
+          return
+        }
+
+        const workHead = event.target.closest(".work-head")
+        if (workHead) {
+          const shell = workHead.closest(".work-shell")
+          shell.dataset.open = shell.dataset.open === "true" ? "false" : "true"
+          workHead.setAttribute("aria-expanded", shell.dataset.open)
+          syncCollapseLabel(shell.closest(".thread"))
+          return
+        }
+
         const head = event.target.closest(".process-head")
         if (head) {
           const process = head.closest(".process")
           process.dataset.open = process.dataset.open === "true" ? "false" : "true"
+          head.setAttribute("aria-expanded", process.dataset.open)
           return
         }
 
@@ -1994,7 +2422,8 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
         if (!row) return
         const tool = row.closest(".tool")
         if (!tool || !tool.querySelector(".tool-body")) return
-        tool.dataset.open = tool.dataset.open === "true" ? "false" : "true"
+        if (tool.dataset.open === "true") delete tool.dataset.open
+        else tool.dataset.open = "true"
       })
 
       document.querySelectorAll(".demo button[data-scene]").forEach((btn) => {
@@ -2035,14 +2464,45 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
         const thread = [...document.querySelectorAll(".thread")].find((el) => !el.hidden)
         if (!thread) return
 
-        thread.querySelectorAll(".process").forEach((el) => (el.dataset.open = "true"))
+        const workSnap = [...thread.querySelectorAll(".work-shell")].map((el) => ({
+          el,
+          open: el.dataset.open === "true",
+          status: el.dataset.status || "done",
+        }))
+        const processSnap = [...thread.querySelectorAll(".process")].map((el) => ({
+          el,
+          open: el.dataset.open === "true",
+        }))
+        thread.querySelectorAll(".work-shell").forEach((el) => {
+          el.dataset.open = "true"
+          el.dataset.status = "running"
+          const head = el.querySelector(".work-head")
+          if (head) head.setAttribute("aria-expanded", "true")
+        })
+        thread.querySelectorAll(".process").forEach((el) => {
+          el.dataset.open = "true"
+          const head = el.querySelector(".process-head")
+          if (head) head.setAttribute("aria-expanded", "true")
+        })
+        syncCollapseLabel(thread)
 
-        const items = [...thread.querySelectorAll(".msg, .turn, .step-title, .chain > .tool")]
+        const items = [...thread.querySelectorAll(".msg, .text-part, .work-shell, .process, .chain > .tool")].filter(
+          (el) => {
+            // Content inside a shell body is revealed with that shell.
+            if (el.classList.contains("tool")) return !el.closest(".process-body")
+            if (el.classList.contains("text-part") || el.classList.contains("process"))
+              return !el.closest(".work-body")
+            return true
+          },
+        )
         const snapshot = [...thread.querySelectorAll(".chain > .tool")].map((el) => ({
           el,
-          open: el.dataset.open,
+          open: el.dataset.open === "true",
           state: el.dataset.state,
         }))
+
+        // Collapse every tool first so open panels don't reserve space while earlier steps fade in.
+        snapshot.forEach(({ el }) => delete el.dataset.open)
 
         items.forEach((el) => {
           el.style.transition = "none"
@@ -2061,18 +2521,35 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
           el.scrollIntoView({ block: "nearest" })
 
           if (!el.classList.contains("tool")) {
-            if (el.classList.contains("turn")) {
-              const body = el.querySelector(".turn-body")
+            if (el.classList.contains("text-part")) {
+              const body = el.querySelector(".text-part-body")
               if (body && body.children.length === 0) await typeText(body, alive)
             }
-            await sleep(el.classList.contains("step-title") ? 320 : 420)
+            if (el.classList.contains("work-shell")) {
+              el.dataset.status = "running"
+              el.dataset.open = "true"
+              await sleep(900)
+              if (!alive()) return
+              const snap = workSnap.find((entry) => entry.el === el)
+              el.dataset.status = snap?.status === "running" ? "running" : "done"
+              if (snap && snap.status !== "running") {
+                el.dataset.open = "false"
+                const head = el.querySelector(".work-head")
+                if (head) head.setAttribute("aria-expanded", "false")
+              }
+              await sleep(200)
+              if (!alive()) return
+              continue
+            }
+            await sleep(el.classList.contains("process") ? 280 : 420)
             if (!alive()) return
             continue
           }
 
           const isReason = el.dataset.kind === "reason"
-          const wasOpen = el.dataset.open === "true"
-          const wasState = el.dataset.state
+          const snap = snapshot.find((entry) => entry.el === el)
+          const wasOpen = snap?.open === true
+          const wasState = snap?.state ?? el.dataset.state
 
           if (wasState !== "error") el.dataset.replay = "running"
           el.dataset.open = "true"
@@ -2080,12 +2557,13 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
           if (!alive()) return
 
           delete el.dataset.replay
-          if (isReason || !wasOpen) el.dataset.open = "false"
+          if (isReason || !wasOpen) delete el.dataset.open
           await sleep(120)
           if (!alive()) return
         }
 
-        const term = thread.querySelector(".term")
+        // Replay the terminal that belongs to the still-running / last open shell tool.
+        const term = thread.querySelector('.tool[data-state="running"] .term, .tool[data-open="true"] .term, .term')
         if (term) {
           const lines = [...term.children]
           lines.forEach((line) => {
@@ -2106,25 +2584,53 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
         if (!alive()) return
 
         snapshot.forEach(({ el, open, state }) => {
-          if (open) el.dataset.open = open
+          if (open) el.dataset.open = "true"
           else delete el.dataset.open
           if (state) el.dataset.state = state
           delete el.dataset.replay
+        })
+        processSnap.forEach(({ el, open }) => {
+          el.dataset.open = open ? "true" : "false"
+          const head = el.querySelector(".process-head")
+          if (head) head.setAttribute("aria-expanded", el.dataset.open)
+        })
+        workSnap.forEach(({ el, open, status }) => {
+          el.dataset.status = status
+          el.dataset.open = open ? "true" : "false"
+          const head = el.querySelector(".work-head")
+          if (head) head.setAttribute("aria-expanded", el.dataset.open)
         })
         items.forEach((el) => {
           el.style.transition = ""
           el.style.opacity = ""
           el.style.transform = ""
         })
+        syncCollapseLabel(thread)
         scroll.scrollTop = scroll.scrollHeight
       }
 
-      document.getElementById("collapse").addEventListener("click", () => {
+      collapseBtn.addEventListener("click", () => {
         const thread = [...document.querySelectorAll(".thread")].find((el) => !el.hidden)
         if (!thread) return
-        const processes = [...thread.querySelectorAll(".process")]
-        const anyOpen = processes.some((el) => el.dataset.open === "true")
-        processes.forEach((el) => (el.dataset.open = anyOpen ? "false" : "true"))
+        const shells = [...thread.querySelectorAll(".work-shell")]
+        const anyOpen = shells.some((el) => el.dataset.open === "true")
+        shells.forEach((el) => {
+          el.dataset.open = anyOpen ? "false" : "true"
+          const head = el.querySelector(".work-head")
+          if (head) head.setAttribute("aria-expanded", el.dataset.open)
+        })
+        syncCollapseLabel(thread)
+      })
+
+      statusCycleBtn.addEventListener("click", () => {
+        const thread = [...document.querySelectorAll(".thread")].find((el) => !el.hidden)
+        if (!thread) return
+        const shell = thread.querySelector(".work-shell")
+        if (!shell) return
+        const idx = WORK_STATUSES.findIndex((item) => item.id === shell.dataset.status)
+        const next = WORK_STATUSES[(idx + 1 + WORK_STATUSES.length) % WORK_STATUSES.length]
+        shell.dataset.status = next.id
+        syncStatusLabel(thread)
       })
 
       document.getElementById("replay").addEventListener("click", replay)
@@ -2136,7 +2642,7 @@ src/shell/titlebar/windows-menu.tsx  1 处</pre>
       })
 
       document.querySelectorAll(".thread .tool").forEach((el) => {
-        if (el.dataset.open) el.dataset.initOpen = el.dataset.open
+        el.dataset.initOpen = el.dataset.open === "true" ? "true" : "false"
       })
 
       setScene("brand")

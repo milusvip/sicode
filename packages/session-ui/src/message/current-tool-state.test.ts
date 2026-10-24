@@ -18,10 +18,23 @@ describe("current tool state", () => {
     expect(currentToolMetadata(tool)).toEqual({})
   })
 
-  test("uses an empty input until streaming JSON is complete", () => {
+  test("reads the fields a streaming input has already written", () => {
     const tool = {
       type: "tool",
       id: "tool_partial",
+      name: "edit",
+      state: { status: "streaming", input: '{"path":"src/session.ts","oldString":"a","newString":"b' },
+      time,
+    } satisfies SessionMessageAssistantTool
+
+    // The path is what lets the row show its card, the cut-off `newString` is what the counts climb on.
+    expect(currentToolInput(tool)).toEqual({ path: "src/session.ts", oldString: "a", newString: "b" })
+  })
+
+  test("uses an empty input until a field arrives", () => {
+    const tool = {
+      type: "tool",
+      id: "tool_empty",
       name: "edit",
       state: { status: "streaming", input: '{"path":' },
       time,

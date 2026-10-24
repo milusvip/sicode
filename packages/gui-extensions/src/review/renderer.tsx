@@ -13,8 +13,10 @@ import {
 import { createStore } from "solid-js/store"
 import type { FileDiffInfo } from "@opencode/client/promise"
 import {
+  Command,
   createKeyed,
   LinkHandler,
+  MenuItem,
   Panel,
   SettingsPage,
   usePanel,
@@ -120,7 +122,7 @@ const setup: Setup<typeof Review> = (ctx) => {
     get title() {
       return count() > 0 ? ctx.plural("tab.count", count()) : ctx.t("tab.title")
     },
-    pinned: true,
+    // SiCode: the review tab is a regular tab, opened from the strip's + menu rather than pinned in front of it.
     // Without focusable content the panel itself joins the tab order.
     get tabbable() {
       return !(count() > 0 || layout.sidebar.opened())
@@ -141,8 +143,7 @@ const setup: Setup<typeof Review> = (ctx) => {
     get wide() {
       return diff.value.diffStyle === "split"
     },
-    // The review tab is pinned, never stored; a stored key, such as one from before extensions, leaves the strip.
-    transient: true,
+    // SiCode: stored keys, such as one from before extensions, still open the review tab.
     legacy: { review: TAB },
     mobile: {
       get title() {
@@ -151,7 +152,10 @@ const setup: Setup<typeof Review> = (ctx) => {
       order: 10,
       kind: "tab",
     },
-    list: (input) => (!layout.narrow() && input.session.project ? [tab] : []),
+    // SiCode: the strip lists the review tab only once it is open, so it is entered from the + menu instead of
+    // sitting pinned in front of every other tab.
+    list: (input) =>
+      !layout.narrow() && input.session.project && input.open.includes(TAB) ? [tab] : [],
     render: (props) => {
       const frame = usePanel()
 
@@ -204,6 +208,57 @@ const setup: Setup<typeof Review> = (ctx) => {
         </Show>
       )
     },
+  })
+
+  // SiCode: review is entered from the side strip's + menu, next to the file and browser entries.
+  ctx.add(MenuItem, (): MenuItem | undefined => {
+    const view = sessions.current()
+
+    if (!view?.project || layout.narrow()) return undefined
+
+    return {
+      menu: "session.panel",
+      id: "open",
+      get title() {
+        return ctx.t("tab.title")
+      },
+      icon: "review",
+      keybind: "review.toggle",
+      order: 30,
+      run() {
+        const session = sessions.current()
+
+        if (session) layout.open(KEY, session)
+      },
+    }
+  })
+
+  // SiCode: the review tab is no longer pinned, so the host's old "toggle the side region" command cannot reach it.
+  // Published as `review.toggle`, which keeps the shortcut and its stored customizations.
+  ctx.add(Command, (): Command | undefined => {
+    const view = sessions.current()
+
+    if (!view?.project) return undefined
+
+    return {
+      id: "toggle",
+      get title() {
+        return ctx.t("tab.title")
+      },
+      group: ctx.t("command.category.view"),
+      bind: "mod+shift+r",
+      section: "session",
+      run() {
+        const session = sessions.current()
+
+        if (!session) return
+
+        // The first press opens the review tab; later presses toggle the region, so a file tab the user selected
+        // keeps its selection instead of jumping back to review.
+        if (layout.state(KEY, session) === "closed") layout.open(KEY, session)
+        else layout.side.toggle(session)
+      },
+    }
   })
 
   const reveals = new Set<() => void>()
@@ -262,10 +317,8 @@ const setup: Setup<typeof Review> = (ctx) => {
     details: (session) => modelFor(session)?.details(),
     focus: (session, path) => modelFor(session)?.focusFile(path),
     open(session) {
-      // The session details' changes row: narrow screens switch to the Changes view; wide ones open the side region.
-      if (layout.narrow()) return layout.open(KEY, session)
-
-      if (!layout.side.opened(session)) layout.side.toggle(session)
+      // SiCode: the review tab is no longer pinned, so opening review opens its tab too, which also opens the region.
+      layout.open(KEY, session)
     },
     watch,
     onReveal(listener) {

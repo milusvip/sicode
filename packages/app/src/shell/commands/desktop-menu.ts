@@ -14,6 +14,7 @@ export type DesktopMenuAction =
   | "edit.selectAll"
   | "view.reload"
   | "view.toggleDevTools"
+  | "view.inspectElement"
   | "view.resetZoom"
   | "view.zoomIn"
   | "view.zoomOut"

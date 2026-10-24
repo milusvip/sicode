@@ -23,22 +23,8 @@
   }
 
   [data-slot="basic-tool-tool-indicator"] {
-    width: 16px;
-    height: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-
-    [data-component="spinner"] {
-      width: 16px;
-      height: 16px;
-    }
-  }
-
-  [data-slot="basic-tool-tool-spinner"] {
-    width: 16px;
-    height: 16px;
+    width: 19px;
+    height: 18px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -46,8 +32,32 @@
     color: var(--v2-text-text-faint);
 
     [data-component="spinner"] {
-      width: 16px;
-      height: 16px;
+      width: 13px;
+      height: 13px;
+    }
+  }
+
+  &[data-status="running"] [data-slot="basic-tool-tool-indicator"],
+  &[data-status="streaming"] [data-slot="basic-tool-tool-indicator"] {
+    color: var(--v2-text-text-base);
+  }
+
+  &[data-status="error"] [data-slot="basic-tool-tool-indicator"] {
+    color: var(--icon-critical-base, #e5756a);
+  }
+
+  [data-slot="basic-tool-tool-spinner"] {
+    width: 13px;
+    height: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: inherit;
+
+    [data-component="spinner"] {
+      width: 13px;
+      height: 13px;
     }
   }
 

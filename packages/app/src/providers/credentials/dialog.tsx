@@ -1,32 +1,62 @@
 import { Button } from "@opencode/ui/button"
 import { useDialog } from "@opencode/ui/context/dialog"
+import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@opencode/ui/dialog"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@opencode/ui/text-field"
 import { showToast } from "@/shell/notifications/toast"
-import { batch, For } from "solid-js"
-import { createStore, produce } from "solid-js/store"
+import { batch, For, Show } from "solid-js"
+import { createStore, produce, reconcile } from "solid-js/store"
 import { ExternalLink } from "@/runtime/platform/external-link"
 import { useData } from "@/runtime/server/current"
 import { useLanguage } from "@/runtime/i18n/language"
-import { type FormState, headerRow, modelRow, validateCustomProvider } from "./form"
+import { useServerSDK } from "@/runtime/server/client"
+import {
+  formFromConfig,
+  headerRow,
+  isCustomProviderPackage,
+  modelRow,
+  type FormState,
+  validateCustomProvider,
+} from "./form"
 import { CustomManagedProviderIcon } from "@/providers/models/provider-group"
 
-export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
+export type CustomProviderInitial = {
+  providerID: string
+  config: {
+    name?: string
+    env?: readonly string[]
+    settings?: { baseURL?: string }
+    headers?: Record<string, string>
+    models?: Record<string, { name?: string }>
+  }
+}
+
+export function CustomProviderForm(props: {
+  autofocus?: boolean
+  initial?: CustomProviderInitial
+  onSaved?: (providerID: string) => void
+  /** When true, omit the in-form title — the surrounding DialogHeader owns it. */
+  hideTitle?: boolean
+} = {}) {
   const dialog = useDialog()
   const data = useData()
   const language = useLanguage()
+  const serverSdk = useServerSDK()
+  const editing = () => props.initial?.providerID
 
-  const [form, setForm] = createStore<FormState>({
-    providerID: "",
-    name: "",
-    baseURL: "",
-    apiKey: "",
-    models: [modelRow()],
-    headers: [headerRow()],
-    err: {},
-  })
+  const [form, setForm] = createStore<FormState>(
+    props.initial ? formFromConfig(props.initial) : {
+      providerID: "",
+      name: "",
+      baseURL: "",
+      apiKey: "",
+      models: [modelRow()],
+      headers: [headerRow()],
+      err: {},
+    },
+  )
 
   const addModel = () => {
     setForm(
@@ -91,24 +121,48 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
     const output = validateCustomProvider({
       form,
       t: language.t,
-      // TODO: Restore disabled-provider validation when V2 exposes config reads.
       disabledProviders: [],
       existingProviderIDs: new Set((data.location.provider.list() ?? []).map((provider) => provider.id)),
+      editingProviderID: editing(),
     })
 
     batch(() => {
-      setForm("err", output.err)
-      output.models.forEach((err, index) => setForm("models", index, "err", err))
-      output.headers.forEach((err, index) => setForm("headers", index, "err", err))
+      setForm("err", reconcile(output.err))
+      output.models.forEach((err, index) => setForm("models", index, "err", reconcile(err)))
+      output.headers.forEach((err, index) => setForm("headers", index, "err", reconcile(err)))
     })
 
     return output.result
   }
 
+  const refresh = async (providerID: string) => {
+    data.location.integration.invalidate()
+    data.location.provider.invalidate()
+    data.location.model.invalidate()
+    await Promise.all([
+      data.location.integration.sync(),
+      data.location.provider.sync(),
+      data.location.model.sync(),
+    ])
+    props.onSaved?.(providerID)
+  }
+
   const saveMutation = useMutation(() => ({
-    mutationFn: async (result: NonNullable<ReturnType<typeof validate>>): Promise<typeof result> => {
-      // TODO: Restore custom providers when V2 exposes config and arbitrary credential APIs.
-      throw new Error(language.t("provider.custom.unavailable"))
+    mutationFn: async (result: NonNullable<ReturnType<typeof validate>>) => {
+      await serverSdk.api.config.update({
+        providers: { [result.providerID]: result.config },
+      })
+
+      if (result.key) {
+        await serverSdk.api.integration.connect.key({
+          integrationID: result.providerID,
+          key: result.key,
+        })
+      }
+
+      await refresh(result.providerID)
+
+      return result
     },
     onSuccess: (result) => {
       dialog.close()
@@ -138,10 +192,14 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
 
   return (
     <div class="flex flex-col gap-6 px-2.5 pb-3 overflow-y-auto max-h-[60vh]">
-      <div class="px-2.5 flex gap-4 items-center">
-        <CustomManagedProviderIcon class="size-5 shrink-0" />
-        <div class="text-16-medium text-text-strong">{language.t("provider.custom.title")}</div>
-      </div>
+      <Show when={!props.hideTitle}>
+        <div class="px-2.5 flex gap-4 items-center">
+          <CustomManagedProviderIcon class="size-5 shrink-0" />
+          <div class="text-16-medium text-text-strong">
+            {editing() ? language.t("provider.custom.edit.title") : language.t("provider.custom.title")}
+          </div>
+        </div>
+      </Show>
 
       <form onSubmit={save} class="px-2.5 pb-6 flex flex-col gap-6">
         <p class="text-14-regular text-text-base">
@@ -160,6 +218,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
             description={language.t("provider.custom.field.providerID.description")}
             value={form.providerID}
             onChange={(v) => setField("providerID", v)}
+            disabled={!!editing()}
             validationState={form.err.providerID ? "invalid" : undefined}
             error={form.err.providerID}
           />
@@ -182,7 +241,11 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
           <TextField
             label={language.t("provider.custom.field.apiKey.label")}
             placeholder={language.t("provider.custom.field.apiKey.placeholder")}
-            description={language.t("provider.custom.field.apiKey.description")}
+            description={
+              editing()
+                ? language.t("provider.custom.field.apiKey.editDescription")
+                : language.t("provider.custom.field.apiKey.description")
+            }
             value={form.apiKey}
             onChange={(v) => setField("apiKey", v)}
           />
@@ -283,9 +346,146 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
           variant="contrast"
           disabled={saveMutation.isPending}
         >
-          {saveMutation.isPending ? language.t("common.saving") : language.t("common.submit")}
+          {saveMutation.isPending ? language.t("common.saving") : language.t("common.save")}
         </Button>
       </form>
     </div>
   )
 }
+
+/** Highest-precedence global config document's custom OpenAI-compatible providers. */
+export async function listCustomProviders(sdk: ReturnType<typeof useServerSDK>) {
+  const entries = await sdk.api.config.get()
+  const custom = new Map<string, CustomProviderInitial["config"] & { package?: string }>()
+
+  for (const entry of entries) {
+    if (entry.type !== "document") continue
+    for (const [id, provider] of Object.entries(entry.info.providers ?? {})) {
+      if (!isCustomProviderPackage(provider.package)) {
+        custom.delete(id)
+
+        continue
+      }
+
+      const settings = provider.settings as { baseURL?: string } | undefined
+      custom.set(id, {
+        name: provider.name,
+        package: provider.package,
+        env: provider.env,
+        settings: settings?.baseURL ? { baseURL: settings.baseURL } : undefined,
+        headers: provider.headers,
+        models: Object.fromEntries(
+          Object.entries(provider.models ?? {}).map(([modelID, model]) => [modelID, { name: model.name }]),
+        ),
+      })
+    }
+  }
+
+  return custom
+}
+
+function DialogCustomProvider(props: {
+  initial?: CustomProviderInitial
+  onSaved?: (providerID: string) => void
+}) {
+  const language = useLanguage()
+  const title = () =>
+    props.initial?.providerID ? language.t("provider.custom.edit.title") : language.t("provider.custom.title")
+
+  return (
+    <Dialog
+      fit
+      size="large"
+      containerClass="!max-h-[min(calc(100vh_-_16px),720px)] !w-[min(calc(100vw_-_16px),560px)]"
+    >
+      <DialogHeader closeLabel={language.t("common.close")}>
+        <div class="flex min-w-0 items-center gap-3">
+          <CustomManagedProviderIcon class="size-5 shrink-0" />
+          <DialogTitle>{title()}</DialogTitle>
+        </div>
+      </DialogHeader>
+      <DialogBody class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <CustomProviderForm hideTitle initial={props.initial} onSaved={props.onSaved} />
+      </DialogBody>
+    </Dialog>
+  )
+}
+
+export function showCustomProviderEditor(input: {
+  dialog: ReturnType<typeof useDialog>
+  initial?: CustomProviderInitial
+  onSaved?: (providerID: string) => void
+}) {
+  input.dialog.show(() => <DialogCustomProvider initial={input.initial} onSaved={input.onSaved} />)
+}
+
+export function CustomProviderActions(props: {
+  providerID: string
+  name: string
+  onChanged?: () => void
+}) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const serverSdk = useServerSDK()
+  const data = useData()
+
+  const edit = async () => {
+    const custom = await listCustomProviders(serverSdk)
+    const config = custom.get(props.providerID)
+
+    if (!config) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: language.t("provider.custom.unavailable"),
+      })
+
+      return
+    }
+
+    showCustomProviderEditor({
+      dialog,
+      initial: { providerID: props.providerID, config },
+      onSaved: () => props.onChanged?.(),
+    })
+  }
+
+  const remove = async () => {
+    try {
+      const integration = await serverSdk.api.integration.get({ integrationID: props.providerID })
+      const credentials = integration.data?.connections.filter((item) => item.type === "credential") ?? []
+      await Promise.all(credentials.map((item) => serverSdk.api.credential.remove({ credentialID: item.id })))
+      await serverSdk.api.config.update({ providers: { [props.providerID]: null } })
+      data.location.integration.invalidate()
+      data.location.provider.invalidate()
+      data.location.model.invalidate()
+      await Promise.all([
+        data.location.integration.sync(),
+        data.location.provider.sync(),
+        data.location.model.sync(),
+      ])
+      props.onChanged?.()
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("provider.custom.deleted.title", { provider: props.name }),
+        description: language.t("provider.custom.deleted.description", { provider: props.name }),
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast({ title: language.t("common.requestFailed"), description: message })
+    }
+  }
+
+  return (
+    <div class="flex items-center gap-1">
+      <Button size="normal" variant="ghost-muted" onClick={() => void edit()}>
+        {language.t("common.edit")}
+      </Button>
+      <Button size="normal" variant="ghost-muted" onClick={() => void remove()}>
+        {language.t("common.delete")}
+      </Button>
+    </div>
+  )
+}
+
+export { isCustomProviderPackage }

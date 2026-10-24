@@ -4,8 +4,8 @@ for (const open of [true, false]) {
   story(`preserves ${open ? "expanded" : "collapsed"} tool choices when calls join the group`, async ({ mount }) => {
     const root = await mount("current-session-file-changes--appending-tool-calls")
     const group = root.locator('[data-component="collapsed-tool-group"]')
-    const trigger = group.getByRole("button", { name: /^Used \d+ Shell, Patch$/ })
-    await expect(trigger).toHaveAccessibleName("Used 2 Shell, Patch")
+    const trigger = group.getByRole("button", { name: /^Process · Shell, Patch · \d+ tools?$/ })
+    await expect(trigger).toHaveAccessibleName("Process · Shell, Patch · 2 tools")
     await trigger.click()
     const shell = group.locator('[data-timeline-part-id="tool_shell_existing"] [data-slot="collapsible-trigger"]')
     await group.locator('[data-timeline-part-id="tool_patch_existing"]').evaluate((element) => {
@@ -34,9 +34,9 @@ for (const open of [true, false]) {
       await root.getByRole("button", { name: "Append tool call", exact: true }).click()
       await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
         "aria-label",
-        `Used ${count} Shell, Patch`,
+        `Process · Shell, Patch · ${count} tools`,
       )
-      await expect(trigger).toHaveAccessibleName(`Used ${count} Shell, Patch`)
+      await expect(trigger).toHaveAccessibleName(`Process · Shell, Patch · ${count} tools`)
       await expect(diff).toBeVisible()
       await expect(shell).toHaveAttribute("aria-expanded", String(open))
       await expect(first).toHaveAttribute("aria-expanded", String(open))

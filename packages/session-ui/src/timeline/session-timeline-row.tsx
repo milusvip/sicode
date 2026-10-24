@@ -40,6 +40,7 @@ import {
   type PartRef,
   type ReasoningMode,
 } from "./projection"
+import { openWorkShellOnly, WorkShellHead, workShellDefaultOpen, workShellDisclosureKey } from "./work-shell"
 
 const emptyAssistantMessages: SessionMessageAssistant[] = []
 
@@ -73,8 +74,12 @@ export function createSessionTimelineRowRenderer(input: {
   disclosure: {
     value: (key: string) => boolean | undefined
     set: (key: string, open: boolean) => void
+    /** Open one turn's overview bar and close every other one; the host may add scroll anchoring. */
+    openWorkShell?: (userMessageID: string) => void
     patchGroupKeys?: Map<string, string>
   }
+  /** When false while a turn is still working, the work shell shows disconnected. */
+  connected?: Accessor<boolean>
   centered?: Accessor<boolean>
   padding?: Accessor<string>
   anchor?: (messageID: string) => string | undefined
@@ -84,6 +89,24 @@ export function createSessionTimelineRowRenderer(input: {
   // Cached timelines retain file-change subgroup identities alongside their disclosure choices.
   const patchGroupKeys = input.disclosure.patchGroupKeys ?? new Map<string, string>()
   const patchPartKeys = new WeakMap<SessionMessageAssistant["content"][number], string>()
+
+  // Rows between a WorkShell head and its end share the demo's work-inner rhythm.
+  const workShellMembers = createMemo(() => {
+    const members = new Set<string>()
+    let active = false
+    for (const row of input.projection.rows()) {
+      if (Predicate.isTagged(row, "WorkShell")) {
+        active = true
+        continue
+      }
+      if (Predicate.isTagged(row, "WorkShellEnd")) {
+        active = false
+        continue
+      }
+      if (active) members.add(TimelineRow.key(row))
+    }
+    return members
+  })
 
   const patchOwners = createMemo(() => {
     const owners = new Map<string, string>()
@@ -113,6 +136,21 @@ export function createSessionTimelineRowRenderer(input: {
 
   const workingTurn = (messageID: string) =>
     input.status().type !== "idle" && input.projection.activeMessageID() === messageID
+
+  const turnWorkShellStatus = (messageID: string) => {
+    const shell = input.projection.rows().find(
+      (row) => Predicate.isTagged(row, "WorkShell") && row.userMessageID === messageID,
+    )
+    return shell && Predicate.isTagged(shell, "WorkShell") ? shell.status : undefined
+  }
+
+  /** Last process only while working, or after a failed turn — never leave every stage open when settled. */
+  const processDefaultOpen = (messageID: string, groupKey: string) => {
+    if (input.projection.lastProcessGroupKey().get(messageID) !== groupKey) return false
+    if (workingTurn(messageID)) return true
+    const status = turnWorkShellStatus(messageID)
+    return status === "error" || status === "failed"
+  }
 
   const duration = (messageID: string) => {
     const user = input.projection.messageByID().get(messageID)
@@ -210,8 +248,20 @@ export function createSessionTimelineRowRenderer(input: {
           if (message.type === "shell")
             return [{ type: "shell", id: ref.partID, render: () => <Shell messageID={ref.messageID} grouped /> }]
 
-          if (message.type !== "assistant" && message.type !== "user")
-            return [{ type: "notice", id: ref.partID, render: () => <Notice messageID={ref.messageID} grouped /> }]
+          if (message.type !== "assistant" && message.type !== "user") {
+            const content = notice(message)
+            // SiCode: collapsed 更新 trigger needs the Loaded path without expanding.
+            const summary = content?.items?.join(", ") ?? content?.data ?? content?.label
+
+            return [
+              {
+                type: "notice",
+                id: ref.partID,
+                render: () => <Notice messageID={ref.messageID} grouped />,
+                summary,
+              },
+            ]
+          }
 
           return []
         })
@@ -250,10 +300,15 @@ export function createSessionTimelineRowRenderer(input: {
               input.disclosure.value(`patch:${path}`) ?? input.timelineDetail?.().edit.details === "expanded"
             }
             onFileOpenChange={(path, open) => input.disclosure.set(`patch:${path}`, open)}
-            open={input.disclosure.value(key()) === true}
             busy={
               workingTurn(row().userMessageID) &&
-              input.projection.lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+              input.projection.lastProcessGroupKey().get(row().userMessageID) === row().group.key
+            }
+            // Live: only the current process stage stays open.
+            // Settled: all collapsed unless the turn failed — then only the last process opens.
+            open={
+              input.disclosure.value(key()) ??
+              processDefaultOpen(row().userMessageID, row().group.key)
             }
             onOpenChange={(open) => input.disclosure.set(key(), open)}
             onSizeChange={onSizeChange}
@@ -469,25 +524,32 @@ export function createSessionTimelineRowRenderer(input: {
     return { label: message.description ?? message.text }
   }
 
-  const Frame = (props: { row: FramedTimelineRow; children: JSX.Element }) => (
-    <div
-      id={Predicate.isTagged(props.row, "UserMessage") ? input.anchor?.(props.row.userMessageID) : undefined}
-      data-message-id={props.row.userMessageID}
-      data-timeline-row={props.row._tag}
-      data-timeline-spacing={Predicate.isTagged(props.row, "AssistantPart") ? props.row.spacing : undefined}
-      classList={{
-        "min-w-0 w-full max-w-full": true,
-        "md:max-w-session md:mx-auto": input.centered?.(),
-        "pt-2": Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "tool",
-        "pt-4": Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "content",
-        "pt-6": Predicate.isTagged(props.row, "Error"),
-      }}
-    >
-      <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
-        {props.children}
+  const Frame = (props: { row: FramedTimelineRow; children: JSX.Element }) => {
+    const member = () => workShellMembers().has(TimelineRow.key(props.row))
+
+    return (
+      <div
+        id={Predicate.isTagged(props.row, "UserMessage") ? input.anchor?.(props.row.userMessageID) : undefined}
+        data-message-id={props.row.userMessageID}
+        data-timeline-row={props.row._tag}
+        data-timeline-spacing={Predicate.isTagged(props.row, "AssistantPart") ? props.row.spacing : undefined}
+        data-work-shell-member={member() ? "" : undefined}
+        classList={{
+          "min-w-0 w-full max-w-full": true,
+          "md:max-w-session md:mx-auto": input.centered?.(),
+          "pt-2":
+            !member() && Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "tool",
+          "pt-4":
+            !member() && Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "content",
+          "pt-6": Predicate.isTagged(props.row, "Error"),
+        }}
+      >
+        <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
+          {props.children}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   function Notice(props: { messageID: string; grouped?: boolean }) {
     const inset = () => (props.grouped ? "" : padding())
@@ -764,8 +826,64 @@ export function createSessionTimelineRowRenderer(input: {
   const render = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
     if (Predicate.isTagged(row(), "TurnGap")) return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
 
+    // Marker only — collapse filtering removes it; never paint it.
+    if (Predicate.isTagged(row(), "WorkShellEnd")) return null
+
     // The host owns live status and renders this slot itself.
     if (Predicate.isTagged(row(), "Activity")) return null
+
+    if (Predicate.isTagged(row(), "WorkShell")) {
+      const current = () => {
+        const value = row()
+
+        if (!Predicate.isTagged(value, "WorkShell")) throw new Error("Expected a work-shell timeline row")
+
+        return value
+      }
+
+      const key = () => workShellDisclosureKey(current().userMessageID)
+      const status = () => {
+        const value = current().status
+        if (value === "running" && input.connected && !input.connected()) return "disconnected" as const
+        return value
+      }
+      // Working/disconnected/error expand; done + interrupted stay collapsed (head still shows status).
+      const open = () => {
+        const stored = input.disclosure.value(key())
+        if (stored !== undefined) return stored
+        return workShellDefaultOpen(status())
+      }
+
+      return (
+        <Frame row={current()}>
+          <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
+            <WorkShellHead
+              status={status()}
+              startedAt={current().startedAt}
+              endedAt={current().endedAt}
+              toolCount={current().toolCount}
+              failedCount={current().failedCount}
+              hasReply={current().hasReply}
+              open={open()}
+              onToggle={() => {
+                const next = !open()
+                if (!next) {
+                  input.disclosure.set(key(), false)
+
+                  return
+                }
+                // One overview bar at a time; the host may anchor the scroll while the others close.
+                if (input.disclosure.openWorkShell) input.disclosure.openWorkShell(current().userMessageID)
+                else {
+                  openWorkShellOnly(input.projection.rows(), input.disclosure, current().userMessageID)
+                  input.disclosure.set(key(), true)
+                }
+              }}
+            />
+          </div>
+        </Frame>
+      )
+    }
 
     if (Predicate.isTagged(row(), "UserMessage")) {
       const current = () => {
@@ -800,6 +918,7 @@ export function createSessionTimelineRowRenderer(input: {
                       comments={presentation()?.comments}
                       references={presentation()?.references}
                       voice={presentation()?.voice}
+                      steer={current().steer}
                       historicalAgent={context()?.agent ?? ""}
                       historicalModel={context()?.model ?? { id: "", providerID: "" }}
                       actions={input.actions}

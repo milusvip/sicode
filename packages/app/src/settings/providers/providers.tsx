@@ -16,6 +16,7 @@ import { useServerSDK } from "@/runtime/server/client"
 import { formatServerError } from "@/runtime/server/errors"
 import { CONSOLE_INTEGRATION, CONSOLE_PROVIDERS } from "@/providers/connect/controller"
 import { DialogConnectProvider, useProviderConnectController } from "@/providers/connect/dialog"
+import { CustomProviderActions, listCustomProviders } from "@/providers/credentials/dialog"
 import { ProviderModelIcon } from "@/providers/models/provider-group"
 import { SettingsList } from "@/settings/list"
 import { activeProviderAccount, providerAccounts, type ProviderAccount } from "./accounts"
@@ -56,10 +57,24 @@ export const SettingsProviders: Component<{
     credentialID?: string
     renaming?: string
     held?: ProviderItem[]
+    customIDs: string[]
   }>({
     disconnecting: {},
     consoleExpanded: false,
+    customIDs: [],
   })
+
+  const refreshCustom = () =>
+    void listCustomProviders(serverSdk)
+      .then((map) => setState("customIDs", [...map.keys()]))
+      .catch(() => setState("customIDs", []))
+
+  createEffect(() => {
+    if (serverSdk.connection.status() !== "connected") return
+    refreshCustom()
+  })
+
+  const isCustom = (id: string) => state.customIDs.includes(id)
 
   const updateDisconnecting = (ids: string[], status: "removing" | "removed" | "absent" | undefined) =>
     setState("disconnecting", (current) => ({
@@ -205,7 +220,7 @@ export const SettingsProviders: Component<{
 
     if (current === "config") return language.t("settings.providers.tag.config")
 
-    if (current === "custom") return language.t("settings.providers.tag.custom")
+    if (current === "custom" || isCustom(item.id)) return language.t("settings.providers.tag.custom")
 
     return language.t("settings.providers.tag.other")
   }
@@ -429,27 +444,41 @@ export const SettingsProviders: Component<{
                             </div>
                           </div>
                           <Show
-                            when={canManageAccounts(item)}
+                            when={isCustom(item.id)}
                             fallback={
                               <Show
-                                when={canDisconnect(item)}
+                                when={canManageAccounts(item)}
                                 fallback={
-                                  <span class="settings-provider-env-hint">
-                                    {language.t("settings.providers.connected.environmentDescription")}
-                                  </span>
+                                  <Show
+                                    when={canDisconnect(item)}
+                                    fallback={
+                                      <span class="settings-provider-env-hint">
+                                        {language.t("settings.providers.connected.environmentDescription")}
+                                      </span>
+                                    }
+                                  >
+                                    <Button
+                                      size="normal"
+                                      variant="ghost-muted"
+                                      onClick={() => void disconnect(item, item.name)}
+                                    >
+                                      {language.t("common.disconnect")}
+                                    </Button>
+                                  </Show>
                                 }
                               >
-                                <Button
-                                  size="normal"
-                                  variant="ghost-muted"
-                                  onClick={() => void disconnect(item, item.name)}
-                                >
-                                  {language.t("common.disconnect")}
-                                </Button>
+                                <AccountMenu provider={item} />
                               </Show>
                             }
                           >
-                            <AccountMenu provider={item} />
+                            <CustomProviderActions
+                              providerID={item.id}
+                              name={item.name}
+                              onChanged={() => {
+                                updateDisconnecting([item.id], undefined)
+                                refreshCustom()
+                              }}
+                            />
                           </Show>
                         </div>
                       }

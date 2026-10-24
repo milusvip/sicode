@@ -12,6 +12,7 @@ export function runDesktopMenuAction(
   win: BrowserWindow | null,
   action: DesktopMenuAction,
   handlers: DesktopMenuActionHandlers = {},
+  point?: { x: number; y: number },
 ) {
   switch (action) {
     case "app.installCli":
@@ -50,6 +51,10 @@ export function runDesktopMenuAction(
       return
     case "view.toggleDevTools":
       win?.webContents.toggleDevTools()
+
+      return
+    case "view.inspectElement":
+      win?.webContents.inspectElement(point?.x ?? 0, point?.y ?? 0)
 
       return
     case "view.resetZoom":

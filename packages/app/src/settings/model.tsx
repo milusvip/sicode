@@ -19,6 +19,16 @@ export type FollowUpBehavior = Settings["general"]["followUpBehavior"]
 
 export type TabLayout = Settings["appearance"]["tabLayout"]
 
+export type SessionWidth = Settings["appearance"]["sessionWidth"]
+
+const SESSION_WIDTH_CSS: Record<SessionWidth, string> = {
+  // SiCode: default was 744; a bit wider so the timeline breathes without jumping to "wide".
+  default: "880px",
+  wide: "1040px",
+  extra: "1280px",
+  full: "100%",
+}
+
 export type NotificationSettings = Settings["notifications"]
 
 export type SoundSettings = Settings["sounds"]
@@ -30,14 +40,16 @@ export function projectSettingsKey(scope: ServerScope, projectID: string | undef
 
 export const monoDefault = "IBM Plex Mono"
 
-export const sansDefault = "Inter"
+export const sansDefault = "思源黑体"
 
 export const terminalDefault = "JetBrainsMono Nerd Font Mono"
 
+// SiCode: CJK in code/comments falls through Plex Mono to the UI default face, not a random system mono.
 const monoFallback =
-  '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+  '"IBM Plex Mono", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 
-const sansFallback = '"Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+const sansFallback =
+  '"思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
 
 const terminalFallback =
   '"JetBrainsMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
@@ -130,6 +142,8 @@ const appearanceSchema = Persistence.struct({
   sans: Schema.String,
   terminal: Schema.String,
   tabLayout: Schema.Literals(["horizontal", "vertical"]),
+  // SiCode: conversation column max-width (timeline + composer share --container-session).
+  sessionWidth: Schema.Literals(["default", "wide", "extra", "full"]),
 })
 
 const permissionsSchema = Persistence.struct({
@@ -284,7 +298,7 @@ export const defaultSettings: Settings = {
     terminalPlacement: "side",
     followUpBehavior: "steer",
   },
-  appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal" },
+  appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal", sessionWidth: "default" },
   keybinds: {},
   permissions: { autoApprove: false, autoApproveProjects: {} },
   workspaces: { defaultDestination: "last-used", lastUsed: {} },
@@ -321,6 +335,22 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       const mono = monoFontFamily(store.appearance?.mono)
       root.style.setProperty("--font-family-mono", mono)
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
+      // SiCode: `max-w-session` reads --container-session at runtime.
+      root.style.setProperty(
+        "--container-session",
+        SESSION_WIDTH_CSS[store.appearance?.sessionWidth ?? defaultSettings.appearance.sessionWidth],
+      )
+      // Clear a removed UI-zoom preference so a prior session cannot leave the shell scaled.
+      document.getElementById("root")?.style.removeProperty("zoom")
+      for (const key of [
+        "--font-size-x-small",
+        "--font-size-small",
+        "--font-size-base",
+        "--font-size-large",
+        "--font-size-x-large",
+      ] as const) {
+        root.style.removeProperty(key)
+      }
       // Inline code can first appear during history backfill. Load its selected
       // face with the shell so that font discovery does not resize that mount.
       void document.fonts?.load(`440 13px ${mono}`).catch(() => undefined)
@@ -400,6 +430,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         tabLayout: withFallback(() => store.appearance?.tabLayout, defaultSettings.appearance.tabLayout),
         setTabLayout(value: TabLayout) {
           setStore("appearance", "tabLayout", value)
+        },
+        sessionWidth: withFallback(() => store.appearance?.sessionWidth, defaultSettings.appearance.sessionWidth),
+        setSessionWidth(value: SessionWidth) {
+          setStore("appearance", "sessionWidth", value)
         },
       },
       keybinds: {

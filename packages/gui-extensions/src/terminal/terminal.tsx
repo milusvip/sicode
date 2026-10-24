@@ -13,6 +13,7 @@ import type { TerminalModel } from "./model"
 import type { LocalPTY } from "./state"
 import { SerializeAddon } from "./serialize"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "./runtime-adapters"
+import { styleTerminalScrollbar } from "./scrollbar"
 import { terminalKeyInput } from "./terminal-key-event"
 import { terminalWriter } from "./writer"
 
@@ -494,6 +495,8 @@ export const Terminal = (props: TerminalProps) => {
 
       const active = document.activeElement
       t.open(container)
+      // SiCode: match conversation ScrollView overlay thumb (ghostty's default is a gray 8px bar).
+      styleTerminalScrollbar(t, container)
       useTerminalUiBindings({
         container,
         term: t,

@@ -51,6 +51,9 @@ export type NavigateToSessionFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
+/** Opens one of the session's changed files in the host's side panel. Absent when the host offers no side panel. */
+export type OpenFileFn = (path: string) => void
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -62,6 +65,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     turnDiff?: TurnDiffSource
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
+    onOpenFile?: OpenFileFn
   }) => {
     return {
       get store() {
@@ -75,6 +79,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
+      get openFile() {
+        return props.onOpenFile
+      },
       shellRunning: props.shellRunning,
       shellOutput: props.shellOutput,
       turnDiff: props.turnDiff,

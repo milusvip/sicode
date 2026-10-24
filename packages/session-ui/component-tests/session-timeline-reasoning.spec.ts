@@ -22,12 +22,18 @@ for (const mode of ["hidden", "compact", "full"] as const) {
       }
 
       const trigger = part.getByRole("button")
-      const body = part.getByText("I will inspect the timeline before changing its state.", { exact: true })
+      const body = part
+        .locator('[data-component="markdown"]')
+        .getByText("I will inspect the timeline before changing its state.", { exact: true })
+      // While the model thinks, the row shows a one-line ticker of the newest reasoning text
+      // rather than the last markdown heading.
+      const ticker = trigger.locator('[data-slot="basic-tool-tool-subtitle"][data-live]')
       await expect(trigger).toHaveAttribute("aria-expanded", String(mode === "full"))
       await expect(part.locator('[data-component="text-shimmer"]')).toHaveAttribute("data-active", "true")
 
       if (mode === "compact") {
-        await expect(trigger).toContainText("Inspecting stability")
+        await expect(ticker).toHaveText("I will inspect the timeline before changing its state.")
+        await expect(trigger).not.toContainText("##")
         await expect(body).toBeHidden()
         await trigger.click()
         await expect(trigger).toHaveAttribute("aria-expanded", "true")
@@ -37,7 +43,7 @@ for (const mode of ["hidden", "compact", "full"] as const) {
       await trigger.click()
       await expect(trigger).toHaveAttribute("aria-expanded", "false")
       await expect(body).toBeHidden()
-      await expect(trigger).toContainText("Inspecting stability")
+      await expect(ticker).toHaveText("I will inspect the timeline before changing its state.")
     })
   }
 
@@ -58,11 +64,11 @@ for (const mode of ["hidden", "compact", "full"] as const) {
       if (following === "tool") {
         const group = timeline.locator('[data-component="collapsed-tool-group"]')
         const trigger = group.locator(':scope > [data-component="collapsible"] > [data-slot="collapsible-trigger"]')
-        await expect(trigger).toHaveText(/^Used\s*1\s*Skill$/)
+        await expect(trigger).toHaveText(/Process · Skill · 1 tool/)
         await expect(trigger).toHaveAttribute("aria-expanded", "false")
         await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
           "aria-label",
-          "Used 1 Skill",
+          "Process · Skill · 1 tool",
         )
         await expect(timeline.getByText("Inspecting stability", { exact: true })).toBeHidden()
         await trigger.click()

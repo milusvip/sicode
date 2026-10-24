@@ -1,0 +1,146 @@
+[data-component="session-turn-rail"] {
+  position: absolute;
+  inset-block: 56px 12px;
+  /* Keep clear of the timeline scrollbar on the inline-end edge. */
+  inset-inline-end: 14px;
+  z-index: 50;
+  display: flex;
+  width: 28px;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: visible;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Selecting message text: ignore hit-testing so ticks do not steal the drag. */
+[data-component="session-turn-rail"][data-selecting="true"],
+[data-component="session-turn-rail"][data-selecting="true"] [data-slot="session-turn-rail-track"] {
+  pointer-events: none;
+}
+
+[data-slot="session-turn-rail-track"] {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  pointer-events: auto;
+  overscroll-behavior: contain;
+}
+
+/* DSH ladder: fixed tick pitch; overflow scrolls instead of compressing spacing. */
+[data-slot="session-turn-rail-track"][data-scrollable="true"] {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+[data-slot="session-turn-rail-track"][data-scrollable="true"]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+[data-slot="session-turn-rail-ladder"] {
+  position: relative;
+  width: 100%;
+}
+
+[data-slot="session-turn-rail-tick"] {
+  position: absolute;
+  inset-inline-end: 0;
+  display: flex;
+  width: 100%;
+  height: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-inline-end: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--v2-text-text-faint);
+  outline: none;
+  transition: color 120ms ease-out;
+}
+
+[data-slot="session-turn-rail-tick"]::before {
+  content: "";
+  width: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition:
+    width 120ms ease-out,
+    height 120ms ease-out,
+    opacity 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+[data-slot="session-turn-rail-track"][data-hovering="true"] [data-slot="session-turn-rail-tick"]::before {
+  width: calc(14px + var(--turn-rail-wave, 0) * 7px);
+  height: calc(2px + var(--turn-rail-wave, 0) * 1.5px);
+  opacity: calc(0.3 + var(--turn-rail-wave, 0) * 0.7);
+}
+
+[data-slot="session-turn-rail-tick"][data-failed="true"] {
+  color: var(--v2-state-fg-danger, var(--v2-red-700));
+}
+
+[data-slot="session-turn-rail-tick"]:hover,
+[data-slot="session-turn-rail-tick"][data-active="true"] {
+  color: var(--v2-icon-icon-accent);
+}
+
+[data-slot="session-turn-rail-tick"]:hover::before,
+[data-slot="session-turn-rail-tick"][data-active="true"]::before {
+  width: 18px;
+  height: 2.5px;
+}
+
+[data-slot="session-turn-rail-tick"]:focus-visible {
+  color: var(--v2-icon-icon-accent);
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+[data-slot="session-turn-rail-preview"] {
+  position: absolute;
+  z-index: 60;
+  width: max-content;
+  max-width: min(280px, 42vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-floating);
+  color: var(--v2-text-text-base);
+  font-size: 13px;
+  font-weight: 440;
+  line-height: var(--line-height-base, 20px);
+  letter-spacing: -0.04px;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+[data-slot="session-turn-rail-preview"][data-empty="true"] {
+  color: var(--v2-text-text-faint);
+}
+
+@media (max-width: 767px) {
+  [data-component="session-turn-rail"] {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="session-turn-rail-tick"],
+  [data-slot="session-turn-rail-tick"]::before {
+    transition: none;
+  }
+}

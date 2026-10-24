@@ -27,8 +27,13 @@ export function DiffChanges(props: {
         data-appearance={props.appearance ?? "compact"}
         classList={{ [props.class ?? ""]: true }}
       >
-        <span data-slot="diff-changes-additions">{`+${additions()}`}</span>
-        <span data-slot="diff-changes-deletions">{`-${deletions()}`}</span>
+        {/* A one-sided change printed the empty side too: "+5 -0" reads as a removal that never happened. */}
+        <Show when={additions() > 0}>
+          <span data-slot="diff-changes-additions">{`+${additions()}`}</span>
+        </Show>
+        <Show when={deletions() > 0}>
+          <span data-slot="diff-changes-deletions">{`-${deletions()}`}</span>
+        </Show>
       </div>
     </Show>
   )

@@ -245,6 +245,7 @@ export function createHostApis() {
             reveal: (path) => platform.revealPath?.(path) ?? Promise.resolve(false),
             installed: (app) => platform.checkAppExists?.(app) ?? Promise.resolve(false),
             forceFocus: (enabled) => platform.setForceFocus?.(enabled) ?? Promise.resolve(),
+            hotRestart: () => platform.hotRestart?.() ?? Promise.resolve(),
           }
         : undefined,
     build: () => ({

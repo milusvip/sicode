@@ -28,20 +28,40 @@ describe("validateCustomProvider", () => {
       name: "Custom Provider",
       key: undefined,
       config: {
-        npm: "@ai-sdk/openai-compatible",
         name: "Custom Provider",
+        package: "aisdk:@ai-sdk/openai-compatible",
         env: ["CUSTOM_PROVIDER_KEY"],
-        options: {
+        settings: {
           baseURL: "https://api.example.com",
-          headers: {
-            "X-Test": "enabled",
-          },
+        },
+        headers: {
+          "X-Test": "enabled",
         },
         models: {
           "model-a": { name: "Model A" },
         },
       },
     })
+  })
+
+  test("allows editing the same provider id", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "custom-provider",
+        name: "Provider",
+        baseURL: "https://api.example.com",
+        apiKey: "",
+        models: [{ row: "m0", id: "model-a", name: "Model A", err: {} }],
+        headers: [{ row: "h0", key: "", value: "", err: {} }],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(["custom-provider"]),
+      editingProviderID: "custom-provider",
+    })
+
+    expect(result.result?.providerID).toBe("custom-provider")
   })
 
   test("flags duplicate rows and allows reconnecting disabled providers", () => {

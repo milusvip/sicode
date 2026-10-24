@@ -27,8 +27,10 @@ export namespace TimelineRow {
     userMessageID: string
   }> {}
 
+  /** `steer` marks a follow-up that joined an open execution (引导), not a new task opener. */
   export class UserMessage extends Data.TaggedClass("UserMessage")<{
     userMessageID: string
+    steer?: boolean
   }> {}
 
   export class Shell extends Data.TaggedClass("Shell")<{
@@ -96,6 +98,35 @@ export namespace TimelineRow {
     userMessageID: string
   }> {}
 
+  /**
+   * Outer chrome for one prompt's tool work: status + elapsed on the head; contiguous tool
+   * groups (and mid-turn text between them) sit in following rows until the next WorkShellEnd.
+   */
+  export class WorkShell extends Data.TaggedClass("WorkShell")<{
+    userMessageID: string
+    /**
+     * `failed` is a finished turn whose tools reported errors (a failing test, a non-zero exit,
+     * a broken fetch). It is not `error`: the turn itself delivered, so the head must still say
+     * what worked — but it may not wear the success check.
+     */
+    status: "running" | "done" | "failed" | "disconnected" | "interrupted" | "error"
+    startedAt: number
+    endedAt?: number
+    toolCount: number
+    failedCount: number
+    /**
+     * Whether the turn produced any assistant prose. A turn that is stopped mid-run, or one whose
+     * model never wrote a closing message, has tools but no text — the head says so instead of
+     * leaving a gap that reads like a rendering bug.
+     */
+    hasReply: boolean
+  }> {}
+
+  /** Marks the last member row of a WorkShell so collapse can tuck the span into the head. */
+  export class WorkShellEnd extends Data.TaggedClass("WorkShellEnd")<{
+    userMessageID: string
+  }> {}
+
   export type TimelineRow =
     | TurnGap
     | UserMessage
@@ -109,6 +140,8 @@ export namespace TimelineRow {
     | CompactionQueued
     | TurnDiff
     | Activity
+    | WorkShell
+    | WorkShellEnd
 
   export const key: (row: TimelineRow) => string = Match.typeTags<TimelineRow>()({
     TurnGap: (row) => `turn-gap:${row.userMessageID}`,
@@ -127,6 +160,8 @@ export namespace TimelineRow {
     TurnDiff: (row) => `turn-diff:${row.messageID}`,
     // One live status exists at a time; it keeps its identity when the active turn changes.
     Activity: () => "activity",
+    WorkShell: (row) => `work-shell:${row.userMessageID}`,
+    WorkShellEnd: (row) => `work-shell-end:${row.userMessageID}`,
   })
 
   export function equals(a: TimelineRow, b: TimelineRow) {
@@ -136,7 +171,7 @@ export namespace TimelineRow {
 
 export type TimelineRowMap = {
   TurnGap: { userMessageID: string }
-  UserMessage: { userMessageID: string }
+  UserMessage: { userMessageID: string; steer?: boolean }
   Shell: { userMessageID: string; messageID: string }
   Notice: { userMessageID: string; messageID: string }
   TurnDivider: { userMessageID: string }
@@ -152,4 +187,12 @@ export type TimelineRowMap = {
   CompactionQueued: { userMessageID: string; inboxID: string }
   TurnDiff: { userMessageID: string; messageID: string; from: string; files: readonly string[] }
   Activity: { userMessageID: string }
+  WorkShell: {
+    userMessageID: string
+    status: "running" | "done" | "disconnected" | "interrupted" | "error"
+    startedAt: number
+    endedAt?: number
+    toolCount: number
+  }
+  WorkShellEnd: { userMessageID: string }
 }

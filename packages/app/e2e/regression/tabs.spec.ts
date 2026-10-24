@@ -793,7 +793,7 @@ test("each session tab shows its own file tab after a switch to a session in ano
     sessions: [alpha, beta, other],
     fileList: (path) => (path ? [] : ["greet.ts", "guide.md", "notes.txt"].map((file) => fileNode(directory, file))),
     fileContent: (path) => ({ type: "text", content: `contents:${path}` }),
-    seed: { panes: Object.fromEntries([alpha, beta, other].map((item) => [item.id, { review: true }])) },
+    review: [alpha.id, beta.id, other.id],
   })
   const panel = page.locator("#review-panel")
 
@@ -842,7 +842,7 @@ test("tab shortcuts cycle side-panel tabs when the side panel is focused with mu
     sessions: [alpha, beta],
     fileList: (path) => (path ? [] : ["README.md"].map((file) => fileNode(directory, file))),
     fileContent: (path) => ({ type: "text", content: `contents:${path}` }),
-    seed: { panes: { [alpha.id]: { review: true }, [beta.id]: { review: true } } },
+    review: [alpha.id, beta.id],
   })
 
   const panel = page.locator("#review-panel")

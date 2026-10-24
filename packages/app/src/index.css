@@ -2,6 +2,7 @@
 @import "@opencode/session-ui/styles";
 @import "@opencode/ui/styles/tokens";
 @import "tw-animate-css";
+@import "@fontsource-variable/noto-sans-sc";
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
@@ -18,9 +19,34 @@
 }
 
 @font-face {
+  font-family: "思源黑体";
+  src: local("思源黑体"), local("Source Han Sans SC"), local("Noto Sans SC"), local("Noto Sans CJK SC");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* SiCode: code blocks request regular/medium weights; Text-only left them on a system mono. */
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "IBM Plex Mono";
   src: url("@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Text.woff2") format("woff2");
   font-weight: 440;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Medium.woff2") format("woff2");
+  font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
@@ -54,6 +80,72 @@
 
   #review-panel {
     container-type: inline-size;
+  }
+
+  [data-component="session-side-empty"] {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  [data-slot="session-side-empty-list"] {
+    display: flex;
+    width: min(280px, 100%);
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  [data-slot="session-side-empty-item"] {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 36px;
+    padding: 0 8px 0 6px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--v2-text-text-base);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 440;
+    line-height: var(--line-height-compact);
+    letter-spacing: -0.04px;
+    text-align: start;
+    cursor: default;
+  }
+
+  [data-slot="session-side-empty-item"]:hover,
+  [data-slot="session-side-empty-item"]:focus-visible {
+    background: var(--v2-overlay-simple-overlay-hover);
+    outline: none;
+  }
+
+  [data-slot="session-side-empty-icon"] {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--v2-background-bg-layer-01);
+    color: var(--v2-icon-icon-muted);
+  }
+
+  [data-slot="session-side-empty-title"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-slot="session-side-empty-shortcut"] {
+    margin-inline-start: auto;
+    color: var(--v2-text-text-faint);
   }
 
   /* Like the composer toolbar, fade only clipped content without reserving layout space.
@@ -575,4 +667,16 @@
     height: 24px;
     padding-block: 0;
   }
+}
+
+/* The side panel tab menu hugs its short labels instead of the menu minimum width.
+   `menu.css` is unlayered, so this override stays unlayered and out of `@layer components`. */
+[data-component="menu-v2-content"].session-panel-tab-menu {
+  width: max-content;
+  min-width: 0;
+  max-width: min(320px, calc(100vw - 24px));
+}
+
+[data-component="menu-v2-content"].session-panel-tab-menu [data-component="menu-v2-item"] {
+  padding-inline-end: 12px;
 }

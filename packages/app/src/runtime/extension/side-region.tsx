@@ -10,7 +10,6 @@ import { Tabs } from "@opencode/ui/tabs"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Icon } from "@opencode/ui/icon"
 import { ResizeHandle } from "@opencode/ui/resize-handle"
-import { Mark } from "@opencode/ui/logo"
 import { Keybind } from "@opencode/ui/keybind"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { Menu } from "@opencode/ui/menu"
@@ -184,6 +183,7 @@ export function SideRegion(props: {
                                     index={tabs().all().indexOf(key)}
                                     active={props.region.active() === key}
                                     preview={tabs().preview() === key}
+                                    region={props.region}
                                     onClose={props.region.close}
                                     onPromote={(value) => void tabs().open(value)}
                                   />
@@ -225,14 +225,7 @@ export function SideRegion(props: {
 
                       <Show when={props.region.active() === undefined}>
                         <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
-                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                            <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
-                              <Mark class="w-14 opacity-10" />
-                              <div class="text-14-regular text-text-weak max-w-56">
-                                {language.t("session.files.selectToOpen")}
-                              </div>
-                            </div>
-                          </div>
+                          <EmptyPanel items={menu()} />
                         </Tabs.Content>
                       </Show>
                       <RegionContent
@@ -299,6 +292,40 @@ export function SideRegion(props: {
         </Show>
       </aside>
     </Show>
+  )
+}
+
+function EmptyPanel(props: { items: readonly SessionPanelMenuItem[] }): JSX.Element {
+  const command = useCommand()
+
+  return (
+    <div data-component="session-side-empty">
+      <div data-slot="session-side-empty-list">
+        <For each={props.items}>
+          {(item) => {
+            const keybind = createMemo(() => (item.keybind ? command.keybindParts(item.keybind) : []))
+
+            return (
+              <button type="button" data-slot="session-side-empty-item" onClick={() => item.run()}>
+                <Show when={item.icon}>
+                  {(icon) => (
+                    <span data-slot="session-side-empty-icon">
+                      <Icon name={icon()} size="small" />
+                    </span>
+                  )}
+                </Show>
+                <span data-slot="session-side-empty-title">{item.title}</span>
+                <Show when={keybind().length > 0}>
+                  <span data-slot="session-side-empty-shortcut">
+                    <Keybind keys={keybind()} variant="neutral" />
+                  </span>
+                </Show>
+              </button>
+            )
+          }}
+        </For>
+      </div>
+    </div>
   )
 }
 

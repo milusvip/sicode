@@ -191,6 +191,50 @@ function ToggleCell(props: {
   )
 }
 
+function ActionCell(props: {
+  disabled?: boolean
+  inline?: boolean
+  label: string
+  onClick: () => void
+  tip: string
+  value: string
+}) {
+  const content = () => (
+    <button
+      type="button"
+      aria-label={`${props.label}: ${props.value}`}
+      disabled={props.disabled}
+      classList={{
+        "flex min-w-0 items-center font-mono uppercase hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-focus disabled:pointer-events-none disabled:opacity-70": true,
+        "min-h-[20px] w-fit justify-start rounded px-1.5 py-0.5 text-left": !!props.inline,
+        "min-h-[42px] w-full flex-col justify-center rounded-[8px] px-0.5 py-1 text-center": !props.inline,
+      }}
+      onClick={props.onClick}
+    >
+      <span
+        classList={{
+          flex: true,
+          "-translate-y-px items-baseline gap-1.5": !!props.inline,
+          "flex-col items-center": !props.inline,
+        }}
+      >
+        <span dir="ltr" class="text-[10px] leading-none font-black tracking-[0.04em] opacity-70">
+          {props.label}
+        </span>
+        <span dir="ltr" class="text-[11px] leading-none font-bold">
+          {props.value}
+        </span>
+      </span>
+    </button>
+  )
+
+  return (
+    <Tooltip appearance={props.inline ? "compact" : "standard"} value={props.tip} placement="top">
+      {content()}
+    </Tooltip>
+  )
+}
+
 export default function DebugBar(props: { diagnostics?: boolean; inline?: boolean }) {
   const ctx = useExtension()
   const router = ctx.router
@@ -280,11 +324,19 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
   const longv = () => (state.long.count === undefined ? na() : `${time(state.long.block) ?? na()}/${state.long.count}`)
   const navv = () => (state.nav.pending ? "…" : (time(state.nav.dur) ?? na()))
 
+  const [restarting, setRestarting] = createSignal(false)
+
   const toggleFocus = async () => {
     if (!desktop) return
     const enabled = !state.focus
     await desktop.forceFocus(enabled)
     setState("focus", enabled)
+  }
+
+  const hotRestart = () => {
+    if (!desktop || restarting()) return
+    setRestarting(true)
+    void desktop.hotRestart().catch(() => setRestarting(false))
   }
 
   onCleanup(() => {
@@ -727,6 +779,14 @@ export default function DebugBar(props: { diagnostics?: boolean; inline?: boolea
               tip={ctx.t("focus.tip")}
               value={ctx.t(state.focus ? "focus.on" : "focus.off")}
               onClick={() => void toggleFocus()}
+            />
+            <ActionCell
+              disabled={restarting()}
+              inline={props.inline}
+              label={ctx.t("hotRestart.label")}
+              tip={ctx.t("hotRestart.tip")}
+              value={ctx.t(restarting() ? "hotRestart.restarting" : "hotRestart.value")}
+              onClick={hotRestart}
             />
           </Show>
         </Show>

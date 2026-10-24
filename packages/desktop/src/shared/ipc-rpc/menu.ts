@@ -13,6 +13,7 @@ const DesktopMenuAction = Schema.Literals([
   "edit.selectAll",
   "view.reload",
   "view.toggleDevTools",
+  "view.inspectElement",
   "view.resetZoom",
   "view.zoomIn",
   "view.zoomOut",
@@ -24,7 +25,12 @@ const DesktopMenuAction = Schema.Literals([
 ])
 
 export const MenuRunAction = Rpc.make("MenuRunAction", {
-  payload: { action: DesktopMenuAction },
+  payload: {
+    action: DesktopMenuAction,
+    // Pointer position for actions that need a document coordinate, such as view.inspectElement.
+    x: Schema.optionalKey(Schema.Number),
+    y: Schema.optionalKey(Schema.Number),
+  },
 })
 
 export const MenuRpcs = RpcGroup.make(MenuRunAction)

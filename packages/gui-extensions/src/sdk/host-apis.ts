@@ -926,6 +926,10 @@ export interface Desktop {
    */
   forceFocus(enabled: boolean): Promise<void>
   /**
+   * Restarts the local server and reloads the window in place, without relaunching the app.
+   */
+  hotRestart(): Promise<void>
+  /**
    * Shows a path in the system file manager.
    *
    * @param path - An absolute path.

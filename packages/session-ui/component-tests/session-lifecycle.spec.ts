@@ -23,7 +23,7 @@ for (const tool of ["shell", "execute", "subagent"]) {
         await expect(group).toHaveAttribute("data-timeline-part-ids", "tool_context_lifecycle,tool_shell_lifecycle")
         await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
           "aria-label",
-          `Used 2 Read, ${title}`,
+          `Process · Read, ${title} · 2 tools`,
         )
         await expect(timeline.locator('[data-timeline-row="AssistantPart"]')).toHaveCount(1)
         await expect(trigger).toHaveAttribute("aria-expanded", String(open))
@@ -42,7 +42,7 @@ for (const expanded of [false, true]) {
 
     const trigger = expanded
       ? timeline.locator('[data-timeline-part-id="tool_shell_lifecycle"] [data-slot="collapsible-trigger"]')
-      : timeline.getByRole("button", { name: "Used 1 Shell", exact: true })
+      : timeline.getByRole("button", { name: "Process · Shell · 1 tool", exact: true })
 
     await expect(trigger).toHaveAttribute("aria-expanded", String(expanded))
     await trigger.click()
@@ -73,11 +73,11 @@ story("transitions a streaming shell from writing through command execution", as
   await expect(tool.locator('[data-slot="collapsible-trigger"]')).toHaveCSS("height", "28px")
   await expect(tool.locator('[data-component="tool-trigger"]')).toHaveCSS("gap", "6px")
   await expect(title).toHaveCSS("font-size", "13px")
-  await expect(title).toHaveCSS("font-family", /^Inter,/)
+  await expect(title).toHaveCSS("font-family", /^思源黑体,/)
   await expect(title).toHaveCSS("font-weight", "530")
   await expect(title).toHaveCSS("line-height", "16px")
   await expect(subtitle).toHaveCSS("font-size", "13px")
-  await expect(subtitle).toHaveCSS("font-family", /^Inter,/)
+  await expect(subtitle).toHaveCSS("font-family", /^思源黑体,/)
   await expect(subtitle).toHaveCSS("font-weight", "440")
   await expect(subtitle).toHaveCSS("line-height", "16px")
   await timeline.getByRole("button", { name: "Complete input" }).click()
@@ -89,7 +89,7 @@ story("transitions a streaming shell from writing through command execution", as
   await expect(subtitle).toHaveText("printf ready")
   await expect(tool).not.toContainText("Writing command…")
   await timeline.getByRole("button", { name: "Complete command" }).click()
-  const summary = timeline.getByRole("button", { name: "Used 1 Shell", exact: true })
+  const summary = timeline.getByRole("button", { name: "Process · Shell · 1 tool", exact: true })
   await expect(summary).toHaveAttribute("aria-expanded", "false")
   await summary.click()
   await expect(subtitle).toHaveText("printf ready")
@@ -137,7 +137,7 @@ for (const open of [false, true]) {
       await expect(thought).not.toContainText("Inspecting stability")
       await expect(thought).toHaveAttribute("aria-expanded", String(open))
       await timeline.getByRole("button", { name: "Finish session" }).click()
-      const used = group.getByRole("button", { name: "Used 1 Shell", exact: true })
+      const used = group.getByRole("button", { name: "Process · Shell · 1 tool", exact: true })
       await expect(used).toHaveAttribute("aria-expanded", "false")
       await used.click()
       await expect(used).toHaveAttribute("aria-expanded", "true")
@@ -148,7 +148,7 @@ for (const open of [false, true]) {
       )
       await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
         "aria-label",
-        "Used 1 Shell",
+        "Process · Shell · 1 tool",
       )
       await expect(timeline.locator('[data-timeline-row="Thinking"]')).toHaveCount(0)
       await expect(used).toHaveAttribute("aria-expanded", "true")

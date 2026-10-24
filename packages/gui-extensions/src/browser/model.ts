@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { Browser } from "@opencode/plugin-browser/rpc"
 import { createKeyed, type SessionRef, type SetupContext } from "../sdk"
+import { SEARCH_ENGINES } from "./address"
 import { readHref } from "./comment"
 import {
   createConnection,
@@ -49,8 +50,8 @@ type ModelState = {
   pages: Record<string, Record<string, PageDetail | undefined> | undefined>
 }
 
-/** A page's icon as a data URL, and its zoom factor, 1 at 100%. */
-type PageDetail = { icon?: string; zoom: number }
+/** A page's icon as a data URL, its zoom factor (1 at 100%), and whether TLS was accepted untrusted. */
+type PageDetail = { icon?: string; zoom: number; certificateWarning?: boolean }
 
 /** A mounted pane; the newest one answers the reload and inspect commands. */
 type PaneHandle = {
@@ -86,6 +87,7 @@ export function createModel(ctx: SetupContext<typeof definition>) {
 
   const owner = getOwner()
   const history = ctx.stores.history
+  const search = ctx.stores.search
   const [state, setState] = createStore<ModelState>({ attachments: {}, unsupported: {}, errors: {}, pages: {} })
   const [panes, setPanes] = createSignal<readonly PaneHandle[]>([])
   const live = new Map<string, Live>()
@@ -202,7 +204,11 @@ export function createModel(ctx: SetupContext<typeof definition>) {
         page: (event) => {
           setState("pages", id, (pages) => ({
             ...pages,
-            [event.tabID]: event.icon ? { icon: event.icon, zoom: event.zoom } : { zoom: event.zoom },
+            [event.tabID]: {
+              zoom: event.zoom,
+              ...(event.icon ? { icon: event.icon } : undefined),
+              ...(event.certificateWarning ? { certificateWarning: true } : undefined),
+            },
           }))
           const url = tab({ key: id }, event.tabID)?.url
           const visits = url && event.icon ? withIcon(history.value.visits, url, event.icon) : undefined
@@ -451,11 +457,19 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     site: (session: Session, tabID: Browser.TabID) => live.get(session.key)?.connection.site(tabID),
     /** Deletes the page's cookies and stored data, and reloads it. */
     clearSite: (session: Session, tabID: Browser.TabID) => live.get(session.key)?.connection.clearSite(tabID),
+    /** Writes pasted login cookies for the page's site and reloads it; undefined while the pane cannot answer. */
+    setCookies: (session: Session, tabID: Browser.TabID, text: string) =>
+      live.get(session.key)?.connection.setCookies(tabID, text),
     /** Pages the browser showed, newest first. */
     visits: () => history.value.visits,
     clearHistory: () => {
       recorded.clear()
       history.set({ visits: [] })
+    },
+    /** The engine the address field searches with, defaulting to the first when the stored id is unknown. */
+    searchEngine: () => SEARCH_ENGINES.find((engine) => engine.id === search.value.engine) ?? SEARCH_ENGINES[0],
+    setSearchEngine(engine: string) {
+      search.set({ engine })
     },
     /** The page asking for the address field with its shortcut. */
     onAddress(session: Session, listener: (tabID: Browser.TabID) => void) {

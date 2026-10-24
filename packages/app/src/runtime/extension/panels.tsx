@@ -100,6 +100,8 @@ export function createRegion(input: {
   view: Accessor<MountedSession>
   screen: SessionScreen
   tabs: Tabs
+  /** Called after the last listed side tab is closed, so the host can collapse the region. */
+  onEmpty?: () => void
 }) {
   const host = useExtensionHost()
   const stored = () => input.tabs().all()
@@ -246,6 +248,9 @@ export function createRegion(input: {
             tab: entry.tab,
           }),
         )
+
+      // SiCode: closing the last side tab collapses the region instead of leaving the empty panel open.
+      if (strip().length === 0) input.onEmpty?.()
     },
   }
 }

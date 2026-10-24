@@ -1,4 +1,4 @@
-import { Component } from "solid-js"
+import { Component, createMemo } from "solid-js"
 import { Select } from "@opencode/ui/select"
 import { TextInput } from "@opencode/ui/text-input"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -6,6 +6,7 @@ import { ExternalLink } from "@/runtime/platform/external-link"
 import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
 import { createAppearanceSettingsController, type AppearanceSettingsController } from "@/settings/general/controllers"
+import { type SessionWidth, useSettings } from "@/settings/model"
 import "@/settings/settings.css"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
@@ -33,6 +34,43 @@ const fontSettings = {
     input: "setTerminal",
   },
 } as const
+
+const SessionWidthSetting: Component = () => {
+  const language = useLanguage()
+  const settings = useSettings()
+
+  // Three choices in the UI; a persisted "extra" (removed from the menu) reads as wide.
+  const options = createMemo((): { value: Exclude<SessionWidth, "extra">; label: string }[] => [
+    { value: "default", label: language.t("settings.appearance.row.sessionWidth.default") },
+    { value: "wide", label: language.t("settings.appearance.row.sessionWidth.wide") },
+    { value: "full", label: language.t("settings.appearance.row.sessionWidth.full") },
+  ])
+
+  const current = createMemo(() => {
+    const value = settings.appearance.sessionWidth()
+    const mapped = value === "extra" ? "wide" : value
+
+    return options().find((option) => option.value === mapped)
+  })
+
+  return (
+    <SettingsRow
+      title={language.t("settings.appearance.row.sessionWidth.title")}
+      description={language.t("settings.appearance.row.sessionWidth.description")}
+    >
+      <Select
+        data-action="settings-session-width"
+        options={options()}
+        current={current()}
+        value={(option) => option.value}
+        label={(option) => option.label}
+        placement="bottom-end"
+        gutter={6}
+        onSelect={(option) => option && settings.appearance.setSessionWidth(option.value)}
+      />
+    </SettingsRow>
+  )
+}
 
 const FontSetting: Component<{
   kind: "ui" | "code" | "terminal"
@@ -125,6 +163,7 @@ export const SettingsAppearance: Component = () => {
               />
             </SettingsRow>
 
+            <SessionWidthSetting />
             <FontSetting kind="ui" fonts={appearance.fonts} />
             <FontSetting kind="code" fonts={appearance.fonts} />
             <FontSetting kind="terminal" fonts={appearance.fonts} />

@@ -39,6 +39,27 @@ export const createBrowserNetwork = Effect.fn("BrowserNetwork.create")(function*
 
   const partition = session.fromPartition(input.partition)
   yield* Effect.addFinalizer(() => Effect.promise(() => partition.closeAllConnections()))
+  // Hosts whose TLS Chromium rejected, then we accepted so the page can still load (self-signed /
+  // expired / otherwise untrusted certs). Cleared with the partition.
+  const untrusted = new Set<string>()
+  // Preview and local HTTPS often use certificates Chromium would reject; the pane is not the
+  // system browser's secure profile, so allow them and surface the host via `untrustedTLS`.
+  partition.setCertificateVerifyProc((request, callback) => {
+    if (request.errorCode === 0) {
+      callback(0)
+
+      return
+    }
+
+    untrusted.add(request.hostname.toLowerCase())
+    callback(0)
+  })
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      partition.setCertificateVerifyProc(null)
+      untrusted.clear()
+    }),
+  )
   // This is the browser's private partition, not the app/API connection. Never
   // bypass localhost: it must resolve on the machine running the OC2 server.
   yield* Effect.tryPromise(() =>
@@ -47,6 +68,8 @@ export const createBrowserNetwork = Effect.fn("BrowserNetwork.create")(function*
   yield* Effect.tryPromise(() => partition.closeAllConnections())
 
   return {
+    /** Whether this hostname loaded after Chromium rejected its certificate. */
+    untrustedTLS: (hostname: string) => untrusted.has(hostname.toLowerCase()),
     attach(contents: WebContents) {
       const login = (
         event: Electron.Event,
@@ -66,10 +89,29 @@ export const createBrowserNetwork = Effect.fn("BrowserNetwork.create")(function*
         callback(proxy.credentials.username, proxy.credentials.password)
       }
 
+      // Belt-and-suspenders for navigations that still emit certificate-error (e.g. before the
+      // partition proc runs, or for a host Chromium surfaces only through this event).
+      const certificate = (
+        event: Electron.Event,
+        url: string,
+        _error: string,
+        _certificate: Electron.Certificate,
+        callback: (isTrusted: boolean) => void,
+      ) => {
+        event.preventDefault()
+
+        if (URL.canParse(url)) untrusted.add(new URL(url).hostname.toLowerCase())
+        callback(true)
+      }
+
       contents.on("login", login)
+      contents.on("certificate-error", certificate)
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp")
 
-      return () => contents.off("login", login)
+      return () => {
+        contents.off("login", login)
+        contents.off("certificate-error", certificate)
+      }
     },
     /**
      * Fetches a page icon through the server's network, as the page loaded it. Resolves undefined for anything but a

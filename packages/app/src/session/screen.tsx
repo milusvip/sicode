@@ -75,6 +75,7 @@ function SessionScreenContent(props: {
     view: props.view,
     screen: props.screen,
     tabs: session.layout.tabs,
+    onEmpty: () => session.layout.view().side.close(),
   })
 
   onCleanup(attachment.region(region))
@@ -258,6 +259,8 @@ function SessionScreenContent(props: {
           scroll={timeline.scroll}
           onResumeScroll={timeline.actions.resume}
           setScrollRef={timeline.view.setScrollRef}
+          scroller={timeline.scroller}
+          scrollToMessage={timeline.actions.scrollToMessage}
           onScheduleScrollState={timeline.view.scheduleScrollState}
           onPin={timeline.view.pin}
           onUnpin={timeline.view.unpin}

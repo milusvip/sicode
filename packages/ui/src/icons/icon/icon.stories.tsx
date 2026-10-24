@@ -20,6 +20,8 @@ const names = [
   "monitor",
   "outline-arrow-to-corner-top-right",
   "outline-copy",
+  "outline-download",
+  "outline-maximize",
   "outline-dots",
   "outline-eye",
   "outline-eye-slash",

@@ -1,0 +1,159 @@
+/* Above modal dialogs (50) and standard menus (60): a context menu is the topmost layer. */
+[data-popper-positioner]:has([data-component="sicode-context-menu"]) {
+  z-index: 70;
+}
+
+[data-component="sicode-context-menu"] {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 232px;
+  max-width: 340px;
+  padding: 4px;
+  z-index: 70;
+  pointer-events: auto;
+
+  background: var(--v2-background-bg-layer-01);
+  border-radius: 10px;
+  box-shadow:
+    var(--v2-elevation-floating),
+    inset 0 0 0 0.5px var(--v2-border-border-base);
+  outline: none;
+  user-select: none;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+
+  transform-origin: var(--kb-menu-content-transform-origin);
+  /* No exit animation: a context menu must disappear on the same frame it is dismissed, and a
+     pending exit would otherwise keep the old instance alive for the next right-click. */
+  animation: none;
+
+  &[data-expanded] {
+    animation: sicode-context-menu-in 110ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  &:focus,
+  &:focus-visible,
+  &:focus-within {
+    outline: none;
+  }
+}
+
+/* The selection preview confirms what Copy will take before it is taken. */
+[data-slot="sicode-context-menu-selection"] {
+  margin: 0 0 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  font-family: var(--v2-font-family-code);
+  font-size: 11px;
+  line-height: 15px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-slot="sicode-context-menu-item"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: transparent;
+
+  font-family: var(--v2-font-family-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--v2-text-text-base);
+
+  cursor: default;
+  outline: none;
+  user-select: none;
+  transition-property: background-color, color;
+  transition-duration: 90ms;
+  transition-timing-function: ease;
+
+  &[data-highlighted] {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &[data-disabled] {
+    color: var(--v2-text-text-faint);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  &[data-variant="danger"][data-highlighted] {
+    background: var(--v2-state-bg-danger);
+    color: var(--v2-state-fg-danger);
+  }
+}
+
+[data-slot="sicode-context-menu-icon"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--v2-icon-icon-muted);
+  transition: color 90ms ease;
+
+  [data-highlighted] > & {
+    color: var(--v2-icon-icon-base);
+  }
+
+  [data-variant="danger"][data-highlighted] > & {
+    color: inherit;
+  }
+
+  [data-disabled] > & {
+    color: var(--v2-icon-icon-faint);
+  }
+}
+
+[data-slot="sicode-context-menu-label"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+[data-slot="sicode-context-menu-shortcut"] {
+  flex: none;
+  margin-inline-start: 16px;
+  color: var(--v2-text-text-faint);
+  font-family: var(--v2-font-family-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-slot="sicode-context-menu-separator"] {
+  flex: none;
+  height: 1px;
+  margin: 4px 8px;
+  border: 0;
+  background: var(--v2-border-border-muted);
+}
+
+@keyframes sicode-context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

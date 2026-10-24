@@ -54,7 +54,12 @@ export const NoticesOnly = {
           />
           <CurrentContextToolGroup
             parts={[
-              { type: "notice", id: "notice_instructions", render: () => <p>Instructions updated: AGENTS.md</p> },
+              {
+                type: "notice",
+                id: "notice_instructions",
+                summary: "Loaded AGENTS.md",
+                render: () => <p>Loaded AGENTS.md</p>,
+              },
             ]}
             busy={false}
             open={open.notices}

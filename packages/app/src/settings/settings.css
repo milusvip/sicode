@@ -201,12 +201,12 @@
   display: flex;
   flex-shrink: 0;
   width: 100%;
-  max-width: 560px;
-  min-height: 462px;
+  max-width: 420px;
+  min-height: 420px;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 24px;
+  gap: 28px;
   padding-block: 80px calc(80px + var(--settings-bottom-inset, 0px));
   color: var(--v2-text-text-muted);
   font-size: 13px;
@@ -220,61 +220,46 @@
   margin: 0;
 }
 
-.settings-about-intro,
-.settings-about-credits,
-.settings-about-publication,
-.settings-about-details {
+.settings-about-brand,
+.settings-about-meta,
+.settings-about-body,
+.settings-about-links {
   display: flex;
   flex-direction: column;
+  align-items: center;
 }
 
-.settings-about-intro {
-  gap: 14px;
-}
-
-.settings-about-credits,
-.settings-about-publication,
-.settings-about-details {
+.settings-about-brand {
   gap: 16px;
+  --icon-base: var(--v2-text-text-base);
+  --icon-weak-base: color-mix(in srgb, var(--v2-text-text-base) 28%, transparent);
+}
+
+.settings-about-mark {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.settings-about-meta {
+  gap: 6px;
+}
+
+.settings-about-body,
+.settings-about-links {
+  gap: 10px;
 }
 
 .settings-about-wordmark {
-  width: 178px;
-  height: 32px;
+  width: 148px;
+  height: auto;
+  aspect-ratio: 174 / 42;
   flex-shrink: 0;
-  opacity: 0.2;
-  color: var(--v2-text-text-muted);
-  fill: currentColor;
+  opacity: 0.88;
 }
 
-.settings-about-letter-shadow {
-  opacity: 0.3;
-}
-
-.settings-about-faint,
-.settings-about-credits {
+.settings-about-faint {
   color: var(--v2-text-text-faint);
-}
-
-.settings-about-legal {
-  width: 109.2px;
-  height: 19.2px;
-}
-
-.settings-about-copyright {
-  display: flex;
-  width: 100%;
-  flex-shrink: 0;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.settings-about-anomaly-brush {
-  width: 126.72px;
-  height: 48.384px;
-  flex-shrink: 0;
-  pointer-events: none;
 }
 
 .settings-about-content a {
@@ -472,7 +457,8 @@
   transform: scaleX(-1);
 }
 
-[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-container"] {
+[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-container"],
+[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-content"] {
   background: var(--v2-background-bg-base);
 }
 

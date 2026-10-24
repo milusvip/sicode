@@ -447,12 +447,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   ]
 
   const viewCmds = () => [
-    viewCommand({
-      id: "review.toggle",
-      title: language.t("command.review.toggle"),
-      keybind: "mod+shift+r",
-      onSelect: () => actions.session.layout.view().side.toggle(),
-    }),
+    // SiCode: "Toggle review" belongs to the review extension now that its tab is opened on demand rather than pinned.
     ...(shown()
       ? [
           viewCommand({

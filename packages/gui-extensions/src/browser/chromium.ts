@@ -4,6 +4,7 @@ import type { Protocol } from "devtools-protocol"
 import { Schema } from "effect"
 import type { Embeds } from "../sdk/main"
 import { createCdp, abortError, waitFor } from "./cdp"
+import { cookiesForDomain, cookiesForPage, parseCookies } from "./cookies"
 import { createBrowserFiles } from "./files"
 import { createDiagnostics } from "./diagnostics"
 import { loadIcon } from "./icon"
@@ -87,8 +88,8 @@ const inspectOff = { mode: "none", highlightConfig: inspectHighlight }
 // Chromium's zoom presets, so a step lands where it would in the system browser.
 const zoomSteps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
 
-/** A page's icon as a data URL, and its zoom factor, 1 at 100%. */
-export type PageDetail = { icon?: string; zoom: number }
+/** A page's icon as a data URL, its zoom factor (1 at 100%), and whether TLS was accepted untrusted. */
+export type PageDetail = { icon?: string; zoom: number; certificateWarning?: boolean }
 
 /** The zoom a key press asks for: the system browser's zoom keys, with the platform's modifier already checked. */
 function zoomKey(input: Electron.Input) {
@@ -236,7 +237,11 @@ export function createBrowserPage(
     const next: PageDetail = { zoom: Math.min(5, Math.max(0.25, contents.getZoomFactor())) }
 
     if (icon) next.icon = icon
-    const key = `${next.zoom}:${next.icon ?? ""}`
+    const hostname = URL.canParse(contents.getURL()) ? new URL(contents.getURL()).hostname : ""
+    const certificateWarning = !!hostname && !!options.network?.untrustedTLS(hostname)
+
+    if (certificateWarning) next.certificateWarning = true
+    const key = `${next.zoom}:${next.icon ?? ""}:${certificateWarning}`
 
     if (key === reported) return
     reported = key
@@ -592,6 +597,34 @@ export function createBrowserPage(
       contents.reload()
       // A slow page still cleared; the count then reads what it set so far.
       await waitFor(() => closed || !contents.isLoading(), new AbortController().signal, 30_000).catch(() => undefined)
+    },
+    /**
+     * Writes pasted login cookies, then reloads the page that has one so its site sees them. On a web page the paste is
+     * scoped to that page; on a blank tab it names its own domains and nothing reloads. Resolves with the count written
+     * rather than waiting for the page: the reload may redirect or be slow.
+     */
+    async setCookies(text: string) {
+      if (closed) throw new Error("Browser tab was closed. Open the page again to write cookies.")
+      const url = contents.getURL()
+      const drafts = parseCookies(text)
+      // Scoped to the open page: a paste for another host is a mistake, not a way to seed an unrelated site.
+      const page = !!destinationOrigin(url)
+      const cookies = page ? cookiesForPage(url, drafts) : cookiesForDomain(drafts)
+
+      await Promise.all(
+        cookies.map((cookie) =>
+          contents.session.cookies.set(cookie).catch((cause: unknown) => {
+            throw new Error(
+              `Cookie "${cookie.name}" was rejected: ${cause instanceof Error ? cause.message : String(cause)}`,
+            )
+          }),
+        ),
+      )
+
+      if (closed) throw new Error("Browser tab was closed. Open the page again to write cookies.")
+      if (page) contents.reload()
+
+      return { cookies: cookies.length }
     },
     /** Reports the page's icon and zoom when either changed since the last report. */
     detail,

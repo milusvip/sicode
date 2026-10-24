@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Predicate } from "effect"
+import type { SessionMessageUser } from "@opencode/client/promise"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import type { SessionUserActions } from "@opencode/session-ui/actions"
 import { Button } from "@opencode/ui/button"
@@ -9,13 +10,12 @@ import { IconButton } from "@opencode/ui/icon-button"
 import { InlineInput } from "@opencode/ui/inline-input"
 import { Keybind } from "@opencode/ui/keybind"
 import { Menu } from "@opencode/ui/menu"
-import { TextShimmer } from "@opencode/ui/text-shimmer"
 import type { BackgroundTask, MountedSession, SessionScreen } from "@opencode/gui-extensions/sdk"
 import { ExtensionSlot } from "@/runtime/extension/render"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServer } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
-import { Timeline } from "@opencode/session-ui/timeline/projection"
+import { Timeline, WorkShellHead, workShellDisclosureKey } from "@opencode/session-ui/timeline/projection"
 import { createSessionTimelineRowRenderer } from "@opencode/session-ui/timeline/row"
 import { getReadyMarkdown, preloadMarkdown } from "@opencode/session-ui/markdown-cache"
 import { createTimelineController, type TimelineController, type TimelineSessionSource } from "./controller"
@@ -28,6 +28,8 @@ import { useCommand } from "@/shell/commands/command"
 import { SessionAncestorTrail, SessionProjectMenu, SessionTitleHeader } from "../session-identity-header"
 import { SessionHeaderSpacer } from "@/session/header/session-header"
 import { SessionRunningMenu } from "@/session/header/session-running-menu"
+import { selectSessionUserMessages, selectVisibleSessionUserMessages } from "../session-domain"
+import { SessionTurnRail } from "./turn-rail"
 
 type BlockingTask = { type: "shell" | "subagent"; partID: string; id?: string; label?: string }
 
@@ -75,6 +77,8 @@ type MessageTimelineProps = {
   scroll: { overflow: boolean; jump: boolean }
   onResumeScroll: () => void
   setScrollRef: (el: HTMLDivElement | undefined) => void
+  scroller: () => HTMLDivElement | undefined
+  scrollToMessage: (message: SessionMessageUser, behavior?: ScrollBehavior) => void
   onScheduleScrollState: (el: HTMLDivElement) => void
   onPin: () => void
   onUnpin: () => void
@@ -166,6 +170,31 @@ function MessageTimelineView(
   const pinned = createMemo(() => props.pinned)
   const messageByID = projection.messageByID
 
+  const turnRailMessages = createMemo(() =>
+    selectVisibleSessionUserMessages(
+      selectSessionUserMessages(props.session.history.messages()),
+      props.session.data.info()?.revert?.messageID,
+    ),
+  )
+
+  const turnRailFailed = createMemo(() => {
+    const failed = new Set<string>()
+    const byParent = projection.assistantMessagesByParent()
+
+    for (const message of turnRailMessages()) {
+      if (byParent.get(message.id)?.at(-1)?.error) failed.add(message.id)
+    }
+
+    return failed
+  })
+
+  // History loads a page at a time, so the rail can only number its ticks once no older page is left.
+  const turnRailComplete = createMemo(() => {
+    const id = sessionID()
+
+    return !id || !server.ctx.data.session.message.more(id)
+  })
+
   const virtualized = createTimelineVirtualizer({
     active: () => props.active !== false,
     sessionKey: () => `${server.key}/${props.data.sessionID()}`,
@@ -183,6 +212,9 @@ function MessageTimelineView(
     onSelectionInteraction: props.onSelectionInteraction,
     onUserScroll: props.onUserScroll,
     onHistoryScroll: props.onHistoryScroll,
+    connected: () => server.ctx.sdk.connection.status() === "connected",
+    workShellPinClass: turnPadding,
+    centered: () => props.centered,
     canRenderImmediately: (row, disclosure) => {
       if (
         Predicate.isTagged(row, "TurnGap") ||
@@ -309,6 +341,7 @@ function MessageTimelineView(
     editToolDefaultOpen: props.data.editToolPartsExpanded,
     timelineDetail: props.data.timelineDetail,
     disclosure: virtualized.disclosure,
+    connected: () => server.ctx.sdk.connection.status() === "connected",
     centered: () => props.centered,
     padding: turnPadding,
     anchor: props.anchor,
@@ -345,6 +378,13 @@ function MessageTimelineView(
     const active = projection.activeMessageID()
 
     if (!active) return false
+
+    // Work-shell head already shows 工作中 + elapsed for tool-bearing turns.
+    if (
+      projection.rows().some((row) => Predicate.isTagged(row, "WorkShell") && row.userMessageID === active)
+    )
+      return false
+
     const assistant = projection.assistantMessagesByParent().get(active)?.at(-1)
 
     if (assistant?.retry) return false
@@ -398,6 +438,16 @@ function MessageTimelineView(
   // Undelivered input waits below the work the model has seen, so live status moves into the row above it.
   const activityRow = createMemo(() => projection.rows().some((row) => Predicate.isTagged(row, "Activity")))
 
+  const workingStartedAt = createMemo(() => {
+    const active = projection.activeMessageID()
+    if (!active) return Date.now()
+    const message = messageByID().get(active)
+    return message?.type === "user" ? message.time.created : Date.now()
+  })
+
+  const pendingWorkKey = createMemo(() => workShellDisclosureKey(projection.activeMessageID() ?? "pending"))
+  const pendingWorkOpen = createMemo(() => virtualized.disclosure.value(pendingWorkKey()) ?? true)
+
   const activity = () => (
     <Show when={showWorking() || backgroundHintPresence.present()}>
       <div
@@ -406,17 +456,23 @@ function MessageTimelineView(
           "md:max-w-session md:mx-auto": props.centered,
         }}
       >
-        <div class={`flex h-9 items-center gap-2 pt-3 text-[13px] font-[530] leading-text-compact ${turnPadding()}`}>
+        <div class={`flex flex-col gap-2 pt-3 ${turnPadding()}`}>
           <Show when={showWorking()}>
-            <div data-component="session-working" role="status">
-              <TextShimmer text={language.t("session.timeline.working")} active />
-            </div>
+            <WorkShellHead
+              status={server.ctx.sdk.connection.status() === "connected" ? "running" : "disconnected"}
+              startedAt={workingStartedAt()}
+              toolCount={0}
+              failedCount={0}
+              hasReply={false}
+              open={pendingWorkOpen()}
+              onToggle={() => virtualized.disclosure.set(pendingWorkKey(), !pendingWorkOpen())}
+            />
           </Show>
           <Show when={backgroundHintPresence.present()}>
             <div
               ref={setBackgroundHintRef}
               data-component="session-background-hint-row"
-              class="duration-150 motion-reduce:animate-none"
+              class="flex h-9 items-center gap-2 text-[13px] font-[530] leading-text-compact duration-150 motion-reduce:animate-none"
               classList={{
                 "animate-in fade-in": backgroundHintPresence.animate() && backgroundHintPresence.show(),
                 "animate-out fade-out fill-mode-forwards":
@@ -443,177 +499,194 @@ function MessageTimelineView(
   )
 
   return (
-    <VirtualizedTimeline
-      workspaceSession={workspaceSession}
-      bottomSpacer={<Show when={!activityRow()}>{activity()}</Show>}
-      deferred={(row) => {
-        if (!Predicate.isTagged(row, "AssistantPart") || row.group.type !== "part") return false
-        const content = Timeline.resolveContent(messageByID().get(row.group.ref.messageID), row.group.ref.partID)
+    <div class="relative w-full h-full min-w-0">
+      <Show when={props.active !== false}>
+        <SessionTurnRail
+          turns={turnRailMessages}
+          failed={turnRailFailed}
+          complete={turnRailComplete}
+          scroller={props.scroller}
+          onJump={(message) => {
+            props.onUnpin()
+            props.scrollToMessage(message, "smooth")
+          }}
+        />
+      </Show>
+      <VirtualizedTimeline
+        workspaceSession={workspaceSession}
+        bottomSpacer={<Show when={!activityRow()}>{activity()}</Show>}
+        deferred={(row) => {
+          if (!Predicate.isTagged(row, "AssistantPart") || row.group.type !== "part") return false
+          const content = Timeline.resolveContent(messageByID().get(row.group.ref.messageID), row.group.ref.partID)
 
-        return content?.type === "tool" && ["edit", "write"].includes(content.name)
-      }}
-      renderRow={(row, onSizeChange) => (
-        <Show
-          when={Predicate.isTagged(row(), "Activity")}
-          fallback={<rowRenderer.Row row={row} onSizeChange={onSizeChange} />}
-        >
-          {activity()}
-        </Show>
-      )}
-      header={
-        <Show when={!props.hideHeader}>
-          <SessionTitleHeader>
-            <div class="h-12 w-full flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1 min-w-0 flex-1">
-                <div class="flex items-center gap-0.5 min-w-0 flex-1 w-full">
-                  <SessionProjectMenu
-                    project={headerProject()}
-                    directory={sessionDirectory()}
-                    workspace={workspaceSession()}
-                  />
-                  <Show when={parentID()}>
-                    {(id) => (
-                      <SessionAncestorTrail
-                        sessionID={sessionID() ?? ""}
-                        parentID={id()}
-                        parentTitle={parentTitle()}
-                        trailing={!!(childTitle() || title.editing)}
-                      />
-                    )}
-                  </Show>
-                  <Show when={parentID()}>{runningMenu(childTitle())}</Show>
-                  <Show when={!parentID() && (childTitle() || title.editing)}>
-                    <Show
-                      when={title.editing}
-                      fallback={
-                        <h1
-                          data-slot="session-title-child"
-                          class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-1 py-1 hover:bg-v2-overlay-simple-overlay-hover"
-                          classList={{ "max-w-[45%] shrink-0": !!parentID() }}
-                          onClick={openTitleEditor}
-                        >
-                          {childTitle()}
-                        </h1>
-                      }
-                    >
-                      <InlineInput
-                        ref={(el) => {
-                          titleRef = el
-                        }}
-                        data-slot="session-title-child"
-                        dir="auto"
-                        value={title.draft}
-                        disabled={props.pending.rename()}
-                        class="block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base field-sizing-content rounded-[6px] px-1 py-1"
-                        classList={{ "max-w-[45%] shrink-0": !!parentID() }}
-                        style={{
-                          "--inline-input-shadow": "none",
-                          "text-align": "start",
-                        }}
-                        onInput={(event) => setTitle("draft", event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          event.stopPropagation()
-
-                          if (event.isComposing || event.keyCode === 229) return
-
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                            void saveTitleEditor()
-
-                            return
-                          }
-
-                          if (event.key === "Escape") {
-                            event.preventDefault()
-                            closeTitleEditor()
-                          }
-                        }}
-                        onBlur={() => void saveTitleEditor()}
-                      />
-                    </Show>
-                  </Show>
-                  <Show when={!parentID()}>{runningMenu()}</Show>
-                  <Show when={!parentID() && sessionID()} keyed>
-                    {(id) => (
-                      <Menu
-                        gutter={6}
-                        placement="bottom-start"
-                        open={title.menuOpen}
-                        onOpenChange={(open) => setTitle("menuOpen", open)}
-                      >
-                        <Menu.Trigger
-                          as={IconButton}
-                          icon={<Icon name="outline-dots" />}
-                          variant="ghost-muted"
-                          size="large"
-                          class="shrink-0"
-                          aria-label={language.t("common.moreOptions")}
-                          aria-expanded={title.menuOpen}
-                        />
-                        <Menu.Portal>
-                          <Menu.Content
-                            class="session-options-menu w-max"
-                            style={{ "min-width": "0" }}
-                            onCloseAutoFocus={(event) => {
-                              if (!title.pendingRename) return
-                              event.preventDefault()
-                              setTitle("pendingRename", false)
-                              openTitleEditor()
-                            }}
-                          >
-                            <Show when={!parentID()}>
-                              <Menu.Item
-                                onSelect={() => {
-                                  setTitle("pendingRename", true)
-                                  setTitle("menuOpen", false)
-                                }}
-                              >
-                                {language.t("common.rename")}
-                              </Menu.Item>
-                              <Menu.Item onSelect={() => void props.action.export(id)}>
-                                {language.t("common.export")}…
-                              </Menu.Item>
-                            </Show>
-                            <Show when={!parentID()}>
-                              {/* TODO: Need a session archive API. */}
-                              <Menu.Separator />
-                              <Menu.Item onSelect={() => props.action.showDelete(id)}>
-                                {language.t("common.delete")}…
-                              </Menu.Item>
-                            </Show>
-                          </Menu.Content>
-                        </Menu.Portal>
-                      </Menu>
-                    )}
-                  </Show>
-                </div>
-              </div>
-              <Show when={sessionID()} keyed>
-                {(_id) => (
-                  <div class="shrink-0 flex items-center gap-2">
-                    {props.search}
-                    <ExtensionSlot
-                      at="session.header"
-                      input={{
-                        get session() {
-                          return props.view
-                        },
-                        get screen() {
-                          return props.screen
-                        },
-                        get active() {
-                          return props.active !== false
-                        },
-                      }}
+          return content?.type === "tool" && ["edit", "write"].includes(content.name)
+        }}
+        renderRow={(row, onSizeChange) => (
+          <Show
+            when={Predicate.isTagged(row(), "Activity")}
+            fallback={<rowRenderer.Row row={row} onSizeChange={onSizeChange} />}
+          >
+            {activity()}
+          </Show>
+        )}
+        header={
+          <Show when={!props.hideHeader}>
+            <SessionTitleHeader>
+              <div class="h-12 w-full flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1 min-w-0 flex-1">
+                  <div class="flex items-center gap-0.5 min-w-0 flex-1 w-full">
+                    <SessionProjectMenu
+                      project={headerProject()}
+                      directory={sessionDirectory()}
+                      workspace={workspaceSession()}
                     />
-                    <SessionHeaderSpacer visible={props.reserveReviewToggle} />
+                    <Show when={parentID()}>
+                      {(id) => (
+                        <SessionAncestorTrail
+                          sessionID={sessionID() ?? ""}
+                          parentID={id()}
+                          parentTitle={parentTitle()}
+                          trailing={!!(childTitle() || title.editing)}
+                        />
+                      )}
+                    </Show>
+                    <Show when={parentID()}>{runningMenu(childTitle())}</Show>
+                    <Show when={!parentID() && (childTitle() || title.editing)}>
+                      <Show
+                        when={title.editing}
+                        fallback={
+                          <h1
+                            data-slot="session-title-child"
+                            class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-1 py-1 hover:bg-v2-overlay-simple-overlay-hover"
+                            classList={{ "max-w-[45%] shrink-0": !!parentID() }}
+                            onClick={openTitleEditor}
+                          >
+                            {childTitle()}
+                          </h1>
+                        }
+                      >
+                        <InlineInput
+                          ref={(el) => {
+                            titleRef = el
+                          }}
+                          data-slot="session-title-child"
+                          dir="auto"
+                          value={title.draft}
+                          disabled={props.pending.rename()}
+                          class="block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base field-sizing-content rounded-[6px] px-1 py-1"
+                          classList={{ "max-w-[45%] shrink-0": !!parentID() }}
+                          style={{
+                            "--inline-input-shadow": "none",
+                            "text-align": "start",
+                          }}
+                          onInput={(event) => setTitle("draft", event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            event.stopPropagation()
+
+                            if (event.isComposing || event.keyCode === 229) return
+
+                            if (event.key === "Enter") {
+                              event.preventDefault()
+                              void saveTitleEditor()
+
+                              return
+                            }
+
+                            if (event.key === "Escape") {
+                              event.preventDefault()
+                              closeTitleEditor()
+                            }
+                          }}
+                          onBlur={() => void saveTitleEditor()}
+                        />
+                      </Show>
+                    </Show>
+                    <Show when={!parentID()}>{runningMenu()}</Show>
+                    <Show when={!parentID() && sessionID()} keyed>
+                      {(id) => (
+                        <Menu
+                          gutter={6}
+                          placement="bottom-start"
+                          open={title.menuOpen}
+                          onOpenChange={(open) => setTitle("menuOpen", open)}
+                        >
+                          <Menu.Trigger
+                            as={IconButton}
+                            icon={<Icon name="outline-dots" />}
+                            variant="ghost-muted"
+                            size="large"
+                            class="shrink-0"
+                            aria-label={language.t("common.moreOptions")}
+                            aria-expanded={title.menuOpen}
+                          />
+                          <Menu.Portal>
+                            <Menu.Content
+                              class="session-options-menu w-max"
+                              style={{ "min-width": "0" }}
+                              onCloseAutoFocus={(event) => {
+                                if (!title.pendingRename) return
+                                event.preventDefault()
+                                setTitle("pendingRename", false)
+                                openTitleEditor()
+                              }}
+                            >
+                              <Show when={!parentID()}>
+                                <Menu.Item
+                                  onSelect={() => {
+                                    setTitle("pendingRename", true)
+                                    setTitle("menuOpen", false)
+                                  }}
+                                >
+                                  {language.t("common.rename")}
+                                </Menu.Item>
+                                <Menu.Item onSelect={() => void props.action.copyID(id)}>
+                                  {language.t("command.session.copyID")}
+                                </Menu.Item>
+                                <Menu.Item onSelect={() => void props.action.export(id)}>
+                                  {language.t("common.export")}…
+                                </Menu.Item>
+                              </Show>
+                              <Show when={!parentID()}>
+                                {/* TODO: Need a session archive API. */}
+                                <Menu.Separator />
+                                <Menu.Item onSelect={() => props.action.showDelete(id)}>
+                                  {language.t("common.delete")}…
+                                </Menu.Item>
+                              </Show>
+                            </Menu.Content>
+                          </Menu.Portal>
+                        </Menu>
+                      )}
+                    </Show>
                   </div>
-                )}
-              </Show>
-            </div>
-          </SessionTitleHeader>
-        </Show>
-      }
-    />
+                </div>
+                <Show when={sessionID()} keyed>
+                  {(_id) => (
+                    <div class="shrink-0 flex items-center gap-2">
+                      {props.search}
+                      <ExtensionSlot
+                        at="session.header"
+                        input={{
+                          get session() {
+                            return props.view
+                          },
+                          get screen() {
+                            return props.screen
+                          },
+                          get active() {
+                            return props.active !== false
+                          },
+                        }}
+                      />
+                      <SessionHeaderSpacer visible={props.reserveReviewToggle} />
+                    </div>
+                  )}
+                </Show>
+              </div>
+            </SessionTitleHeader>
+          </Show>
+        }
+      />
+    </div>
   )
 }

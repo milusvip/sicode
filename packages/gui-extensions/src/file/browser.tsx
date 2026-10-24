@@ -1,7 +1,9 @@
-import { createMemo, createUniqueId, onCleanup, Show, type Accessor } from "solid-js"
+import { createMemo, createSignal, createUniqueId, onCleanup, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createQuery, keepPreviousData } from "@tanstack/solid-query"
 import { Icon } from "@opencode/ui/icon"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Tooltip } from "@opencode/ui/tooltip"
 import { SessionFilePanelV2, SessionFilePanelV2Empty } from "@opencode/session-ui/v2/session-file-panel-v2"
 import { SessionReviewV2Sidebar, SessionReviewV2SidebarToggle } from "@opencode/session-ui/v2/session-review-v2"
 import { getFilename } from "@opencode/util/path"
@@ -18,10 +20,17 @@ import {
 import { current, useShared } from "./context"
 import SessionFileList, { applyFileListKeyDown } from "./list"
 import { fileTabPath, isFileTab } from "./path"
+import { refreshFileTree } from "./refresh"
 import FileTreeV2 from "./tree-v2"
 import { SessionFileView } from "./view"
 
 const emptyFiles: string[] = []
+
+/**
+ * One turn of the refresh icon's spin. The icon stops on a whole turn, so it never snaps back mid-rotation, which
+ * also means the shortest visible spin is this long.
+ */
+const refreshSpinPeriod = 1000
 
 export function SessionFileBrowserTab(props: {
   session: MountedSession
@@ -42,11 +51,26 @@ export function SessionFileBrowserTab(props: {
   const file = props.screen.file
   const resultsID = `session-file-browser-results-${createUniqueId()}`
   const [store, setStore] = createStore<{ explicitHighlight?: string }>({})
+  const [refreshing, setRefreshing] = createSignal(false)
   const filter = () => shared.filter.get(props.session.key)
   const setFilter = (value: string) => shared.filter.set(props.session.key, value)
   const setExplicitHighlight = (value: string) => setStore("explicitHighlight", value)
   const sidebarOpened = () => props.placeholder || props.state.opened()
   const query = createMemo(() => filter().trim())
+
+  // A listing answers faster than the eye can follow, so the icon spins until its first turn completes.
+  const refresh = () => {
+    if (refreshing()) return
+
+    const started = performance.now()
+    setRefreshing(true)
+
+    void refreshFileTree(file).finally(() => {
+      const elapsed = performance.now() - started
+      const spin = Math.ceil(Math.max(elapsed, refreshSpinPeriod) / refreshSpinPeriod) * refreshSpinPeriod
+      setTimeout(() => setRefreshing(false), spin - elapsed)
+    })
+  }
 
   const search = createQuery(() => {
     const value = query()
@@ -123,6 +147,22 @@ export function SessionFileBrowserTab(props: {
           open={sidebarOpened()}
           transition={props.state.transition()}
           title={<span class="truncate font-[530]">{title()}</span>}
+          stats={
+            <Show when={!query()}>
+              <Tooltip value={ctx.t("tree.refresh")}>
+                <IconButton
+                  size="small"
+                  variant="ghost-muted"
+                  icon={<Icon name="refresh" class={refreshing() ? "animate-spin" : undefined} />}
+                  aria-label={ctx.t("tree.refresh")}
+                  aria-busy={refreshing() ? "true" : undefined}
+                  aria-disabled={refreshing() ? "true" : undefined}
+                  disabled={!props.session.server.connected}
+                  onClick={refresh}
+                />
+              </Tooltip>
+            </Show>
+          }
           filter={filter()}
           onFilterChange={setFilter}
           onFilterKeyDown={onFilterKeyDown}

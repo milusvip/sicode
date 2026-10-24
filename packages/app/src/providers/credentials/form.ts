@@ -1,6 +1,7 @@
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 
-const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
+/** Persisted package for OpenAI-compatible custom providers (V2 `providers` config). */
+export const OPENAI_COMPATIBLE_PACKAGE = "aisdk:@ai-sdk/openai-compatible"
 
 type Translator = (key: string, vars?: Record<string, string | number | boolean>) => string
 
@@ -42,11 +43,28 @@ export type FormState = {
   }
 }
 
+export type CustomProviderConfig = {
+  name: string
+  package: string
+  env?: string[]
+  settings: { baseURL: string }
+  headers?: Record<string, string>
+  models: Record<string, { name: string }>
+}
+
 type ValidateArgs = {
   form: FormState
   t: Translator
   disabledProviders: string[]
   existingProviderIDs: Set<string>
+  /** When editing, the current provider id is allowed to "exist". */
+  editingProviderID?: string
+}
+
+export function isCustomProviderPackage(value?: string) {
+  if (!value) return false
+
+  return value.includes("openai-compatible") && !value.includes("responses")
 }
 
 export function validateCustomProvider(input: ValidateArgs) {
@@ -73,10 +91,11 @@ export function validateCustomProvider(input: ValidateArgs) {
       : undefined
 
   const disabled = input.disabledProviders.includes(providerID)
+  const self = input.editingProviderID === providerID
 
   const existsError = idError
     ? undefined
-    : input.existingProviderIDs.has(providerID) && !disabled
+    : input.existingProviderIDs.has(providerID) && !disabled && !self
       ? input.t("provider.custom.error.providerID.exists")
       : undefined
 
@@ -145,6 +164,15 @@ export function validateCustomProvider(input: ValidateArgs) {
 
   if (!ok) return { err, models, headers }
 
+  const config: CustomProviderConfig = {
+    name,
+    package: OPENAI_COMPATIBLE_PACKAGE,
+    ...(env ? { env: [env] } : {}),
+    settings: { baseURL },
+    ...(Object.keys(headerConfig).length ? { headers: headerConfig } : {}),
+    models: modelConfig,
+  }
+
   return {
     err,
     models,
@@ -153,16 +181,7 @@ export function validateCustomProvider(input: ValidateArgs) {
       providerID,
       name,
       key,
-      config: {
-        npm: OPENAI_COMPATIBLE,
-        name,
-        ...(env ? { env: [env] } : {}),
-        options: {
-          baseURL,
-          ...(Object.keys(headerConfig).length ? { headers: headerConfig } : {}),
-        },
-        models: modelConfig,
-      },
+      config,
     },
   }
 }
@@ -174,3 +193,38 @@ const nextRow = () => `row-${row++}`
 export const modelRow = (): ModelRow => ({ row: nextRow(), id: "", name: "", err: {} })
 
 export const headerRow = (): HeaderRow => ({ row: nextRow(), key: "", value: "", err: {} })
+
+export function formFromConfig(input: {
+  providerID: string
+  config: {
+    name?: string
+    env?: readonly string[]
+    settings?: { baseURL?: string }
+    headers?: Record<string, string>
+    models?: Record<string, { name?: string }>
+  }
+}): FormState {
+  const models = Object.entries(input.config.models ?? {}).map(([id, model]) => ({
+    row: nextRow(),
+    id,
+    name: model.name ?? id,
+    err: {},
+  }))
+  const headers = Object.entries(input.config.headers ?? {}).map(([key, value]) => ({
+    row: nextRow(),
+    key,
+    value,
+    err: {},
+  }))
+  const env = input.config.env?.[0]
+
+  return {
+    providerID: input.providerID,
+    name: input.config.name ?? input.providerID,
+    baseURL: input.config.settings?.baseURL ?? "",
+    apiKey: env ? `{env:${env}}` : "",
+    models: models.length > 0 ? models : [modelRow()],
+    headers: headers.length > 0 ? headers : [headerRow()],
+    err: {},
+  }
+}

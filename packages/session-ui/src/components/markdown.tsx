@@ -796,8 +796,10 @@ export function Markdown(
     enhanceTables(container, {
       size: (rows, columns) => i18n.t("ui.message.table.size", { rows, columns }),
       copy: i18n.t("ui.message.table.copy"),
+      copied: i18n.t("ui.message.copied"),
       download: i18n.t("ui.message.table.download"),
       expand: i18n.t("ui.message.table.expand"),
+      close: i18n.t("ui.message.table.close"),
     })
 
     if (result?.ready && result.text === local.text) container.dataset.markdownReady = ""

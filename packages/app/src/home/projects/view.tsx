@@ -318,11 +318,11 @@ export function HomeUtilityNav(props: {
 }) {
   return (
     <div
-      class={`${props.class ?? ""} min-w-0 flex-row justify-between gap-1 lg:flex-col lg:justify-start lg:pr-3 [&>button]:w-auto lg:[&>button]:w-full`}
+      class={`${props.class ?? ""} min-w-0 flex-row justify-between gap-0.5 border-t border-v2-border-border-base pt-3 lg:flex-col lg:justify-start lg:pr-3 [&>button]:w-auto lg:[&>button]:w-full`}
     >
       <HomeProjectNavButton
         type="button"
-        class="text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"
+        class="[&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"
         onClick={props.onOpenSettings}
       >
         <Icon name="settings-gear" size="small" />
@@ -330,7 +330,7 @@ export function HomeUtilityNav(props: {
       </HomeProjectNavButton>
       <HomeProjectNavButton
         type="button"
-        class="text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"
+        class="[&>[data-slot=icon-svg]]:text-v2-icon-icon-muted"
         onClick={props.onOpenHelp}
       >
         <Icon name="help" size="small" />

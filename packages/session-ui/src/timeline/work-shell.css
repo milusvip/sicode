@@ -1,0 +1,173 @@
+[data-component="work-shell-head"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 8px 6px 4px;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base, rgba(255, 255, 255, 0.075)) 55%, transparent);
+  border-radius: 8px;
+  /* Demo .work-head fill: the panel layer over the page. Use the v2 layer token — the legacy
+     `--background-stronger` only exists on `:root` + the OS media query, so it stays dark when
+     the OS prefers dark but the app is forced to light. */
+  background: color-mix(in srgb, var(--v2-background-bg-layer-02, var(--background-stronger)) 70%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* The head is a real control, so it needs a focus ring of its own: without one it fell back to the
+   browser's 0.57px auto outline while every row below it showed nothing at all. */
+[data-component="work-shell-head"]:focus-visible {
+  outline: 1px solid var(--v2-border-border-focus);
+  outline-offset: 2px;
+}
+
+/* While working, pin the overview bar above scrolling process rows (non-virtual / nested parents).
+   Only an expanded bar pins: a collapsed turn is one summary line the reader has already read, so it
+   scrolls away like any other row (the app's floating copy follows the same rule). */
+[data-component="work-shell-head"][data-status="running"][data-open="true"],
+[data-component="work-shell-head"][data-status="disconnected"][data-open="true"] {
+  position: sticky;
+  top: var(--sticky-accordion-top, 0px);
+  z-index: 22;
+  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--v2-background-bg-base, var(--background-base)) 88%, transparent);
+}
+
+/* Floating pin owns the bar; keep in-list space but hide the duplicate. Scoped to the row that is
+   actually pinned — matching on status hid every finished turn's head at once. */
+[data-work-shell-pinned="true"] [data-component="work-shell-head"] {
+  visibility: hidden;
+}
+
+[data-slot="work-shell-pin"] {
+  padding-bottom: 8px;
+  background: var(--v2-background-bg-base, var(--background-base));
+  /* The host remounts this on every turn change, so scrolling from one turn into the next fades the
+     bar in instead of cutting to a different label. */
+  animation: work-shell-pin-in 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes work-shell-pin-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="work-shell-pin"] {
+    animation: none;
+  }
+}
+
+[data-slot="work-shell-pin"] [data-component="work-shell-head"] {
+  position: static;
+  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--v2-background-bg-base, var(--background-base)) 88%, transparent);
+  box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--v2-background-bg-base, #000) 55%, transparent);
+}
+
+[data-component="work-shell-head"]:hover {
+  background: var(--v2-background-bg-layer-02, var(--background-stronger));
+}
+
+[data-component="work-shell-head"][data-status="running"] {
+  border-color: color-mix(in srgb, var(--border-weak-base, rgba(255, 255, 255, 0.075)) 80%, transparent);
+}
+
+[data-component="work-shell-head"][data-status="error"],
+[data-component="work-shell-head"][data-status="failed"],
+[data-component="work-shell-head"][data-status="disconnected"] {
+  border-color: color-mix(in srgb, var(--v2-state-border-danger, var(--border-critical-base, #e5756a)) 55%, transparent);
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-icon"] {
+  flex: 0 0 19px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--v2-text-text-faint, var(--text-weak));
+}
+
+[data-component="work-shell-head"][data-status="running"] [data-slot="work-shell-icon"] {
+  color: var(--v2-text-text-base, var(--text-strong));
+}
+
+[data-component="work-shell-head"][data-status="done"] [data-slot="work-shell-icon"] {
+  color: var(--v2-state-fg-success, var(--icon-success-base, #8adfa6));
+}
+
+[data-component="work-shell-head"][data-status="error"] [data-slot="work-shell-icon"],
+[data-component="work-shell-head"][data-status="failed"] [data-slot="work-shell-icon"],
+[data-component="work-shell-head"][data-status="disconnected"] [data-slot="work-shell-icon"] {
+  color: var(--v2-state-fg-danger, var(--icon-critical-base, #e5756a));
+}
+
+[data-component="work-shell-head"][data-status="interrupted"] [data-slot="work-shell-icon"] {
+  color: var(--v2-text-text-muted, var(--text-weak));
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-title"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: var(--line-height-compact, 20px);
+  /* `faint` on this head's own 70% layer fill measured 3.78:1 — under AA for 12.5px text, and this
+     label is the only signal a collapsed shell carries. `muted` lands at 6.7:1. */
+  color: var(--v2-text-text-muted, var(--text-weak));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-component="work-shell-head"][data-status="running"] [data-slot="work-shell-title"] {
+  color: var(--v2-text-text-base, var(--text-strong));
+}
+
+[data-component="work-shell-head"][data-status="error"] [data-slot="work-shell-title"],
+[data-component="work-shell-head"][data-status="failed"] [data-slot="work-shell-title"],
+[data-component="work-shell-head"][data-status="disconnected"] [data-slot="work-shell-title"] {
+  color: color-mix(in srgb, var(--v2-state-fg-danger, var(--text-critical-base, #e5756a)) 85%, var(--v2-text-text-base, #e9e7e4));
+}
+
+/* A settled turn that produced no prose says so here: without it the head reads as a broken
+   transcript ("已完成 44 个工具" and then nothing). */
+[data-component="work-shell-head"] [data-slot="work-shell-note"] {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  line-height: var(--line-height-compact, 20px);
+  color: var(--v2-text-text-muted, var(--text-weak));
+  white-space: nowrap;
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-meta"] {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-family: var(--v2-font-family-sans);
+  font-size: 12.5px;
+  font-weight: 440;
+  line-height: var(--line-height-compact, 16px);
+  letter-spacing: -0.04px;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-text-muted, var(--text-weak));
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-chevron"] {
+  flex: 0 0 12px;
+  display: grid;
+  place-items: center;
+  color: var(--v2-text-text-faint, var(--text-weak));
+  opacity: 0.75;
+  transition: transform 200ms ease;
+}
+
+[data-component="work-shell-head"][data-open="true"] [data-slot="work-shell-chevron"] {
+  transform: rotate(90deg);
+}

@@ -3,7 +3,15 @@ import { createStore } from "solid-js/store"
 import type { SessionDocument } from "../document"
 import type { SessionUserActions } from "../actions"
 import type { TimelineDetail } from "./detail"
-import { createReactiveTimelineProjection, TimelineRow, type ReasoningMode } from "./projection"
+import {
+  createReactiveTimelineProjection,
+  filterCollapsedWorkShellRows,
+  openWorkShellOnly,
+  TimelineRow,
+  workShellDefaultOpen,
+  workShellDisclosureKey,
+  type ReasoningMode,
+} from "./projection"
 import { createSessionTimelineRowRenderer, type SessionUserPresentation } from "./session-timeline-row"
 
 export type { SessionUserPresentation } from "./session-timeline-row"
@@ -46,10 +54,21 @@ export function SessionTimeline(props: SessionTimelineProps) {
     disclosure: {
       value: (key) => toolOpen[key],
       set: (key, open) => setToolOpen(key, open),
+      openWorkShell: (userMessageID) => {
+        openWorkShellOnly(projection.rows(), { set: (key, open) => setToolOpen(key, open) }, userMessageID)
+        setToolOpen(workShellDisclosureKey(userMessageID), true)
+      },
     },
   })
 
-  const rowKeys = createMemo(() => projection.rows().map(TimelineRow.key))
+  const visibleRows = createMemo(() =>
+    filterCollapsedWorkShellRows(projection.rows(), (userMessageID, status) => {
+      const stored = toolOpen[workShellDisclosureKey(userMessageID)]
+      if (stored !== undefined) return stored
+      return workShellDefaultOpen(status)
+    }),
+  )
+  const rowKeys = createMemo(() => visibleRows().map(TimelineRow.key))
 
   function Row(props: { rowKey: string }) {
     const initial = projection.rowByKey().get(props.rowKey)!

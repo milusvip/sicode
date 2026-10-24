@@ -16,6 +16,8 @@ export default {
   skills: "Skills",
   "skills.configured": "Configured skills",
   "skills.empty": "No skills configured",
+  "skills.global": "Global",
+  "skills.project": "Project",
   lsp: "LSP",
   "lsp.configured": "Configured LSPs",
   "lsp.empty": "No LSP servers configured",

@@ -1,6 +1,7 @@
 import { Browser } from "@opencode/plugin-browser/rpc"
 import { Schema } from "effect"
 import { Ipc } from "../sdk"
+import { MAX_COOKIE_TEXT } from "./cookies"
 
 const text = (maximum: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maximum))
 
@@ -42,13 +43,14 @@ export const PaneEvent = Schema.Union([
     active: Schema.Boolean,
     element: Schema.optionalKey(PaneElement),
   }),
-  // Details only this desktop shows, kept out of the server's tab state: the page's icon as a data URL, and its zoom
-  // factor, 1 at 100%.
+  // Details only this desktop shows, kept out of the server's tab state: the page's icon as a data URL, its zoom
+  // factor (1 at 100%), and whether TLS was accepted after Chromium rejected the certificate.
   Schema.Struct({
     type: Schema.Literal("page"),
     tabID: Browser.TabID,
     icon: Schema.optionalKey(detail(MAX_ICON_URL).check(Schema.isStartingWith("data:image/"))),
     zoom: Schema.Finite.check(Schema.isBetween({ minimum: 0.25, maximum: 5 })),
+    certificateWarning: Schema.optionalKey(Schema.Boolean),
   }),
   // The page asked for the address field, with the platform's address shortcut.
   Schema.Struct({ type: Schema.Literal("address"), tabID: Browser.TabID }),
@@ -90,6 +92,12 @@ export const BrowserPane = Ipc.define({
     },
     // Deletes the cookies the page's address can read and its origin's stored data, then reloads the page.
     clearSite: { input: Schema.Struct({ binding, tabID: Browser.TabID }) },
+    // Writes pasted login cookies for the page's own site, then reloads it so the site sees them. Resolves with the
+    // number of cookies written; a paste for another site, or one Chromium rejects, fails with the reason.
+    setCookies: {
+      input: Schema.Struct({ binding, tabID: Browser.TabID, text: text(MAX_COOKIE_TEXT) }),
+      output: Schema.Struct({ cookies: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) }),
+    },
     close: { input: Schema.Struct({ binding }) },
   },
   events: {

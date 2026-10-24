@@ -1,0 +1,260 @@
+[data-slot="popover-trigger"].stepped-slider-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  /* The border stays 1px wide but invisible so hovering does not shift layout. */
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--v2-text-text-muted);
+  font-family: var(--v2-font-family-sans);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+
+  & > svg {
+    width: 13px;
+    height: 13px;
+    opacity: 0.8;
+  }
+
+  &:hover {
+    color: var(--v2-text-text-base);
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &[aria-expanded="true"] {
+    color: var(--v2-text-text-base);
+    border-color: var(--v2-border-border-strong);
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  [data-slot="stepped-slider-value"] {
+    color: var(--v2-text-text-base);
+    font-weight: 520;
+    text-transform: capitalize;
+  }
+}
+
+[data-component="popover-content"].stepped-slider-panel {
+  width: 322px;
+  max-width: none;
+  padding: 0;
+  border: 1px solid var(--v2-border-border-strong);
+  border-radius: 12px;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-floating);
+  /* Dragging the rail must never start a text selection: a selected label turns
+     the next drag into a native text drag, which the composer reads as a drop. */
+  user-select: none;
+
+  [data-slot="popover-body"] {
+    padding: 9px 13px 8px;
+  }
+
+  [data-slot="stepped-slider-head"] {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 5px;
+  }
+
+  [data-slot="stepped-slider-title"] {
+    font-size: 11px;
+    line-height: var(--line-height-compact);
+    letter-spacing: 0.35px;
+    text-transform: uppercase;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="stepped-slider-current"] {
+    min-width: 2em;
+    font-size: 12px;
+    line-height: var(--line-height-compact);
+    font-weight: 560;
+    letter-spacing: 0.2px;
+    text-align: right;
+    text-transform: capitalize;
+    color: var(--v2-text-text-base);
+  }
+
+  [data-slot="stepped-slider-rail"] {
+    position: relative;
+    height: 22px;
+    margin-inline: 9px;
+    cursor: pointer;
+    touch-action: none;
+    outline: none;
+
+    &:hover [data-slot="stepped-slider-thumb"] {
+      transform: translateY(-50%) scaleX(1.06);
+    }
+
+    &.is-moving [data-slot="stepped-slider-thumb"] {
+      transform: translateY(-50%) scaleX(1.16);
+    }
+
+    &.is-moving [data-slot="stepped-slider-fill"]::after {
+      opacity: 1;
+    }
+
+    &:focus-visible [data-slot="stepped-slider-thumb"] {
+      box-shadow:
+        0 0 0 1px var(--v2-border-border-strong),
+        0 0 0 4px color-mix(in oklab, var(--v2-text-text-base) 28%, transparent);
+    }
+  }
+
+  [data-slot="stepped-slider-groove"] {
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 7px;
+    margin-top: -3.5px;
+    border-radius: 4px;
+    background: var(--v2-background-bg-layer-03);
+    box-shadow: var(--v2-elevation-switch-off);
+  }
+
+  [data-slot="stepped-slider-fill"] {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    height: 7px;
+    margin-top: -3.5px;
+    border-radius: 4px;
+    background: linear-gradient(
+      180deg,
+      var(--v2-text-text-base),
+      color-mix(in oklab, var(--v2-text-text-base) 62%, var(--v2-background-bg-layer-01))
+    );
+    will-change: width;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: -6px;
+      bottom: -6px;
+      inset-inline-end: -7px;
+      width: 18px;
+      border-radius: 999px;
+      background: radial-gradient(
+        closest-side,
+        color-mix(in oklab, var(--v2-text-text-base) 28%, transparent),
+        transparent
+      );
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+    }
+  }
+
+  [data-slot="stepped-slider-thumb"] {
+    position: absolute;
+    top: 50%;
+    width: 15px;
+    height: 20px;
+    margin-inline-start: -7.5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border-radius: 6px;
+    background: var(--v2-text-text-base);
+    box-shadow:
+      0 0 0 1px var(--v2-border-border-strong),
+      var(--v2-elevation-elements);
+    transform: translateY(-50%);
+    cursor: pointer;
+    transition:
+      transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 180ms ease;
+    will-change: transform;
+
+    & i {
+      display: block;
+      width: 5px;
+      height: 1px;
+      border-radius: 1px;
+      background: var(--v2-background-bg-base);
+    }
+  }
+
+  [data-slot="stepped-slider-scale"] {
+    position: relative;
+    height: 7px;
+    margin: 3px 9px 0;
+
+    & i {
+      position: absolute;
+      top: 0;
+      width: 1px;
+      height: 4px;
+      border-radius: 1px;
+      background: var(--v2-border-border-strong);
+      transform: translateX(-50%);
+      opacity: 0.6;
+      transition:
+        opacity 160ms ease,
+        height 160ms ease,
+        background 160ms ease;
+
+      &[data-active] {
+        height: 7px;
+        opacity: 1;
+        background: var(--v2-text-text-muted);
+      }
+    }
+  }
+
+  [data-slot="stepped-slider-labels"] {
+    position: relative;
+    height: var(--line-height-compact);
+    margin: 0 9px;
+
+    & span {
+      position: absolute;
+      top: 0;
+      font-size: 10.5px;
+      line-height: var(--line-height-compact);
+      white-space: nowrap;
+      text-transform: capitalize;
+      color: var(--v2-text-text-faint);
+      transform: translateX(-50%);
+      transition: color 160ms ease;
+      user-select: none;
+
+      &[data-active] {
+        color: var(--v2-text-text-base);
+        font-weight: 520;
+      }
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepped-slider-trigger,
+  [data-slot^="stepped-slider-"],
+  [data-component="popover-content"].stepped-slider-panel * {
+    transition-duration: 0.001ms !important;
+  }
+}

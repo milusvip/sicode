@@ -1,18 +1,36 @@
 import { destinationOrigin } from "./policy"
 
-/** Where text that is not an address goes. Shared with the system browser's default so results look familiar. */
-const SEARCH = "https://www.google.com/search?q="
+/** A search the address field can send text to; `url` ends where the encoded query begins. */
+export const SEARCH_ENGINES = [
+  { id: "google", url: "https://www.google.com/search?q=" },
+  { id: "bing", url: "https://www.bing.com/search?q=" },
+  { id: "baidu", url: "https://www.baidu.com/s?wd=" },
+  { id: "duckduckgo", url: "https://duckduckgo.com/?q=" },
+  { id: "yandex", url: "https://yandex.com/search/?text=" },
+] as const
+
+export type SearchEngine = (typeof SEARCH_ENGINES)[number]
+
+export type SearchEngineID = SearchEngine["id"]
 
 /**
  * What the address field navigates to for the text the user entered: the text itself when it reads as an address
  * (a scheme, `localhost`, a port, or a dotted host), else a web search for it. Main adds the missing scheme.
  */
-export function resolveAddress(input: string) {
+export function resolveAddress(input: string, engine: SearchEngine = SEARCH_ENGINES[0]) {
   const value = input.trim()
 
   if (!value || value.toLowerCase() === "about:blank") return "about:blank"
 
-  return searches(value) ? `${SEARCH}${encodeURIComponent(value)}` : value
+  return searches(value) ? `${engine.url}${encodeURIComponent(value)}` : value
+}
+
+/** The query a search URL carries, when it is that engine's; undefined for any other page. */
+export function searchQuery(engine: SearchEngine, url: string) {
+  if (!url.startsWith(engine.url)) return
+  const query = decode(url.slice(engine.url.length)).trim()
+
+  return query || undefined
 }
 
 /**
@@ -49,16 +67,16 @@ export function addressParts(url: string) {
 
 /**
  * How a page reached its content, for the site information.
- * - `secure`: HTTPS.
+ * - `secure`: HTTPS with a certificate Chromium accepted.
  * - `local`: HTTP on a loopback host, which resolves on the machine running the server.
- * - `insecure`: HTTP elsewhere.
+ * - `insecure`: HTTP elsewhere, or HTTPS whose certificate Chromium rejected and the pane accepted.
  * - `file`: a workspace file.
  */
-export function connection(url: string) {
+export function connection(url: string, opts?: { certificateWarning?: boolean }) {
   if (!URL.canParse(url)) return
   const parsed = new URL(url)
 
-  if (parsed.protocol === "https:") return "secure"
+  if (parsed.protocol === "https:") return opts?.certificateWarning ? "insecure" : "secure"
 
   if (parsed.protocol === "file:") return "file"
 
@@ -70,4 +88,13 @@ export function connection(url: string) {
 /** Whether a host names this machine; for a remote server that is the server's machine, not the user's. */
 export function loopback(hostname: string) {
   return /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1)$/i.test(hostname) || hostname.endsWith(".localhost")
+}
+
+/** A URL's own text, so a malformed escape in a page's address cannot break the field that reads it. */
+function decode(text: string) {
+  try {
+    return decodeURIComponent(text)
+  } catch {
+    return text
+  }
 }

@@ -5,12 +5,45 @@ import { Keybind } from "@opencode/ui/keybind"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
+import { useSettings } from "@/settings/model"
 import { useSessionLayout } from "@/session/session-layout"
 
 export function SessionReviewToggle() {
   const command = useCommand()
   const language = useLanguage()
+  const settings = useSettings()
   const { view } = useSessionLayout()
+
+  // SiCode: the header control owns the whole side column — side tabs and a side-placed terminal.
+  // Closing the dock must be reversible: remember what was showing and restore on the next open.
+  let restoreSide = false
+  let restoreDock = false
+
+  const sideDocked = () => settings.general.terminalPlacement() === "side"
+
+  const sideColumnOpen = () => {
+    if (view().side.opened()) return true
+
+    return sideDocked() && view().dock.opened()
+  }
+
+  const toggleSideColumn = () => {
+    if (sideColumnOpen()) {
+      restoreSide = view().side.opened()
+      restoreDock = sideDocked() && view().dock.opened()
+      view().side.close()
+
+      if (sideDocked()) view().dock.close()
+
+      return
+    }
+
+    if (restoreSide || !restoreDock) {
+      if (!view().side.opened()) view().side.toggle()
+    }
+
+    if (restoreDock && sideDocked()) view().dock.open()
+  }
 
   return (
     <SessionHeaderActions
@@ -18,8 +51,8 @@ export function SessionReviewToggle() {
         reviewLabel: language.t("command.review.toggle"),
         reviewKeybind: command.keybindParts("review.toggle"),
         reviewVisible: true,
-        reviewOpened: view().side.opened(),
-        onReviewToggle: () => view().side.toggle(),
+        reviewOpened: sideColumnOpen(),
+        onReviewToggle: toggleSideColumn,
       }}
     />
   )

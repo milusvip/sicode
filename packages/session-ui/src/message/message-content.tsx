@@ -24,10 +24,10 @@ import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
 import { Icon } from "@opencode/ui/icon"
 import { Button } from "@opencode/ui/button"
-import { TextReveal } from "@opencode/ui/text-reveal"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { BasicTool } from "../components/basic-tool"
 import { reasoningHeading } from "../timeline/projection"
+import { formatElapsed } from "../timeline/work-shell"
 import { Card } from "@opencode/ui/card"
 import type {
   PromptAgentAttachment,
@@ -266,6 +266,8 @@ export function CurrentUserMessageDisplay(props: {
   comments?: SessionUserComment[]
   references?: SessionUserAttachmentReference[]
   voice?: boolean
+  /** Mid-execution follow-up (引导), not a new task opener. */
+  steer?: boolean
 }) {
   const data = useData()
   const dialog = useDialog()
@@ -276,6 +278,8 @@ export function CurrentUserMessageDisplay(props: {
   const status = createMemo(() => props.actions?.pending?.status(props.message.id))
   const pending = createMemo(() => status() !== undefined && status() !== "queued")
   const waiting = createMemo(() => status() === "steering" || status() === "stranded")
+  // Pending steers that have not joined execution yet still read as 引导.
+  const steer = createMemo(() => !!props.steer || waiting())
   const attachments = createMemo(() => (props.message.files ?? []).filter(attached))
   const references = createMemo(() => props.references ?? [])
   const inlineFiles = createMemo(() => (props.message.files ?? []).filter((file) => !!file.mention))
@@ -380,6 +384,7 @@ export function CurrentUserMessageDisplay(props: {
   return (
     <div
       data-component="user-message"
+      data-steer={steer() ? "true" : undefined}
       data-pending={waiting() ? "true" : undefined}
       data-timeline-part-id={props.text ? `${props.message.id}:text:0` : undefined}
     >
@@ -400,7 +405,15 @@ export function CurrentUserMessageDisplay(props: {
               </Tooltip>
             </div>
           </Show>
-          <div data-slot="user-message-text" dir="auto" data-comments={comments().length > 0 ? "true" : undefined}>
+          <div
+            data-slot="user-message-text"
+            dir="auto"
+            data-steer={steer() ? "true" : undefined}
+            data-comments={comments().length > 0 ? "true" : undefined}
+          >
+            <Show when={steer()}>
+              <span data-slot="user-message-steer">{i18n.t("ui.message.steer")}</span>
+            </Show>
             <CurrentHighlightedText text={props.text} files={inlineFiles()} agents={agents()} />
             <Show when={comments().length > 0}>
               <UserMessageComments comments={comments()} bounded />
@@ -593,7 +606,6 @@ export function AssistantTextContent(props: {
 }) {
   const data = useData()
   const i18n = useI18n()
-  const numfmt = createMemo(() => new Intl.NumberFormat(i18n.locale()))
 
   const interrupted = () => {
     const type = props.message.error?.type.toLowerCase()
@@ -603,40 +615,15 @@ export function AssistantTextContent(props: {
 
   const model = createMemo(() => modelLabel(data, i18n, props.message.model))
 
-  const duration = createMemo(() => {
-    const completed = props.message.time.completed
-
-    const ms =
-      props.turnDurationMs === null
-        ? -1
-        : props.turnDurationMs !== undefined
-          ? props.turnDurationMs
-          : completed !== undefined
-            ? completed - props.message.time.created
-            : -1
-
-    if (!(ms >= 0)) return ""
-    const total = Math.round(ms / 1000)
-
-    if (total < 60) return i18n.t("ui.message.duration.seconds", { count: numfmt().format(total) })
-
-    return i18n.t("ui.message.duration.minutesSeconds", {
-      minutes: numfmt().format(Math.floor(total / 60)),
-      seconds: numfmt().format(total % 60),
-    })
-  })
-
   // Mobile omits the per-response agent and model; see CurrentUserMessageDisplay.
   const mobile = createMediaQuery("(max-width: 767px)")
 
   const meta = createMemo(() => {
     const agent = props.message.agent
 
-    return [
-      ...(mobile() ? [] : [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]),
-      duration(),
-      interrupted() ? i18n.t("ui.message.interrupted") : "",
-    ]
+    // Agent and model only. The turn's elapsed time lives in the work-shell head, and "已中断" is
+    // already on the head and on the divider below — printing either again here read as noise.
+    return [...(mobile() ? [] : [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()])]
       .filter(Boolean)
       .join(" \u00B7 ")
   })
@@ -680,6 +667,8 @@ export function AssistantReasoningContent(props: {
   id: string
   content: SessionMessageAssistantReasoning
   streaming: boolean
+  /** Inside a process chain: one-line summary + compact meta, matching the design demo. */
+  chain?: boolean
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -688,12 +677,47 @@ export function AssistantReasoningContent(props: {
   const i18n = useI18n()
   const [state, setState] = createStore<{ open?: boolean }>({})
   const open = () => props.open ?? state.open ?? props.defaultOpen ?? false
-  const heading = createMemo(() => (props.streaming ? reasoningHeading(props.content.text) : ""))
+
+  // While the model thinks, the head follows the newest slice of the current line so the row
+  // reads as a live ticker instead of a heading that only changes at paragraph breaks.
+  const live = createMemo(() => {
+    if (!props.streaming) return ""
+
+    const text = props.content.text.replace(/\r\n?/g, "\n")
+    // Only the tail can be on screen; slicing first keeps this cheap for long reasoning.
+    const tail = text.slice(-240)
+    // Between paragraphs the newest line is still empty; keep the last line that has text so the
+    // head does not blank out mid-stream.
+    const line = tail.split("\n").findLast((value) => value.trim()) ?? ""
+
+    return line
+      .replace(/^\s{0,3}#{1,6}\s+/, "")
+      .replace(/^\s*[-*+]\s+/, "")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim()
+  })
+
+  const summary = createMemo(() => {
+    if (!props.chain) return ""
+    // The collapsed row is plain text, so strip the markdown the first line may start with
+    // ("## Finding the current label" used to leak its heading markers into the chain).
+    const text = props.content.text.trim()
+    const line = (text.split(/\n/).find((value) => value.trim()) ?? "").replace(/^[\s#>*\-+_]+/, "").trim()
+    const value = line || reasoningHeading(text) || ""
+    if (value.length <= 72) return value
+    return `${value.slice(0, 72)}…`
+  })
 
   const duration = createMemo(() => {
     const time = props.content.time
 
     if (time?.completed === undefined) return undefined
+
+    if (props.chain) return formatElapsed(time.completed - time.created)
+
     const total = Math.max(0, Math.round((time.completed - time.created) / 1000))
     const numfmt = new Intl.NumberFormat(i18n.locale())
 
@@ -706,9 +730,9 @@ export function AssistantReasoningContent(props: {
   })
 
   return (
-    <div data-component="reasoning-part" data-timeline-part-id={props.id}>
+    <div data-component="reasoning-part" data-timeline-part-id={props.id} data-chain={props.chain ? "" : undefined}>
       <BasicTool
-        icon="mcp"
+        icon={props.chain ? "brain" : "flask"}
         status={props.streaming ? "running" : "completed"}
         compact
         hasContent
@@ -730,18 +754,45 @@ export function AssistantReasoningContent(props: {
                 />
               </span>
               <Show
-                when={props.streaming && !open()}
+                when={props.chain}
                 fallback={
-                  <Show when={!props.streaming && duration()}>
-                    {(value) => <span data-slot="basic-tool-tool-subtitle">{value()}</span>}
+                  <Show
+                    when={props.streaming && !open()}
+                    fallback={
+                      <Show when={!props.streaming && duration()}>
+                        {(value) => <span data-slot="basic-tool-tool-subtitle">{value()}</span>}
+                      </Show>
+                    }
+                  >
+                    <Show when={live()}>
+                      {(text) => (
+                        <span data-slot="basic-tool-tool-subtitle" data-live>
+                          <span data-slot="reasoning-live-text">{text()}</span>
+                        </span>
+                      )}
+                    </Show>
                   </Show>
                 }
               >
-                <span data-slot="basic-tool-tool-subtitle">
-                  <TextReveal text={heading()} />
-                </span>
+                <Show
+                  when={props.streaming}
+                  fallback={
+                    <Show when={summary()}>{(text) => <span data-slot="basic-tool-tool-subtitle">{text()}</span>}</Show>
+                  }
+                >
+                  <Show when={live()}>
+                    {(text) => (
+                      <span data-slot="basic-tool-tool-subtitle" data-live>
+                        <span data-slot="reasoning-live-text">{text()}</span>
+                      </span>
+                    )}
+                  </Show>
+                </Show>
               </Show>
             </div>
+            <Show when={props.chain && !props.streaming && duration()}>
+              {(value) => <span data-slot="chain-tool-meta">{value()}</span>}
+            </Show>
           </div>
         }
       >

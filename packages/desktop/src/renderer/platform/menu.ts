@@ -13,7 +13,7 @@ export function bindDesktopMenu(next: (id: string) => void) {
 }
 
 export function createDesktopMenuAction(api: ElectronAPI): NonNullable<Platform["runDesktopMenuAction"]> {
-  return (action) => {
+  return (action, point) => {
     switch (action) {
       case "view.resetZoom":
         resetZoom()
@@ -29,6 +29,6 @@ export function createDesktopMenuAction(api: ElectronAPI): NonNullable<Platform[
         return
     }
 
-    return api.runDesktopMenuAction(action)
+    return api.runDesktopMenuAction(action, point)
   }
 }

@@ -26,6 +26,7 @@ import { createLineCommentControllerV2 } from "./line-comment-annotations-v2"
 import { shouldVirtualizeReviewDiff } from "./session-review-file-preview-v2-virtualize"
 import { LineCommentOverflowIcon } from "@opencode/ui/line-comment"
 import { Menu } from "@opencode/ui/menu"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import "./session-review-v2.css"
 
 type ReviewDiff = (PresentationFileDiff & { file: string }) | FileDiffInfo
@@ -284,11 +285,11 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
           <DiffChanges changes={view()} />
         </div>
       </div>
-      <div
-        ref={(el) => {
+      <ScrollView
+        data-slot="session-review-v2-diff-scroll"
+        viewportRef={(el) => {
           scrollRef = el
         }}
-        data-slot="session-review-v2-diff-scroll"
       >
         <Show
           when={diffCanRender() || mediaKind()}
@@ -300,7 +301,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
         >
           {diffViewer()}
         </Show>
-      </div>
+      </ScrollView>
     </>
   )
 }

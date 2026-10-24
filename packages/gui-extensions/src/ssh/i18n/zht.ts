@@ -25,6 +25,7 @@ export default {
   "error.service": "SSH 已連線，但 SiCode 伺服器未準備就緒。",
   "error.host-key": "無法驗證主機的身分。在更新 SSH 已知主機前，請先驗證其指紋。",
   "error.ssh-missing": "未找到 OpenSSH。請安裝 OpenSSH 用戶端，並確保 ssh 可在 PATH 上使用。",
+  "error.unavailable": "SSH 無法使用",
   "action.authenticate": "驗證",
   "stage.connecting": "正在透過 SSH 連線…",
   "stage.authentication": "需要驗證",

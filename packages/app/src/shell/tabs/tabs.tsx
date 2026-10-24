@@ -229,6 +229,47 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       if (draftID) removeDraftPersisted(draftID)
     }
 
+    // Batch close for the tab context menu. Session tabs are recorded so they can be reopened.
+    // Navigation matches `removeTab`: only when the recent tab closed and the user is not on home.
+    const closeTabs = (predicate: (tab: Tab) => boolean, focus?: Tab) => {
+      const removed = store.flatMap((tab, index) => (predicate(tab) ? [{ tab, index, key: tabKey(tab) }] : []))
+
+      if (!removed.length) return
+      const removedKeys = new Set(removed.map((item) => item.key))
+      const remaining = store.filter((tab) => !removedKeys.has(tabKey(tab)))
+      const activeKey = recentKey()
+      const focusKey = focus ? tabKey(focus) : undefined
+
+      updateClosed((stack) =>
+        removed.reduce((acc, item) => pushClosedTab(acc, item.tab, item.index, info[item.key]), stack),
+      )
+
+      void startTransition(() => {
+        setStore((tabs) => tabs.filter((tab) => !removedKeys.has(tabKey(tab))))
+
+        // Same rule as `removeTab`: only a closed active tab moves the route, and never while on home.
+        if (!activeKey || !removedKeys.has(activeKey) || location.pathname === "/") return
+        const next = remaining.find((tab) => tabKey(tab) === focusKey) ?? remaining[0]
+
+        if (next) {
+          navigateTab(next)
+
+          return
+        }
+
+        setRecentKey(undefined)
+        navigate("/")
+      })
+
+      for (const item of removed) {
+        memory.remove(item.key)
+        removeInfo(item.key)
+        removeRegions(item.key)
+
+        if (item.tab.type === "draft") removeDraftPersisted(item.tab.draftID)
+      }
+    }
+
     const actions = {
       addSessionTab: (tab: Omit<SessionTab, "type">) => {
         const next = { type: "session" as const, ...tab }
@@ -418,6 +459,13 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
 
         if (tab.type === "session") updateClosed((stack) => pushClosedTab(stack, tab, index, info[tabKey(tab)]))
         removeTab(index)
+      },
+      closeOtherTabs(keep: Tab) {
+        const key = tabKey(keep)
+        closeTabs((tab) => tabKey(tab) !== key, keep)
+      },
+      closeAllTabs() {
+        closeTabs(() => true)
       },
       reopenClosedTab(target?: SessionTab, options?: { append?: boolean }) {
         if (!closedReady()) {

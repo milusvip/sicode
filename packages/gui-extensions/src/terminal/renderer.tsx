@@ -1,5 +1,5 @@
 import { createMemo, lazy, on, onCleanup, Suspense } from "solid-js"
-import { Command, createKeyed, onIdle, Panel, type Setup } from "../sdk"
+import { Command, createKeyed, MenuItem, onIdle, Panel, type Setup } from "../sdk"
 import type Terminal from "./index"
 import { createTerminalModel, type TerminalWorkspace } from "./model"
 
@@ -140,6 +140,32 @@ const setup: Setup<typeof Terminal> = (ctx) => {
       return ctx.t("tab.title")
     },
   }
+
+  // SiCode: the side strip's + menu also opens the dock terminal.
+  ctx.add(MenuItem, (): MenuItem | undefined => {
+    const session = sessions.current()
+
+    if (!session || layout.narrow()) return undefined
+
+    return {
+      menu: "session.panel",
+      id: "open",
+      get title() {
+        return ctx.t("tab.title")
+      },
+      icon: "terminal",
+      keybind: "terminal.toggle",
+      order: 40,
+      run() {
+        const target = current()
+
+        if (!target) return
+
+        layout.open(DOCK, target.session)
+        target.terminal.requestFocus(target.terminal.active())
+      },
+    }
+  })
 
   ctx.add(Panel, {
     id: "main",

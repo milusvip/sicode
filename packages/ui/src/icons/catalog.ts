@@ -214,6 +214,10 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M14 8.5A6 6 0 1 1 7.5 2a2 2 0 0 0 2.5 2.5 2 2 0 0 0 2.5 2.5c.4.6.9 1.1 1.5 1.5Z" stroke="currentColor" stroke-linejoin="round"/><path d="M5.5 6.5h.01M5.5 10h.01M8.5 9h.01M10.5 11.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
   },
+  "outline-key": {
+    viewBox: "0 0 16 16",
+    body: `<circle cx="5.4" cy="10.6" r="3.2" stroke="currentColor"/><path d="M7.7 8.3L13.2 2.8M9.9 6.1L11.1 7.3M11.4 4.6L12.6 5.8" stroke="currentColor" stroke-linecap="round"/>`,
+  },
   "outline-browser-annotate": {
     viewBox: "0 0 16 16",
     body: `<path d="M10.6667 2H14V5.33333M2 5.33333V2H5.33333M2 10.6667V14H5.33333" stroke="currentColor" stroke-linecap="square"/><path d="M11.8571 11.8572L14 14M6.50008 6.50033L14.0001 9.00033L9.00008 14.0003L6.50008 6.50033Z" stroke="currentColor" stroke-linecap="square"/>`,
@@ -229,6 +233,14 @@ const icons = {
   "outline-arrow-to-corner-top-right": {
     viewBox: "0 0 16 16",
     body: `<path d="M2 8.5V2H14V14H8M5 5.66667H10.3333V11M3.66797 12.333L9.94292 6.05806" stroke="currentColor" stroke-linecap="square"/>`,
+  },
+  "outline-maximize": {
+    viewBox: "0 0 16 16",
+    body: `<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-linecap="square"/>`,
+  },
+  "outline-download": {
+    viewBox: "0 0 16 16",
+    body: `<path d="M11.167 8.5 8 11.667 4.833 8.5M8 2.333v8.917M13 14.667H3" stroke="currentColor" stroke-linecap="square"/>`,
   },
   "outline-hexagonal-warning": {
     viewBox: "0 0 16 16",

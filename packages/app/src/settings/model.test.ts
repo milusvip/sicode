@@ -105,6 +105,7 @@ describe("settings schema", () => {
         sans: "",
         terminal: "",
         tabLayout: "horizontal",
+        sessionWidth: "default",
       },
       keybinds: {},
       permissions: { autoApprove: false, autoApproveProjects: {} },
@@ -150,6 +151,7 @@ describe("settings schema", () => {
       sans: "",
       terminal: "",
       tabLayout: "vertical",
+      sessionWidth: "default",
     })
     expect(settings.permissions).toEqual({ autoApprove: true, autoApproveProjects: { on: true, off: false } })
     expect(settings.workspaces).toEqual({ defaultDestination: "new", lastUsed: { good: "workspace" } })
@@ -187,16 +189,16 @@ describe("settings schema", () => {
   })
 })
 
-test("font defaults are Inter and IBM Plex Mono", () => {
-  expect(sansDefault).toBe("Inter")
+test("font defaults are 思源黑体 and IBM Plex Mono", () => {
+  expect(sansDefault).toBe("思源黑体")
   expect(monoDefault).toBe("IBM Plex Mono")
 })
 
 test.each([
-  { name: "sans", family: sansFontFamily, font: undefined, prefix: '"Inter", ' },
-  { name: "sans", family: sansFontFamily, font: "", prefix: '"Inter", ' },
-  { name: "sans", family: sansFontFamily, font: "   ", prefix: '"Inter", ' },
-  { name: "sans", family: sansFontFamily, font: "Custom Sans", prefix: '"Custom Sans", "Inter", ' },
+  { name: "sans", family: sansFontFamily, font: undefined, prefix: '"思源黑体", ' },
+  { name: "sans", family: sansFontFamily, font: "", prefix: '"思源黑体", ' },
+  { name: "sans", family: sansFontFamily, font: "   ", prefix: '"思源黑体", ' },
+  { name: "sans", family: sansFontFamily, font: "Custom Sans", prefix: '"Custom Sans", "思源黑体", ' },
   { name: "mono", family: monoFontFamily, font: undefined, prefix: '"IBM Plex Mono", ' },
   { name: "mono", family: monoFontFamily, font: "", prefix: '"IBM Plex Mono", ' },
   { name: "mono", family: monoFontFamily, font: "   ", prefix: '"IBM Plex Mono", ' },

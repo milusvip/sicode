@@ -14,6 +14,7 @@ import { useProviders } from "@/providers/catalog/providers"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useNotification } from "@/shell/notifications/notification"
 import { ComposerPersistenceProvider } from "@/composer/persistence"
+import { UiInspectComposerBridge } from "@/shell/ui-inspect/bridge"
 import { useData, useServer } from "@/runtime/server/current"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useSettingsCommand } from "@/settings/command"
@@ -174,6 +175,7 @@ function TargetSessionPage() {
     // so keep their owners alive while navigating between workspaces on this server.
     <FileProvider>
       <ComposerPersistenceProvider>
+        <UiInspectComposerBridge />
         <CommentsProvider>
           <SessionPage />
         </CommentsProvider>

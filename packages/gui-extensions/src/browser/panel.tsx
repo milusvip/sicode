@@ -9,13 +9,14 @@ import { Keybind } from "@opencode/ui/keybind"
 import { Menu } from "@opencode/ui/menu"
 import { showToast } from "@opencode/ui/toast"
 import { Tooltip } from "@opencode/ui/tooltip"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createMemo, For, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { Browser } from "@opencode/plugin-browser/rpc"
 import { createKeyed, useExtension, usePanel, type PanelTab, type MountedSession, type SessionScreen } from "../sdk"
-import { addressParts, connection, loopback, resolveAddress, searches } from "./address"
+import { addressParts, connection, loopback, resolveAddress, SEARCH_ENGINES, searchQuery, searches } from "./address"
 import { commentNote, pageNote } from "./comment"
 import { bare, completes, highlight, suggest, type Visit } from "./history"
 import type { Model } from "./model"
@@ -55,6 +56,8 @@ type PaneState = {
     | undefined
   /** A comment on the whole page awaiting its text, frozen like an element comment. */
   note: { sessionKey: string; tabID: Browser.TabID; url: string; title: string; draft: string } | undefined
+  /** The login-state paste is open. */
+  paste: boolean
   size: { width: number; height: number }
   editorHeight: number
 }
@@ -100,6 +103,7 @@ export default function SessionBrowserPane(props: {
     picking: undefined,
     comment: undefined,
     note: undefined,
+    paste: false,
     size: { width: 0, height: 0 },
     editorHeight: 0,
   })
@@ -173,10 +177,21 @@ export default function SessionBrowserPane(props: {
   }
 
   const inspectable = () => !!address() && !failed() && !suspended()
+
   const picking = () => store.picking?.sessionKey === props.session.key && store.picking?.tabID === state()?.id
   // A comment on a picked element freezes the page so its editor can float above it.
   const commenting = () => store.comment?.sessionKey === props.session.key && store.comment?.tabID === state()?.id
   const noting = () => store.note?.sessionKey === props.session.key && store.note?.tabID === state()?.id
+
+  // A paste is written for one page's site: another tab, or another URL, closes it rather than carrying its cookies
+  // over. The paste popup keys on this too, so it starts empty on the page it opens for.
+  const pageKey = () => {
+    const tab = state()
+
+    return tab ? `${tab.id}\n${address()}` : undefined
+  }
+
+  createKeyed(pageKey, () => setStore("paste", false))
 
   // The address field always shows the whole URL; at rest it draws the host emphasized.
   const parts = () => addressParts(field())
@@ -324,6 +339,33 @@ export default function SessionBrowserPane(props: {
   }
 
   const zoomed = () => !!address() && (page()?.zoom ?? 1) !== 1
+
+  // A search that would not load is usually the engine's network rather than the query, so the failure offers the next
+  // engine; picking it also makes it the default, which is what the next search needs.
+  const searchFailure = () => {
+    const engine = props.model.searchEngine()
+    const query = searchQuery(engine, address())
+
+    return query ? { engine, query } : undefined
+  }
+
+  const nextSearchEngine = () => {
+    const failure = searchFailure()
+
+    if (!failure) return
+    const index = SEARCH_ENGINES.findIndex((engine) => engine.id === failure.engine.id)
+
+    return SEARCH_ENGINES[(index + 1) % SEARCH_ENGINES.length]
+  }
+
+  const switchSearch = () => {
+    const failure = searchFailure()
+    const engine = nextSearchEngine()
+
+    if (!failure || !engine) return
+    props.model.setSearchEngine(engine.id)
+    go(resolveAddress(failure.query, engine))
+  }
 
   const zoomPage = (direction: "in" | "out" | "reset") => {
     const tab = state()
@@ -604,7 +646,7 @@ export default function SessionBrowserPane(props: {
 
               if (picked) return go(picked.url)
 
-              if (text || failed()) return go(resolveAddress(text))
+              if (text || failed()) return go(resolveAddress(text, props.model.searchEngine()))
               input?.blur()
             }}
           >
@@ -622,6 +664,7 @@ export default function SessionBrowserPane(props: {
               <Show when={`${props.session.key}\n${state()?.id}\n${address()}`} keyed>
                 <SiteInformation
                   url={address()}
+                  certificateWarning={!!page()?.certificateWarning}
                   server={props.session.server.local ? undefined : props.session.server.name}
                   site={() => {
                     const tab = state()
@@ -728,34 +771,19 @@ export default function SessionBrowserPane(props: {
                 </button>
               </Tooltip>
             </Show>
-            <Show when={address()}>
-              <div data-slot="browser-address-actions">
-                <Tooltip placement="top" value={extension.t("page.add")}>
-                  <IconButton
-                    type="button"
-                    variant="ghost-muted"
-                    size="small"
-                    aria-label={extension.t("page.add")}
-                    disabled={suspended() || failed()}
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={openNote}
-                    icon={<Icon name="outline-globe-plus" />}
-                  />
-                </Tooltip>
-                <Tooltip placement="top" value={extension.t(reachable() ? "external.open" : "external.unavailable")}>
-                  <IconButton
-                    type="button"
-                    variant="ghost-muted"
-                    size="small"
-                    aria-label={extension.t("external.open")}
-                    disabled={!reachable()}
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => system.openExternal(address())}
-                    icon={<Icon name="outline-arrow-up-right" />}
-                  />
-                </Tooltip>
-              </div>
-            </Show>
+            {/* Submit sits at the field's trailing edge so a pointer can open the address without the keyboard. */}
+            <Tooltip placement="top" value={extension.t("address.go")}>
+              <IconButton
+                type="submit"
+                variant="ghost-muted"
+                size="small"
+                data-slot="browser-address-go"
+                disabled={!state()}
+                aria-label={extension.t("address.go")}
+                onPointerDown={(event) => event.preventDefault()}
+                icon={<Icon name="enter" />}
+              />
+            </Tooltip>
           </form>
           <Popover.Portal>
             <Popover.Content
@@ -779,6 +807,21 @@ export default function SessionBrowserPane(props: {
           </Popover.Portal>
         </Popover>
         <div class="flex shrink-0 items-center gap-1">
+          {/* Signing in by pasted cookies sits with the page's own tools rather than in the address field, and works
+              on a blank tab too: a paste that names its own domains needs no page open. */}
+          <Show when={pageKey()} keyed>
+            <SiteCookies
+              url={address()}
+              disabled={suspended()}
+              open={store.paste}
+              onOpenChange={(open) => setStore("paste", open)}
+              write={(text) => {
+                const tab = state()
+
+                return tab ? props.model.setCookies(props.session, tab.id, text) : undefined
+              }}
+            />
+          </Show>
           <Tooltip
             placement="top"
             value={
@@ -842,12 +885,37 @@ export default function SessionBrowserPane(props: {
                   </Menu.Item>
                 </Menu.Group>
                 <Menu.Separator />
+                {/* Adding the page to the session is a page action, but a rare one: it lives here rather than in the
+                    address field, which keeps only the field and the page's tools. */}
+                <Menu.Item disabled={!address() || failed() || suspended()} onSelect={openNote}>
+                  {extension.t("page.add")}
+                </Menu.Item>
                 <Menu.Item disabled={!address()} onSelect={copyLink}>
                   {extension.t("link.copy")}
                 </Menu.Item>
                 <Menu.Item disabled={!reachable()} onSelect={() => system.openExternal(address())}>
                   {extension.t("external.open")}
                 </Menu.Item>
+                <Menu.Separator />
+                <Menu.Sub>
+                  <Menu.SubTrigger>{extension.t("search.engine")}</Menu.SubTrigger>
+                  <Menu.Portal>
+                    <Menu.SubContent class="min-w-40">
+                      <Menu.RadioGroup
+                        value={props.model.searchEngine().id}
+                        onChange={(engine) => props.model.setSearchEngine(engine)}
+                      >
+                        <For each={SEARCH_ENGINES}>
+                          {(engine) => (
+                            <Menu.RadioItem value={engine.id} closeOnSelect>
+                              {extension.t(`search.engine.${engine.id}`)}
+                            </Menu.RadioItem>
+                          )}
+                        </For>
+                      </Menu.RadioGroup>
+                    </Menu.SubContent>
+                  </Menu.Portal>
+                </Menu.Sub>
                 <Menu.Separator />
                 <Menu.Item disabled={props.model.visits().length === 0} onSelect={() => props.model.clearHistory()}>
                   {extension.t("history.clear")}
@@ -877,7 +945,7 @@ export default function SessionBrowserPane(props: {
         <Show when={empty() && !failed() && !suspended()}>
           {/* As designed: the heading 80px from the top, the recent list centered above a 160px bottom inset. The
               minimum height keeps a full list clear of the heading in a short pane, which then scrolls. */}
-          <div dir="auto" class="size-full overflow-y-auto">
+          <ScrollView dir="auto" class="size-full">
             <div class="relative flex min-h-[max(100%,732px)] items-center justify-center px-6 pb-40">
               <div class="absolute inset-x-6 top-20 mx-auto flex max-w-[360px] flex-col items-center gap-4 text-center">
                 <Icon name="outline-globe" size="large" class="text-v2-icon-icon-muted" />
@@ -902,7 +970,7 @@ export default function SessionBrowserPane(props: {
                 </div>
               </Show>
             </div>
-          </div>
+          </ScrollView>
         </Show>
         <Show when={failed() && !suspended()}>
           {/* Add the 40px toolbar to the file empty state's 160px bottom padding to align their centers. */}
@@ -915,6 +983,13 @@ export default function SessionBrowserPane(props: {
               {extension.t("failed.title")}
             </div>
             <div class="text-13-regular leading-[var(--line-height-base)]">{extension.t("failed.description")}</div>
+            <Show when={nextSearchEngine()}>
+              {(engine) => (
+                <Button class="mt-2" size="small" variant="neutral" onClick={switchSearch}>
+                  {extension.t("failed.search", { engine: extension.t(`search.engine.${engine().id}`) })}
+                </Button>
+              )}
+            </Show>
           </div>
         </Show>
         <Show when={suspended()}>
@@ -1098,6 +1173,140 @@ function Marked(props: { text: string; query: string }) {
   )
 }
 
+/**
+ * Signs the pane into a site by pasting the cookies another browser holds: a `Cookie` header, one `name=value` per
+ * line, a JSON map, or an exported cookie list. The pane writes them for this page's site and reloads it, so the page
+ * comes back signed in. A paste is often the only way in when the site's login cannot complete in this browser (a
+ * captcha, a second factor, or an SSO hop). It also works with no page open, where the paste names its own domains and
+ * nothing reloads.
+ */
+function SiteCookies(props: {
+  url: string
+  disabled: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** Writes the paste for the page's site and reloads it; undefined while the pane cannot answer. */
+  write: (text: string) => Promise<{ cookies: number }> | undefined
+}) {
+  const extension = useExtension()
+  const [state, setState] = createStore<{ text: string; writing: boolean; error?: string }>({ text: "", writing: false })
+  let input: HTMLTextAreaElement | undefined
+
+  // A blank tab has no site to name; the paste then has to carry its own domains.
+  const host = () => addressParts(props.url).host
+
+  // A closed popup forgets its paste: the next opening starts empty rather than offering another site's cookies.
+  const close = () => {
+    setState({ text: "", error: undefined })
+    props.onOpenChange(false)
+  }
+
+  const write = () => {
+    const text = state.text.trim()
+
+    if (state.writing || !text) return
+
+    setState({ writing: true, error: undefined })
+    void (props.write(text) ?? Promise.reject(new Error("browser.pane.unavailable")))
+      .then(
+        (value) => {
+          close()
+          showToast({ title: extension.plural("cookies.written", value.cookies) })
+        },
+        // The pane refused the paste: an unknown pair, a domain that is not this site, or a cookie Chromium rejected.
+        (cause: unknown) => setState("error", cause instanceof Error ? cause.message : String(cause)),
+      )
+      .finally(() => setState("writing", false))
+  }
+
+  return (
+    <Popover
+      open={props.open}
+      placement="bottom-end"
+      gutter={8}
+      modal={false}
+      onOpenChange={(open) => (open ? props.onOpenChange(true) : close())}
+    >
+      <Tooltip placement="top" value={extension.t("cookies.action")}>
+        <Popover.Trigger
+          as={IconButton}
+          type="button"
+          variant="ghost-muted"
+          size="large"
+          disabled={props.disabled}
+          aria-label={extension.t("cookies.action")}
+          icon={<Icon name="outline-key" />}
+        />
+      </Tooltip>
+      <Popover.Portal>
+        <Popover.Content
+          data-component="browser-cookies"
+          onOpenAutoFocus={(event: Event) => {
+            // The field takes focus itself, ready for the paste.
+            event.preventDefault()
+            input?.focus()
+          }}
+        >
+          <div class="flex items-center justify-between gap-2">
+            <Popover.Title data-slot="browser-cookies-title">{extension.t("cookies.title")}</Popover.Title>
+            <IconButton
+              variant="ghost-muted"
+              size="small"
+              aria-label={extension.t("common.close")}
+              icon={<Icon name="outline-xmark" />}
+              onClick={close}
+            />
+          </div>
+          <div data-slot="browser-cookies-host" dir="ltr">
+            {host() || extension.t("cookies.noPage")}
+          </div>
+          <textarea
+            ref={input}
+            dir="ltr"
+            rows={5}
+            spellcheck={false}
+            autocomplete="off"
+            data-slot="browser-cookies-input"
+            aria-label={extension.t("cookies.title")}
+            aria-invalid={state.error ? true : undefined}
+            placeholder={extension.t("cookies.placeholder")}
+            value={state.text}
+            onInput={(event) => setState({ text: event.currentTarget.value, error: undefined })}
+            onKeyDown={(event) => {
+              // Enter in the field pastes a line; the platform's chord writes the whole paste without reaching for the
+              // button, and Escape closes as it does in every other popup here.
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault()
+
+                return write()
+              }
+
+              if (event.key !== "Escape") return
+              event.preventDefault()
+              close()
+            }}
+          ></textarea>
+          <Show when={state.error}>{(error) => <p data-slot="browser-cookies-error">{error()}</p>}</Show>
+          <p data-slot="browser-cookies-hint">{extension.t(host() ? "cookies.hint" : "cookies.hint.domain")}</p>
+          <div class="flex justify-end gap-2">
+            <Button size="small" variant="neutral" onClick={close}>
+              {extension.t("common.cancel")}
+            </Button>
+            <Button
+              size="small"
+              variant="contrast"
+              disabled={state.writing || !state.text.trim()}
+              onClick={write}
+            >
+              {extension.t(state.writing ? "cookies.writing" : "cookies.write")}
+            </Button>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover>
+  )
+}
+
 const connections = {
   secure: { icon: "lock", title: "site.secure", description: undefined },
   insecure: { icon: "outline-hexagonal-warning", title: "site.insecure", description: "site.insecure.description" },
@@ -1111,6 +1320,8 @@ const connections = {
  */
 function SiteInformation(props: {
   url: string
+  /** HTTPS whose certificate Chromium rejected and the pane accepted. */
+  certificateWarning?: boolean
   server: string | undefined
   /** The page's cookie count; undefined while the pane cannot answer. */
   site: () => Promise<{ cookies: number }> | undefined
@@ -1126,14 +1337,14 @@ function SiteInformation(props: {
   })
 
   const kind = () => {
-    const value = connection(props.url)
+    const value = connection(props.url, { certificateWarning: props.certificateWarning })
 
     return value ? connections[value] : undefined
   }
 
   // Only web pages have cookies and ask for permissions; a workspace file has neither.
   const web = () => {
-    const value = connection(props.url)
+    const value = connection(props.url, { certificateWarning: props.certificateWarning })
 
     return !!value && value !== "file"
   }

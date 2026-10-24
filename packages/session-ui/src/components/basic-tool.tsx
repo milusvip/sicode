@@ -15,8 +15,9 @@ import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "@opencode/ui/context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "@opencode/ui/collapsible"
-import type { IconProps } from "@opencode/ui/icon"
+import { Icon, type IconProps } from "@opencode/ui/icon"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
+import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 
 export type TriggerTitle = {
   title: string
@@ -37,7 +38,8 @@ const isTriggerTitle = (val: unknown): val is TriggerTitle => {
 }
 
 export interface BasicToolProps {
-  icon: IconProps["name"]
+  /** When set, rendered in the leading indicator column (spinner while pending). */
+  icon?: IconProps["name"]
   trigger: TriggerTitle | JSX.Element | ((open: Accessor<boolean>) => JSX.Element)
   children?: JSX.Element
   /** Declare known content without constructing lazy JSX to test its presence. */
@@ -230,8 +232,23 @@ export function BasicTool(props: BasicToolProps) {
       data-component="tool-trigger"
       data-clickable={props.clickable ? "true" : undefined}
       data-hide-details={props.hideDetails ? "true" : undefined}
+      data-status={props.status}
     >
       <div data-slot="basic-tool-tool-trigger-content">
+        <Show when={props.icon}>
+          {(icon) => (
+            <span data-slot="basic-tool-tool-indicator">
+              <Show
+                when={pending()}
+                fallback={<Icon name={icon()} size="small" />}
+              >
+                <span data-slot="basic-tool-tool-spinner">
+                  <SessionProgressIndicatorV2 width={13} height={13} />
+                </span>
+              </Show>
+            </span>
+          )}
+        </Show>
         <div data-slot="basic-tool-tool-info">
           <Switch>
             <Match when={triggerTitle()}>

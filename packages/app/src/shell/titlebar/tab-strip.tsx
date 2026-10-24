@@ -34,6 +34,9 @@ function SessionTabSlot(props: {
   onRename: (title: string) => Promise<void>
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
+  onCloseOthers: () => void
+  onCloseAll: () => void
+  closeOthersDisabled: boolean
 }) {
   const sortable = useSortable({
     get id() {
@@ -73,6 +76,9 @@ function SessionTabSlot(props: {
         onRename={props.onRename}
         onNavigate={() => props.onNavigate(ref)}
         onClose={props.onClose}
+        onCloseOthers={props.onCloseOthers}
+        onCloseAll={props.onCloseAll}
+        closeOthersDisabled={props.closeOthersDisabled}
         active={props.active}
         dragging={sortable.isDragSource()}
         orientation={props.orientation}
@@ -92,6 +98,9 @@ function SessionTabEntry(props: {
   onUnreadChange: (unread: boolean) => void
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
+  onCloseOthers: () => void
+  onCloseAll: () => void
+  closeOthersDisabled: boolean
 }) {
   const tabs = useTabs()
   const language = useLanguage()
@@ -212,6 +221,9 @@ function SessionTabEntry(props: {
         onRename={rename}
         onNavigate={props.onNavigate}
         onClose={props.onClose}
+        onCloseOthers={props.onCloseOthers}
+        onCloseAll={props.onCloseAll}
+        closeOthersDisabled={props.closeOthersDisabled}
       />
     </Show>
   )
@@ -226,6 +238,9 @@ function DraftTabSlot(props: {
   title: string
   onNavigate: (element: HTMLDivElement) => void
   onClose: () => void
+  onCloseOthers: () => void
+  onCloseAll: () => void
+  closeOthersDisabled: boolean
 }) {
   const sortable = useSortable({
     get id() {
@@ -259,6 +274,9 @@ function DraftTabSlot(props: {
         title={props.title}
         onNavigate={() => props.onNavigate(ref)}
         onClose={props.onClose}
+        onCloseOthers={props.onCloseOthers}
+        onCloseAll={props.onCloseAll}
+        closeOthersDisabled={props.closeOthersDisabled}
         active={props.active}
         dragging={sortable.isDragSource()}
         orientation={props.orientation}
@@ -278,6 +296,7 @@ export function TitlebarTabStrip(props: {
   const global = useGlobal()
   const language = useLanguage()
   const command = useCommand()
+  const tabs = useTabs()
   const vertical = () => props.orientation === "vertical"
   let listRef!: HTMLDivElement
   const [visibility, setVisibility] = createStore<Record<string, boolean>>({})
@@ -443,6 +462,9 @@ export function TitlebarTabStrip(props: {
                         props.onNavigate(tab, element)
                       }}
                       onClose={() => props.onClose(tab)}
+                      onCloseOthers={() => tabs.closeOtherTabs(tab)}
+                      onCloseAll={() => tabs.closeAllTabs()}
+                      closeOthersDisabled={props.tabs.length <= 1}
                     />
                   )
                 }
@@ -460,6 +482,9 @@ export function TitlebarTabStrip(props: {
                       props.onNavigate(tab, element)
                     }}
                     onClose={() => props.onClose(tab)}
+                    onCloseOthers={() => tabs.closeOtherTabs(tab)}
+                    onCloseAll={() => tabs.closeAllTabs()}
+                    closeOthersDisabled={props.tabs.length <= 1}
                   />
                 )
               }}

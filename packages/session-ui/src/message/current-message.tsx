@@ -8,7 +8,13 @@ import {
   CurrentReadToolGroup,
   ToolDisplay,
 } from "../tools/tool-renderer"
-import { currentToolError, currentToolInput, currentToolMetadata, currentToolOutput } from "./current-tool-state"
+import {
+  currentToolError,
+  currentToolInput,
+  currentToolMetadata,
+  currentToolOutput,
+  currentToolStatus,
+} from "./current-tool-state"
 
 export type { SessionUserActions, SessionUserAttachmentReference, SessionUserComment } from "../actions"
 
@@ -23,6 +29,8 @@ export function SessionUserMessage(props: {
   comments?: SessionUserComment[]
   references?: SessionUserAttachmentReference[]
   voice?: boolean
+  /** Mid-execution follow-up (引导), not a new task opener. */
+  steer?: boolean
   historicalAgent: string
   historicalModel: SessionMessageAssistant["model"]
   actions?: SessionUserActions
@@ -35,6 +43,7 @@ export function SessionUserMessage(props: {
       comments={props.comments}
       references={props.references}
       voice={props.voice}
+      steer={props.steer}
       agent={props.historicalAgent}
       model={props.historicalModel}
       actions={props.actions}
@@ -88,7 +97,7 @@ export function SessionAssistantContent(props: {
             input={currentToolInput(tool())}
             metadata={currentToolMetadata(tool())}
             output={currentToolOutput(tool())}
-            status={tool().state.status}
+            status={currentToolStatus(tool())}
             error={currentToolError(tool())}
             defaultOpen={props.defaultOpen}
             open={props.toolOpen}

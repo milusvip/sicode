@@ -101,6 +101,13 @@
   white-space: nowrap;
   text-align: start;
 }
+/* SiCode: item count in the extensions rows. */
+.session-summary-count {
+  flex-shrink: 0;
+  margin-inline-start: 4px;
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
 .session-summary-heading .session-summary-label {
   flex: 0 1 auto;
 }
@@ -271,6 +278,19 @@
   font-size: inherit;
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-faint);
+}
+/* SiCode: skill scope tag (global vs this project). */
+.session-service-scope {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: 2px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  line-height: var(--line-height-compact);
+  letter-spacing: 0.05px;
+  white-space: nowrap;
 }
 .session-mcp-row[aria-disabled="true"] [data-slot="switch-control"] {
   opacity: 0.5;

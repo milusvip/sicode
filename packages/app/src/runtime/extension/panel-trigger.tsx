@@ -4,12 +4,14 @@ import { useSortable } from "@dnd-kit/solid/sortable"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Keybind } from "@opencode/ui/keybind"
+import { Menu } from "@opencode/ui/menu"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { Tabs } from "@opencode/ui/tabs"
 import type { MountedSession, PanelTab } from "@opencode/gui-extensions/sdk"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useCommand } from "@/shell/commands/command"
 import { Contribution } from "./render"
+import type { Region } from "./panels"
 
 /** One side panel tab trigger. The extension supplies the content; the host owns close, drag, and ids. */
 export function PanelTrigger(props: {
@@ -20,6 +22,7 @@ export function PanelTrigger(props: {
   index: number
   active: boolean
   preview: boolean
+  region: Region
   onClose: (value: string) => void
   onPromote: (value: string) => void
 }): JSX.Element {
@@ -105,8 +108,53 @@ export function PanelTrigger(props: {
     return closeButton(closable === "hover")
   }
 
-  return (
-    <Switch fallback={<SortableTrigger {...props} content={content()} close={close()} />}>
+  // Pinned tabs and tabs the extension marks unclosable never close from the tab menu.
+  const closable = (key: string) => {
+    const entry = props.region.entry(key)
+
+    return !!entry && !entry.tab.pinned && entry.tab.closable !== false
+  }
+
+  const others = () => props.region.keys().filter((key) => key !== props.value && closable(key))
+  const every = () => props.region.keys().filter(closable)
+
+  const menu = (trigger: JSX.Element) => (
+    <Menu.Context modal={false}>
+      <Menu.Context.Trigger as="div" class="contents">
+        {trigger}
+      </Menu.Context.Trigger>
+      <Menu.Context.Portal>
+        <Menu.Context.Content class="session-panel-tab-menu">
+          <Menu.Item disabled={!closable(props.value)} onSelect={() => props.onClose(props.value)}>
+            {language.t("common.closeTab")}
+          </Menu.Item>
+          <Menu.Item disabled={others().length === 0} onSelect={() => others().forEach((key) => props.onClose(key))}>
+            {language.t("session.panel.closeOthers")}
+          </Menu.Item>
+          <Menu.Item disabled={every().length === 0} onSelect={() => every().forEach((key) => props.onClose(key))}>
+            {language.t("session.panel.closeAll")}
+          </Menu.Item>
+        </Menu.Context.Content>
+      </Menu.Context.Portal>
+    </Menu.Context>
+  )
+
+  return menu(
+    <Switch
+      fallback={
+        <SortableTrigger
+          value={props.value}
+          tab={props.tab}
+          index={props.index}
+          active={props.active}
+          preview={props.preview}
+          content={content()}
+          close={close()}
+          onClose={props.onClose}
+          onPromote={props.onPromote}
+        />
+      }
+    >
       <Match when={props.tab.pinned}>
         <Tabs.Trigger
           value={props.value}
@@ -139,7 +187,7 @@ export function PanelTrigger(props: {
           {content()}
         </Tabs.Trigger>
       </Match>
-    </Switch>
+    </Switch>,
   )
 }
 

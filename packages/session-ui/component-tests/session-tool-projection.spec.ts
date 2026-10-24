@@ -36,7 +36,7 @@ story("renders every tool error outcome without leaking hidden tools", async ({ 
   const timeline = await mount("current-session-research-agents--agent-research", { args: { scenario: "failures" } })
   const names = ["shell", "edit", "write", "patch", "webfetch", "websearch", "subagent", "skill", "mcp_probe"]
   const group = timeline.locator(`[data-timeline-part-ids="${names.map((name) => `tool_error_${name}`).join(",")}"]`)
-  await expect(group.getByRole("button")).toHaveAccessibleName(/^Used 9 /)
+  await expect(group.getByRole("button")).toHaveAccessibleName(/^Process · /)
   await group.getByRole("button").click()
   await expect(timeline.locator('[data-kind="tool-error-card"]')).toHaveCount(names.length + 1)
   const dismissed = timeline.locator('[data-timeline-part-id="tool_error_question_dismissed"]')
@@ -49,7 +49,7 @@ story("renders every tool error outcome without leaking hidden tools", async ({ 
 
 story("expands a failed execute to its full code and error", async ({ mount }) => {
   const timeline = await mount("current-session-terminal-work--execute-failed")
-  await timeline.getByRole("button", { name: /^Used 5 / }).click()
+  await timeline.getByRole("button", { name: /^Process · / }).click()
   const failed = timeline.locator('[data-timeline-part-id="tool_execute_failed_url"]')
   await failed.getByRole("button", { name: /Invalid browser URL/ }).click()
   await expect(failed.locator('[data-slot="tool-error-card-subtitle"]')).toContainText(
@@ -76,7 +76,7 @@ story("transitions shell and question through running error outcomes", async ({ 
 // Moved from packages/app/e2e/regression/session-timeline-tool-projection.spec.ts
 story("labels all web search provider variants", async ({ mount }) => {
   const timeline = await mount("current-session-research-agents--agent-research", { args: { scenario: "providers" } })
-  await timeline.getByRole("button", { name: "Used 3 Parallel Web Search, Exa Web Search, Web Search" }).click()
+  await timeline.getByRole("button", { name: "Process · Parallel Web Search, Exa Web Search, Web Search · 3 tools" }).click()
   const tools = timeline.locator('[data-component="context-tool-group-list"]')
   await expect(tools.getByRole("button", { name: /Parallel Web Search/ })).toBeVisible()
   await expect(tools.getByRole("button", { name: /Exa Web Search/ })).toBeVisible()
@@ -109,10 +109,10 @@ story("labels read tools from their path input", async ({ mount }) => {
 story("labels skill tools from IDs and result metadata", async ({ mount }) => {
   const timeline = await mount("current-session-research-agents--agent-research", { args: { scenario: "skills" } })
   const group = timeline.locator('[data-timeline-part-ids="tool_skill_id,tool_skill_name"]')
-  await expect(group.getByRole("button")).toHaveAccessibleName("Used 2 Skill")
+  await expect(group.getByRole("button")).toHaveAccessibleName("Process · Skill · 2 tools")
   await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
     "aria-label",
-    "Used 2 Skill",
+    "Process · Skill · 2 tools",
   )
   await group.getByRole("button").click()
   const loaded = group.locator('[data-component="tool-loaded-item"]')
@@ -137,10 +137,10 @@ story("groups every collapsed tool until visible text separates the stack", asyn
   )
 
   await expect(group).toBeVisible()
-  await expect(group.getByRole("button")).toHaveAccessibleName("Used 4 Glob, Grep, Shell, List")
+  await expect(group.getByRole("button")).toHaveAccessibleName("Process · Glob, Grep, Shell, List · 4 tools")
   await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
     "aria-label",
-    "Used 4 Glob, Grep, Shell, List",
+    "Process · Glob, Grep, Shell, List · 4 tools",
   )
   await expect(timeline.locator('[data-timeline-row="AssistantPart"]')).toHaveCount(3)
   await expect(timeline.locator('[data-timeline-spacing="content"]')).toHaveCount(2)

@@ -17,6 +17,7 @@ import { createMediaQuery } from "@solid-primitives/media"
 import { FileIcon } from "@opencode/ui/file-icon"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
+import { SteppedSlider } from "@opencode/ui/stepped-slider"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import { resolveBlobUrl } from "@/runtime/persistence/drafts"
 import { ProviderModelIcon } from "@/providers/models/provider-group"
@@ -95,6 +96,7 @@ export function ComposerEditor(props: ComposerEditorProps) {
   const i18n = useI18n()
   const state = props.controller.state
   const view = props.controller.view
+  const mobile = createMediaQuery("(max-width: 767px)")
   let editor: HTMLDivElement | undefined
   let viewport: HTMLDivElement | undefined
   let controlsViewport!: HTMLDivElement
@@ -355,17 +357,37 @@ export function ComposerEditor(props: ComposerEditorProps) {
               <Show when={props.modelControlsVisible ?? true}>
                 {props.modelControl}
                 <Show when={view.variant} keyed>
-                  {(control) => (
-                    <Show when={control.options().length > 1}>
-                      <ComposerEditorConfiguredSelect
-                        mobileDrawer
-                        title={i18n.t("ui.promptInput.chooseVariant")}
-                        keybind={["Shift", "Mod", "D"]}
-                        control={control}
-                        class={control.current() === "default" ? "composer-variant-default" : undefined}
-                      />
-                    </Show>
-                  )}
+                  {(control) => {
+                    const currentLabel = () =>
+                      control.options().find((option) => option.id === control.current())?.label ?? control.current()
+
+                    return (
+                      <Show when={control.options().length > 1}>
+                        {/* A 322px panel does not fit the narrow toolbar, so small screens keep the drawer select. */}
+                        <Show
+                          when={mobile()}
+                          fallback={
+                            <SteppedSlider
+                              levels={control.options().map((option) => ({ value: option.id, label: option.label }))}
+                              value={control.current()}
+                              onChange={control.onSelect}
+                              title={i18n.t("ui.promptInput.thinking")}
+                              label={i18n.t("ui.promptInput.thinking.effort")}
+                              triggerLabel={i18n.t("ui.promptInput.thinking.current", { value: currentLabel() })}
+                            />
+                          }
+                        >
+                          <ComposerEditorConfiguredSelect
+                            mobileDrawer
+                            title={i18n.t("ui.promptInput.chooseVariant")}
+                            keybind={["Shift", "Mod", "D"]}
+                            control={control}
+                            class={control.current() === "default" ? "composer-variant-default" : undefined}
+                          />
+                        </Show>
+                      </Show>
+                    )
+                  }}
                 </Show>
               </Show>
             </div>

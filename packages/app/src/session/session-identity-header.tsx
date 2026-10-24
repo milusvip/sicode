@@ -1,6 +1,5 @@
 import type { SessionInfo } from "@opencode/client/promise"
 import { Icon } from "@opencode/ui/icon"
-import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
 import {
   displayName,
@@ -59,6 +58,7 @@ export function SessionProjectMenu(props: {
 
   const [state, setState] = createStore({
     open: false,
+    triggerTruncated: false,
     projectTruncated: false,
     pathTruncated: false,
     pathFocused: false,
@@ -98,18 +98,33 @@ export function SessionProjectMenu(props: {
       open={state.open}
       onOpenChange={(open) => setState({ open, pathFocused: false })}
     >
-      <Tooltip placement="bottom" value={<bdi>{projectName()}</bdi>} class="flex shrink-0">
+      <Tooltip
+        placement="bottom"
+        value={<bdi>{projectName()}</bdi>}
+        disabled={!state.triggerTruncated}
+        class="flex min-w-0 max-w-[min(200px,40vw)] shrink-0"
+      >
         <Menu.Trigger
-          as={IconButton}
-          variant="ghost-muted"
+          as="button"
+          type="button"
           aria-label={projectName()}
           data-slot="session-project-trigger"
-          icon={
-            <span class="text-v2-icon-icon-muted">
-              <Icon name={props.workspace ? "outline-worktree" : "monitor"} />
-            </span>
-          }
-        />
+          class="flex min-w-0 max-w-full items-center gap-1 rounded-[6px] px-1 py-1 text-v2-text-text-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
+        >
+          <span class="shrink-0 text-v2-icon-icon-muted">
+            <Icon name={props.workspace ? "outline-worktree" : "monitor"} />
+          </span>
+          <bdi
+            ref={(element) =>
+              createResizeObserver(element, () =>
+                setState("triggerTruncated", element.scrollWidth > element.clientWidth),
+              )
+            }
+            class="min-w-0 truncate text-[13px] font-[530] leading-4 tracking-[-0.04px]"
+          >
+            {projectName()}
+          </bdi>
+        </Menu.Trigger>
       </Tooltip>
       <Menu.Portal>
         <Menu.Content class="w-max max-w-[min(320px,calc(100vw-16px))]" aria-label={projectName()}>

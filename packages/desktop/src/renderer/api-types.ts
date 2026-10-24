@@ -62,7 +62,7 @@ export type ElectronAPI = {
   onPinchZoomEnabledChanged(cb: (enabled: boolean) => void): () => void
   onZoomFactorChanged(cb: (factor: number) => void): () => void
   setTitlebar(theme: TitlebarTheme): Promise<void>
-  runDesktopMenuAction(action: DesktopMenuAction): Promise<void>
+  runDesktopMenuAction(action: DesktopMenuAction, point?: { x: number; y: number }): Promise<void>
   setBackgroundColor(color: string): Promise<void>
   exportDebugLogs(): Promise<string>
   setForceFocus(enabled: boolean): Promise<void>

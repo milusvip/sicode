@@ -4,7 +4,7 @@ import { Icon } from "@opencode/ui/icon"
 import { Switch } from "@opencode/ui/switch"
 import { showToast } from "@opencode/ui/toast"
 import { Tooltip } from "@opencode/ui/tooltip"
-import { getDirectory } from "@opencode/util/path"
+import { containsDirectory, getDirectory } from "@opencode/util/path"
 import { useMutation } from "@tanstack/solid-query"
 import {
   children,
@@ -128,6 +128,10 @@ function LspMenu(props: ServiceMenuProps) {
 
   const names = createMemo(() => configuredLsps(data().location.config.list({ directory: props.directory }) ?? []))
 
+  // SiCode: show the configured LSP count in the extensions row.
+  const count = () =>
+    data().location.config.list({ directory: props.directory }) === undefined ? undefined : names().length
+
   createKeyed(data, (current) =>
     onCleanup(
       current.on("config.updated", (event) => {
@@ -143,6 +147,7 @@ function LspMenu(props: ServiceMenuProps) {
       loading={load.loading}
       ready={data().location.config.list({ directory: props.directory }) !== undefined}
       empty={names().length === 0}
+      count={count()}
       error={load.error}
       retry={refetch}
     >
@@ -242,12 +247,17 @@ function McpMenu(props: ServiceMenuProps) {
     ),
   )
 
+  // SiCode: show the configured MCP server count in the extensions row.
+  const count = () =>
+    data().location.mcp.server.list({ directory: props.directory }) === undefined ? undefined : servers().length
+
   return (
     <ServicePopover
       {...props}
       loading={load.loading}
       ready={data().location.mcp.server.list({ directory: props.directory }) !== undefined}
       empty={servers().length === 0}
+      count={count()}
       error={load.error}
       retry={refetch}
     >
@@ -354,6 +364,7 @@ function ServiceCatalog(props: ServiceMenuProps) {
             name: pluginLabel(plugin),
             status: plugin.state.status,
             error: plugin.state.status === "failed" ? plugin.state.error : undefined,
+            scope: undefined,
           }))
       }
 
@@ -376,6 +387,8 @@ function ServiceCatalog(props: ServiceMenuProps) {
             name: skill.name,
             status: "active",
             error: undefined,
+            // SiCode: a skill under the session or project directory is project-scoped; the rest are global.
+            scope: skillScope([props.directory, props.session.project?.worktree], skill.path),
           }))
 
     return entries.toSorted((a, b) => a.name.localeCompare(b.name))
@@ -390,6 +403,13 @@ function ServiceCatalog(props: ServiceMenuProps) {
     ),
   )
 
+  // SiCode: show the plugin or skill count in the extensions row.
+  const count = () => {
+    if (props.service.type === "plugins") return loaded() ? list().length : undefined
+
+    return data().location.skill.list({ directory: props.directory }) === undefined ? undefined : list().length
+  }
+
   return (
     <ServicePopover
       {...props}
@@ -400,6 +420,7 @@ function ServiceCatalog(props: ServiceMenuProps) {
           : data().location.skill.list({ directory: props.directory }) !== undefined
       }
       empty={list().length === 0}
+      count={count()}
       error={items.error}
       retry={refetch}
     >
@@ -424,6 +445,13 @@ function ServiceCatalog(props: ServiceMenuProps) {
               <span dir="auto" class="session-summary-label">
                 {item.name}
               </span>
+              <Show when={item.scope}>
+                {(scope) => (
+                  <span class="session-service-scope">
+                    {ctx.t(scope() === "project" ? "skills.project" : "skills.global")}
+                  </span>
+                )}
+              </Show>
               <Show when={item.status === "failed"}>
                 <span class="session-service-status">{ctx.t("failed")}</span>
               </Show>
@@ -446,7 +474,8 @@ type ServiceBodyProps = {
   children: JSX.Element
 }
 
-function ServicePopover(props: ServiceMenuProps & ServiceBodyProps & { empty: boolean }) {
+// SiCode: optional item count rendered before the disclosure icon.
+function ServicePopover(props: ServiceMenuProps & ServiceBodyProps & { empty: boolean; count?: number }) {
   const ctx = useExtension()
   const locale = ctx.locale
   const drawer = useDrawer()
@@ -478,6 +507,9 @@ function ServicePopover(props: ServiceMenuProps & ServiceBodyProps & { empty: bo
       >
         <Icon name={props.service.icon} class="shrink-0 text-v2-icon-icon-muted" />
         <span class="session-summary-label">{ctx.t(props.service.label)}</span>
+        <Show when={props.count !== undefined}>
+          <span class="session-summary-count">{props.count}</span>
+        </Show>
         <Icon name="chevron-right" class="session-summary-menu-indicator shrink-0 text-v2-icon-icon-muted" />
       </button>
     )
@@ -499,6 +531,9 @@ function ServicePopover(props: ServiceMenuProps & ServiceBodyProps & { empty: bo
       <Popover.Trigger as="button" type="button" class="session-summary-row">
         <Icon name={props.service.icon} class="shrink-0 text-v2-icon-icon-muted" />
         <span class="session-summary-label">{ctx.t(props.service.label)}</span>
+        <Show when={props.count !== undefined}>
+          <span class="session-summary-count">{props.count}</span>
+        </Show>
         <Icon name="fill-triangle-down" class="session-summary-menu-indicator shrink-0 text-v2-icon-icon-muted" />
       </Popover.Trigger>
       <Popover.Portal>
@@ -647,6 +682,13 @@ function ServiceEmpty(props: { session: MountedSession; title: string; directory
       </div>
     </div>
   )
+}
+
+// SiCode: the scope tag shown next to a skill, derived from where its file lives.
+type ServiceScope = "global" | "project"
+
+function skillScope(roots: readonly (string | undefined)[], path: string): ServiceScope {
+  return roots.some((root) => root !== undefined && containsDirectory(root, path)) ? "project" : "global"
 }
 
 function pluginLabel(plugin: PluginInfo) {

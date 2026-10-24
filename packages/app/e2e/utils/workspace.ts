@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test"
+import { base64Encode } from "@opencode/util/encode"
 import {
   NO_PROVIDER,
   REMOTE_SERVER,
@@ -25,6 +26,8 @@ export type WorkspaceInput = Partial<Omit<MockServerConfig, "directory" | "proje
   sessions?: ({ id: string; title?: string } & Record<string, unknown>)[]
   // Merged over the default seed: the project expanded and last opened, and a tab for every session.
   seed?: SeedInput
+  // Session IDs whose review tab is open; their side region opens too. Review is opened on demand rather than pinned.
+  review?: string[]
 }
 
 // One project with sessions on the default mock server, plus the storage a returning user would have.
@@ -46,12 +49,39 @@ export async function mockWorkspace(page: Page, input: WorkspaceInput) {
     sessions,
   })
 
+  const seedInput = input.seed ?? {}
+
+  const reviewSessions = (input.review ?? []).map((id) => {
+    const target = sessions.find((item) => item.id === id)
+
+    if (!target) throw new Error(`Unknown review session ${id}`)
+
+    return target
+  })
+
   await seed(page, {
     projects: { local: [{ worktree: directory, expanded: true }] },
     lastProject: { local: directory },
     tabs: sessions.map((item) => item.id),
-    ...input.seed,
+    ...seedInput,
   })
+
+  // A second seed merges into the first one level deep, so review joins the user's seeded panes and stored tabs.
+  if (reviewSessions.length)
+    await seed(page, {
+      panes: Object.fromEntries(reviewSessions.map((target) => [target.id, { review: true }])),
+      storage: {
+        "opencode.global.dat:layout": {
+          sessionTabs: Object.fromEntries(
+            reviewSessions.map((target) => [
+              // The review panel's tab key is `<extension>:<tab id>`; `active` selects it.
+              `local\u0000${base64Encode(target.directory)}/${target.id}`,
+              { all: ["review:changes"], active: "review:changes" },
+            ]),
+          ),
+        },
+      },
+    })
 
   return { server: SERVER, directory, projectID, sessions, pty: mock.pty, push: mock.push }
 }

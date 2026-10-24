@@ -1,6 +1,14 @@
 :root {
   --animate-pulse: pulse-opacity 2s ease-in-out infinite;
   --animate-pulse-scale: pulse-scale 1.2s ease-in-out infinite;
+  /* SiCode: the theme resets every namespace, so a spinning icon needs its own token, like pulse above. */
+  --animate-spin: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 @keyframes pulse-opacity {

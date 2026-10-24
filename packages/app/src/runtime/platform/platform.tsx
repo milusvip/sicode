@@ -96,7 +96,7 @@ type PlatformBase = {
   setPinchZoomEnabled?(enabled: boolean): Promise<void> | void
 
   /** Run a desktop-only menu action from the app chrome */
-  runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void
+  runDesktopMenuAction?(action: DesktopMenuAction, point?: { x: number; y: number }): Promise<void> | void
 
   /** Check if an editor app exists (desktop only) */
   checkAppExists?(appName: string): Promise<boolean>

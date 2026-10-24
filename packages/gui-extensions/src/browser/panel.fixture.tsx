@@ -81,6 +81,8 @@ type PaneFixtureState = {
   zoom: number
   /** The browser history store. */
   history: History
+  /** The search engine the address field uses. */
+  search: { engine: string }
   /** URLs the pane opened in the system browser. */
   external: string[]
   /** Cookies the page's address can read. */
@@ -138,6 +140,7 @@ export function mountBrowserPane(input: PaneHost) {
       comments: [],
       zoom: 1,
       history: { visits: [] },
+      search: { engine: "google" },
       external: [],
       cookies: 3,
     })
@@ -338,6 +341,14 @@ export function mountBrowserPane(input: PaneHost) {
         setStore({ cookies: 0, generation: store.generation + 1 })
         report()
       },
+      // Main writes the paste and reloads, so the page comes back with the pasted cookies in place.
+      setCookies: async (value) => {
+        const cookies = value.text.split(/[;\n]/).filter((part) => part.includes("=")).length
+        setStore({ cookies, generation: store.generation + 1 })
+        report()
+
+        return { cookies }
+      },
       close: async () => undefined,
       state: () => undefined,
       on: (_name, listener) => {
@@ -364,6 +375,12 @@ export function mountBrowserPane(input: PaneHost) {
             return store.history
           },
           set: (next: History) => setStore("history", reconcile(next)),
+        },
+        search: {
+          get value() {
+            return store.search
+          },
+          set: (next: { engine: string }) => setStore("search", next),
         },
       },
       system: {
@@ -812,6 +829,7 @@ export function mountBrowserRegion(input: RegionHost) {
       zoom: async () => undefined,
       site: async () => ({ cookies: 0 }),
       clearSite: async () => undefined,
+      setCookies: async () => ({ cookies: 0 }),
       close: async () => undefined,
       state: () => undefined,
       on: (_name, listener) => {

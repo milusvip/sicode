@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SiCode · 引导消息体感</title>
+    <style>
+      :root {
+        --font: "思源黑体", "Noto Sans SC", "Inter", ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+        --bg: #0d0d0f;
+        --panel: #111113;
+        --text: #e9e7e4;
+        --muted: #9c9791;
+        --faint: #6c6761;
+        --line: rgba(255, 255, 255, 0.075);
+        --bubble: #1a2740;
+        --bubble-text: #c5d4f0;
+        --ok: #6fbf86;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        background: #060607;
+        color: var(--text);
+        font-family: var(--font);
+        -webkit-font-smoothing: antialiased;
+        padding: 28px 20px 48px;
+      }
+
+      .page {
+        width: min(560px, 100%);
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        font-weight: 560;
+      }
+
+      .lead {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .card {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .card-head {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        font-size: 12.5px;
+        font-weight: 560;
+      }
+
+      .timeline {
+        padding: 16px 14px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .bubble-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+      }
+
+      .bubble {
+        max-width: 78%;
+        background: var(--bubble);
+        color: var(--bubble-text);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 13.5px;
+        line-height: 1.45;
+        font-weight: 440;
+        white-space: pre-wrap;
+      }
+
+      .steer {
+        display: inline-flex;
+        align-items: center;
+        vertical-align: 0.05em;
+        margin-inline-end: 6px;
+        padding: 1px 6px;
+        border-radius: 9999px;
+        border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+        background: color-mix(in srgb, currentColor 12%, transparent);
+        font-size: 11px;
+        font-weight: 530;
+        line-height: 1.35;
+        letter-spacing: 0.02em;
+        opacity: 0.78;
+        white-space: nowrap;
+      }
+
+      .meta {
+        font-size: 12px;
+        color: var(--faint);
+      }
+
+      .shell {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .shell-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        font-size: 12.5px;
+      }
+
+      .shell-head .t {
+        margin-inline-start: auto;
+        color: var(--faint);
+      }
+
+      .dot-ok {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        border: 1.4px solid var(--ok);
+        display: inline-grid;
+        place-items: center;
+      }
+
+      .dot-ok::after {
+        content: "";
+        width: 5px;
+        height: 3px;
+        border-left: 1.4px solid var(--ok);
+        border-bottom: 1.4px solid var(--ok);
+        transform: rotate(-45deg) translateY(-0.5px);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>引导 · 首字前胶囊</h1>
+      <p class="lead">「引导」贴在气泡正文第一个字前面，胶囊样式，不另起一行。</p>
+
+      <section class="card">
+        <div class="card-head">当前方案</div>
+        <div class="timeline">
+          <div class="bubble-wrap">
+            <div class="bubble">是丝滑变阻</div>
+            <div class="meta">Build · deepseek-v4.1-flash · 23:20</div>
+          </div>
+
+          <div class="shell">
+            <div class="shell-head">
+              <span class="dot-ok"></span>
+              <span>已完成 9 个工具</span>
+              <span class="t">3m 29s ›</span>
+            </div>
+          </div>
+
+          <div class="bubble-wrap">
+            <div class="bubble">
+              <span class="steer">引导</span>是点击思考强度出来面板不是在对话框下面
+            </div>
+            <div class="meta">Build · deepseek-v4.1-flash · 23:28</div>
+          </div>
+
+          <div class="shell">
+            <div class="shell-head">
+              <span class="dot-ok"></span>
+              <span>已完成 26 个工具</span>
+              <span class="t">6m 14s ›</span>
+            </div>
+          </div>
+
+          <div class="bubble-wrap">
+            <div class="bubble"><span class="steer">引导</span>我要滑动自动吸附的，不要开关</div>
+            <div class="meta">Build · deepseek-v4.1-flash · 23:33</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

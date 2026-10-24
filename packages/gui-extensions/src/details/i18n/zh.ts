@@ -16,6 +16,8 @@ export default {
   skills: "技能",
   "skills.configured": "已配置的技能",
   "skills.empty": "未配置技能",
+  "skills.global": "全局",
+  "skills.project": "本项目",
   lsp: "LSP",
   "lsp.configured": "已配置的 LSP",
   "lsp.empty": "未配置 LSP 服务器",

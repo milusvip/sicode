@@ -21,6 +21,8 @@ export type Registration = {
   zoom(tabID: Browser.TabID, zoom: Zoom): void
   site(tabID: Browser.TabID): Promise<{ cookies: number }>
   clearSite(tabID: Browser.TabID): Promise<void>
+  /** Writes pasted login cookies for the page's site and reloads it; resolves with the number written. */
+  setCookies(tabID: Browser.TabID, text: string): Promise<{ cookies: number }>
   close(): void
 }
 
@@ -252,6 +254,8 @@ export function createConnection(input: {
     /** The page's site data; undefined while no registration can answer. */
     site: (tabID: Browser.TabID) => state.registration?.site(tabID),
     clearSite: (tabID: Browser.TabID) => state.registration?.clearSite(tabID),
+    /** Writes pasted login cookies; undefined while no registration can answer. */
+    setCookies: (tabID: Browser.TabID, text: string) => state.registration?.setCookies(tabID, text),
     dispose() {
       disposed = true
       clearTimeout(retry)
@@ -301,6 +305,7 @@ function open(
     },
     site: (tabID) => ready.then(() => client.site({ binding, tabID })),
     clearSite: (tabID) => ready.then(() => client.clearSite({ binding, tabID })),
+    setCookies: (tabID, text) => ready.then(() => client.setCookies({ binding, tabID, text })),
     close() {
       if (status.closed) return
       status.closed = true

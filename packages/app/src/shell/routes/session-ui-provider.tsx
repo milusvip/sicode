@@ -1,9 +1,12 @@
 import { DataProvider } from "@opencode/session-ui/context"
 import { MarkdownProvider, type ReadMarkdownImage } from "@opencode/session-ui/context/markdown"
 import { useNavigate, useParams } from "@solidjs/router"
+import { createMediaQuery } from "@solid-primitives/media"
 import { createMemo, type ParentProps } from "solid-js"
 import { useProviders } from "@/providers/catalog/providers"
 import { LocalProvider } from "@/providers/models/selection"
+import { useExtensionAttachment } from "@/runtime/extension/attachment"
+import { useExtensionHost } from "@/runtime/extension/host"
 import type { ServerConnection } from "@/runtime/server/registry"
 import { sessionHref } from "@/shell/routes/session"
 import { useData } from "@/runtime/server/current"
@@ -26,7 +29,11 @@ export function SessionUIProvider(
   const serverSDK = useServerSDK()
   const tabs = useTabs()
   const language = useLanguage()
+  const host = useExtensionHost()
+  const extensions = useExtensionAttachment()
   const directory = () => props.directory
+  // The side region is a desktop surface: on narrow screens its drawer belongs to the owning panel.
+  const sideRegion = createMediaQuery("(min-width: 768px)")
 
   const readImage = createMemo<ReadMarkdownImage>(() => {
     const dir = directory()
@@ -112,6 +119,18 @@ export function SessionUIProvider(
       }}
       onNavigateToSession={navigateToSession}
       onSessionHref={href}
+      // Routed through the file extension's link handler, so the host never names a panel key itself.
+      onOpenFile={
+        sideRegion()
+          ? (path) => {
+              const session = extensions.current()
+
+              if (!session) return
+
+              void host.links.open({ href: path, session, exact: true })
+            }
+          : undefined
+      }
     >
       <MarkdownProvider readImage={readImage()} openSession={openReferencedSession}>
         <LocalProvider>{props.children}</LocalProvider>

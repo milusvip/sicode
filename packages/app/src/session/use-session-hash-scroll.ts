@@ -84,9 +84,28 @@ export const useSessionHashScroll = (input: {
 
   const seek = (id: string, behavior: ScrollBehavior, left = 4): boolean => {
     input.revealMessage?.(id)
+
     const el = document.getElementById(input.anchor(id))
 
-    if (el) return scrollToElement(el, behavior)
+    if (el) {
+      scrollToElement(el, behavior)
+
+      // Revealing a far-off row scrolls to it, and that scroll can land a frame after this one — it used
+      // to leave the row flush against the viewport top, i.e. behind the sticky title, so a jump to a
+      // turn opened without its bubble. Correct for a couple of frames; each pass is a no-op once the
+      // row sits where it belongs.
+      let passes = 0
+      const settle = () => {
+        const target = document.getElementById(input.anchor(id))
+
+        if (target) scrollToElement(target, "auto")
+        if (++passes < 3) queue(settle)
+      }
+
+      queue(settle)
+
+      return true
+    }
 
     if (left <= 0) return false
     queue(() => {

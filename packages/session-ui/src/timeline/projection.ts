@@ -19,6 +19,16 @@ import { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap } from "
 import { timelineCategory, timelineNoticeRequired, type TimelineDetail } from "./detail"
 
 export { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap }
+export {
+  filterCollapsedWorkShellRows,
+  formatElapsed,
+  openWorkShellOnly,
+  toolSpanElapsed,
+  workShellDefaultOpen,
+  workShellDisclosureKey,
+  WorkShellHead,
+} from "./work-shell"
+export type { WorkShellStatus } from "./work-shell"
 
 export type ReasoningMode = "hidden" | "compact" | "full"
 
@@ -105,18 +115,23 @@ export function createTimelineProjection(input: TimelineProjectionInput) {
   const messageRowIndex = new Map<string, number>()
   const messageLastRowIndex = new Map<string, number>()
   const lastAssistantGroupKey = new Map<string, string>()
+  const lastProcessGroupKey = new Map<string, string>()
 
   rows.forEach((row, index) => {
     if (!messageRowIndex.has(row.userMessageID)) messageRowIndex.set(row.userMessageID, index)
     messageLastRowIndex.set(row.userMessageID, index)
 
-    if (Predicate.isTagged(row, "AssistantPart")) lastAssistantGroupKey.set(row.userMessageID, row.group.key)
+    if (Predicate.isTagged(row, "AssistantPart")) {
+      lastAssistantGroupKey.set(row.userMessageID, row.group.key)
+      if (isProcessGroup(row)) lastProcessGroupKey.set(row.userMessageID, row.group.key)
+    }
   })
 
   return {
     activeMessageID: projection.activeMessageID,
     assistantMessagesByParent: indexAssistantMessages(input.sessionMessages),
     lastAssistantGroupKey,
+    lastProcessGroupKey,
     messageByID: sessionMessageByID,
     messageRowIndex,
     messageLastRowIndex,
@@ -213,10 +228,21 @@ export function createReactiveTimelineProjection(input: {
     return result
   })
 
+  const lastProcessGroupKey = createMemo(() => {
+    const result = new Map<string, string>()
+    rows().forEach((row) => {
+      if (Predicate.isTagged(row, "AssistantPart") && isProcessGroup(row))
+        result.set(row.userMessageID, row.group.key)
+    })
+
+    return result
+  })
+
   return {
     activeMessageID,
     assistantMessagesByParent,
     lastAssistantGroupKey,
+    lastProcessGroupKey,
     messageByID: sessionMessageByID,
     messageRowIndex,
     messageLastRowIndex,
@@ -246,6 +272,8 @@ export namespace Timeline {
       user?: SessionMessageUser
       shell?: SessionMessageShell
       entries: Entry[]
+      /** Follow-up that arrived while an execution was still open (引导). */
+      steer?: boolean
     }
 
     const turns: Turn[] = []
@@ -274,14 +302,16 @@ export namespace Timeline {
 
       if (message.type === "user") {
         if (turnByUserID.has(message.id)) return
-        const turn: Turn = { id: message.id, time: message.time, user: message, entries: [] }
+        const pending = pendingInputIDs?.has(message.id) ?? false
+        // Delivered into an open execution = 引导. Queued undelivered prompts keep a normal turn gap.
+        const steer = !!execution && !pending
+        const turn: Turn = { id: message.id, time: message.time, user: message, entries: [], steer }
         turns.push(turn)
         turnByUserID.set(message.id, turn)
         current = turn
 
         // Undelivered input has not joined the turn yet.
-        if (!pendingInputIDs?.has(message.id))
-          execution = { opener: execution?.opener ?? message.id, turn, files: execution?.files ?? new Set() }
+        if (!pending) execution = { opener: execution?.opener ?? message.id, turn, files: execution?.files ?? new Set() }
 
         return
       }
@@ -409,6 +439,7 @@ export namespace Timeline {
           editToolDefaultOpen,
           isRenderable,
           detail,
+          turn.steer,
         )
       }),
     ]
@@ -465,6 +496,7 @@ export namespace Timeline {
     editToolDefaultOpen = false,
     isRenderable = renderable,
     detail?: TimelineDetail,
+    steer = false,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
     const assistantMessages = entries.flatMap((entry) => (entry.type === "assistant" ? [entry.message] : []))
@@ -474,22 +506,25 @@ export namespace Timeline {
     const compaction = entries.some((entry) => entry.type === "notice" && entry.message.type === "compaction")
     const lastContent = lastAssistant?.content.at(-1)
 
-    const working =
-      isActive &&
-      status.type === "busy" &&
+    // Session still working this turn — process tools finishing must not mark the outer shell done.
+    const turnBusy = isActive && status.type === "busy"
+
+    // Latest assistant message still open (thinking / empty work-shell before tools land).
+    const streaming =
+      turnBusy &&
       lastStep?.type === "assistant" &&
       lastAssistant?.time.completed === undefined &&
       !lastAssistant?.error &&
       !lastAssistant?.retry
 
     const thinking =
-      working &&
+      streaming &&
       (detail ? detail.thinking.placement === "separate" : showReasoning) &&
       lastContent?.type === "reasoning" &&
       lastContent.time?.completed === undefined
 
     const thoughtOnly =
-      working &&
+      streaming &&
       detail?.thinking.placement === "grouped" &&
       assistantMessages.every((message) =>
         message.content.every(
@@ -499,7 +534,7 @@ export namespace Timeline {
 
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: turnID }))
 
-    if (userMessage) rows.push(new TimelineRow.UserMessage({ userMessageID: turnID }))
+    if (userMessage) rows.push(new TimelineRow.UserMessage({ userMessageID: turnID, steer: steer || undefined }))
 
     let assistantGroupIndex = 0
     let previousAssistantTool = false
@@ -615,7 +650,17 @@ export namespace Timeline {
     })
     appendAssistantSegment(assistantSegment)
 
-    return rows
+    return insertWorkShells(rows, {
+      turnID,
+      // Empty chrome before tools only while an assistant message is still open.
+      streaming,
+      // Outer status stays 工作中 for the whole busy turn, even after a process completes.
+      busy: turnBusy,
+      lastAssistant,
+      lastStep,
+      userCreated: userMessage?.time.created,
+      assistantMessages,
+    })
   }
 
   export function resolveContent(message: SessionMessageInfo | undefined, partID: string): Content | undefined {
@@ -666,6 +711,225 @@ function freeLimit(
 
 function isInterrupted(error: SessionMessageAssistant["error"]) {
   return error?.type.toLowerCase().includes("abort") || error?.type.toLowerCase().includes("interrupt")
+}
+
+function isNonToolPartID(partID: string) {
+  return /:(?:reasoning|text):\d+$/.test(partID)
+}
+
+/** Contiguous tool runs only — not text/thinking-only groups or notice/shell folds. */
+function isProcessGroup(row: TimelineRow.TimelineRow) {
+  if (!Predicate.isTagged(row, "AssistantPart")) return false
+  if (row.group.type === "read" || row.group.type === "file") return true
+  // Tool context keys are `context:…`; grouped notices/shells use `message:…`.
+  // Compact detail can put thinking alone in a context group — that is not process work.
+  if (row.group.type !== "context" || !row.group.key.startsWith("context:")) return false
+  return row.group.refs.some((ref) => !isNonToolPartID(ref.partID))
+}
+
+function isReasoningPartID(partID: string) {
+  return /:reasoning:\d+$/.test(partID)
+}
+
+/** Grouped thinking chrome ("过程 · 思考") and the live Thinking row belong in the work span. */
+function isReasoningWork(row: TimelineRow.TimelineRow) {
+  if (Predicate.isTagged(row, "Thinking")) return true
+  if (!Predicate.isTagged(row, "AssistantPart")) return false
+  if (row.group.type !== "context" || !row.group.key.startsWith("context:")) return false
+  return row.group.refs.length > 0 && row.group.refs.every((ref) => isReasoningPartID(ref.partID))
+}
+
+/**
+ * Rows the work shell should swallow even though they come before its first tool. A turn often opens
+ * with a sentence ("let me look at X") and only then calls tools; leaving that sentence outside put
+ * the overview bar in the middle of the turn, so the top of the turn had text but no bar.
+ */
+function isWorkShellLead(row: TimelineRow.TimelineRow) {
+  if (isReasoningWork(row)) return true
+  if (!Predicate.isTagged(row, "AssistantPart")) return false
+
+  return row.group.type === "part" && row.group.key.includes("text:")
+}
+
+function countWork(
+  rows: TimelineRow.TimelineRow[],
+  from: number,
+  to: number,
+  parts: ReadonlyMap<string, SessionMessageAssistant["content"][number]>,
+) {
+  let tools = 0
+  let failed = 0
+  for (let index = from; index <= to; index++) {
+    const row = rows[index]
+    if (!Predicate.isTagged(row, "AssistantPart")) continue
+    if (row.group.type === "part") continue
+    const refs =
+      row.group.type === "context" ? row.group.refs.filter((ref) => !isNonToolPartID(ref.partID)) : row.group.refs
+    tools += refs.length
+    // A failing test or a non-zero exit stays `completed` at the tool level; `currentToolFailed`
+    // is what knows the difference, so the head can stop claiming the whole run succeeded.
+    for (const ref of refs) {
+      const part = parts.get(ref.partID)
+      if (part?.type === "tool" && currentToolFailed(part)) failed += 1
+    }
+  }
+  return { tools, failed }
+}
+
+function contentByPartID(messages: readonly SessionMessageAssistant[]) {
+  const parts = new Map<string, SessionMessageAssistant["content"][number]>()
+  for (const message of messages) {
+    for (const entry of Timeline.contentEntries(message)) parts.set(entry.id, entry.content)
+  }
+  return parts
+}
+
+/**
+ * A failure only marks the turn when nothing came after it. Tools fail constantly mid-turn and the
+ * agent recovers, explains, and delivers an answer — painting the head red on top of a delivered
+ * answer says the opposite of what happened.
+ */
+function unresolvedFailure(messages: readonly SessionMessageAssistant[]) {
+  let lastFailed = -1
+  let lastAnswer = -1
+
+  messages
+    .flatMap((message) => Timeline.contentEntries(message).map((entry) => entry.content))
+    .forEach((content, index) => {
+      if (content.type === "tool" && currentToolFailed(content)) lastFailed = index
+      if (content.type === "text" && content.text.trim()) lastAnswer = index
+    })
+
+  return lastFailed >= 0 && lastFailed > lastAnswer
+}
+
+/** Whether the turn ever wrote prose. Stopped-mid-run turns have tools but no reply. */
+function hasAssistantReply(messages: readonly SessionMessageAssistant[]) {
+  return messages.some((message) =>
+    Timeline.contentEntries(message).some((entry) => entry.content.type === "text" && entry.content.text.trim()),
+  )
+}
+
+function workShellStatus(input: {
+  busy: boolean
+  failed: number
+  lastAssistant: SessionMessageAssistant | undefined
+  lastStep: Entry | undefined
+}): TimelineRow.WorkShell["status"] {
+  // Terminal outcomes win over busy: a failed/interrupted step should not read as 工作中.
+  if (input.lastAssistant?.error && isInterrupted(input.lastAssistant.error)) return "interrupted"
+  if (input.lastAssistant?.error) return "error"
+  if (input.lastStep?.type === "idle") return "error"
+  // Process tools finishing mid-turn must not flip the outer shell to 已完成.
+  if (input.busy) return "running"
+  // The turn delivered, but its tools did not all succeed: keep the count, drop the check.
+  if (input.failed > 0) return "failed"
+  return "done"
+}
+
+/** Wrap contiguous tool work (and mid-turn text between tools) in a WorkShell head/end pair. */
+function insertWorkShells(
+  rows: TimelineRow.TimelineRow[],
+  input: {
+    turnID: string
+    streaming: boolean
+    busy: boolean
+    lastAssistant: SessionMessageAssistant | undefined
+    lastStep: Entry | undefined
+    userCreated: number | undefined
+    assistantMessages: SessionMessageAssistant[]
+  },
+) {
+  let first = -1
+  let last = -1
+  for (let index = 0; index < rows.length; index++) {
+    if (!isProcessGroup(rows[index]!)) continue
+    if (first < 0) first = index
+    last = index
+  }
+
+  if (first < 0 || last < 0) {
+    // Streaming turns still need the work-shell head before any tools land (replaces native Working).
+    // An optimistic busy turn deliberately renders no chrome here: the send is not yet a turn.
+    if (!input.streaming) return rows
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]!
+      if (row.userMessageID !== input.turnID) continue
+      if (
+        Predicate.isTagged(row, "UserMessage") ||
+        Predicate.isTagged(row, "TurnGap") ||
+        Predicate.isTagged(row, "Error") ||
+        Predicate.isTagged(row, "Retry") ||
+        Predicate.isTagged(row, "TurnDivider") ||
+        Predicate.isTagged(row, "Notice") ||
+        Predicate.isTagged(row, "TurnDiff") ||
+        Predicate.isTagged(row, "CompactionQueued") ||
+        Predicate.isTagged(row, "Activity")
+      )
+        continue
+      if (first < 0) first = index
+      last = index
+    }
+    if (first < 0 || last < 0) {
+      const user = rows.findIndex(
+        (row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === input.turnID,
+      )
+      const at = user >= 0 ? user + 1 : rows.length
+      const startedAt =
+        input.userCreated ??
+        input.assistantMessages[0]?.time.created ??
+        input.lastAssistant?.time.created ??
+        Date.now()
+      const head = new TimelineRow.WorkShell({
+        userMessageID: input.turnID,
+        status: "running",
+        startedAt,
+        toolCount: 0,
+        failedCount: 0,
+        hasReply: false,
+      })
+      const end = new TimelineRow.WorkShellEnd({ userMessageID: input.turnID })
+      return [...rows.slice(0, at), head, end, ...rows.slice(at)]
+    }
+  } else {
+    while (first > 0 && isWorkShellLead(rows[first - 1]!)) first -= 1
+    for (let index = last + 1; index < rows.length; index++) {
+      const row = rows[index]!
+      if (isReasoningWork(row)) {
+        last = index
+        continue
+      }
+      if (Predicate.isTagged(row, "Notice") || Predicate.isTagged(row, "TurnDivider")) continue
+      break
+    }
+  }
+
+  const startedAt =
+    input.userCreated ??
+    input.assistantMessages[0]?.time.created ??
+    input.lastAssistant?.time.created ??
+    Date.now()
+  const endedAt = input.busy
+    ? undefined
+    : (input.lastAssistant?.time.completed ??
+      (input.lastStep?.type === "idle" ? input.lastStep.message.time.created : undefined))
+
+  const work = countWork(rows, first, last, contentByPartID(input.assistantMessages))
+  const head = new TimelineRow.WorkShell({
+    userMessageID: input.turnID,
+    status: workShellStatus({
+      ...input,
+      failed: unresolvedFailure(input.assistantMessages) ? work.failed : 0,
+    }),
+    startedAt,
+    endedAt,
+    toolCount: work.tools,
+    failedCount: work.failed,
+    hasReply: hasAssistantReply(input.assistantMessages),
+  })
+  const end = new TimelineRow.WorkShellEnd({ userMessageID: input.turnID })
+
+  return [...rows.slice(0, first), head, ...rows.slice(first, last + 1), end, ...rows.slice(last + 1)]
 }
 
 function isFailedIdle(message: SessionMessageInfo): message is FailedIdle {

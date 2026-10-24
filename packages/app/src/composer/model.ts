@@ -1,5 +1,6 @@
 import { ImagePreview } from "@opencode/ui/image-preview"
 import { useDialog } from "@opencode/ui/context/dialog"
+import type { UiI18nOrdinaryKey } from "@opencode/ui/context/i18n"
 import type { ReferenceInfo } from "@opencode/client/promise"
 import type { Links, MountedSession } from "@opencode/gui-extensions/sdk"
 import { createComponent, createEffect, createMemo, on } from "solid-js"
@@ -36,6 +37,19 @@ const sendFailedTitle = {
   command: "prompt.toast.commandSendFailed.title",
   prompt: "prompt.toast.promptSendFailed.title",
 } as const
+
+// Variant IDs are model-level identifiers, so only the known reasoning levels have localized labels.
+const variantLabelKeys = new Map<string, UiI18nOrdinaryKey>([
+  ["default", "ui.promptInput.thinking.level.default"],
+  ["none", "ui.promptInput.thinking.level.none"],
+  ["minimal", "ui.promptInput.thinking.level.minimal"],
+  ["low", "ui.promptInput.thinking.level.low"],
+  ["medium", "ui.promptInput.thinking.level.medium"],
+  ["high", "ui.promptInput.thinking.level.high"],
+  ["xhigh", "ui.promptInput.thinking.level.xhigh"],
+  ["max", "ui.promptInput.thinking.level.max"],
+  ["thinking", "ui.promptInput.thinking.level.thinking"],
+])
 
 export function createComposerModel(adapter: ComposerAdapter, options?: { queue?: ComposerQueue }): ComposerModel {
   const sdk = useWorkspaceLocation()
@@ -256,6 +270,12 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
 
   const variants = createMemo(() => ["default", ...adapter.controls().model.selection.variant.list()])
 
+  const variantLabel = (value: string) => {
+    const key = variantLabelKeys.get(value)
+
+    return key ? language.tDynamic(key, value) : value
+  }
+
   const submission = createComposerSubmit({
     adapter,
     mode,
@@ -401,7 +421,7 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
           : undefined
       },
       variant: {
-        options: () => variants().map((value) => ({ id: value, label: value })),
+        options: () => variants().map((value) => ({ id: value, label: variantLabel(value) })),
         current: () => adapter.controls().model.selection.variant.current() ?? "default",
         onSelect: (value) => adapter.controls().model.selection.variant.set(value === "default" ? undefined : value),
         keybind: () => command.keybindParts("model.variant.cycle"),

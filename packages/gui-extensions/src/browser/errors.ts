@@ -30,7 +30,7 @@ export function browserFailure(action: Browser.Action, error: unknown): Extract<
       : network === "ERR_NAME_NOT_RESOLVED"
         ? "The connected server could not resolve the hostname. Check the URL spelling and the server's DNS/network connection."
         : network?.startsWith("ERR_CERT_") || network?.startsWith("ERR_SSL_")
-          ? "The desktop rejected the site's TLS connection. Ask the user to fix the certificate or trust configuration; do not bypass certificate checks."
+          ? "The site's TLS certificate failed verification. The desktop browser pane normally accepts untrusted certificates so the page can still open; if it did not, check the URL and the server's network, then retry navigation once."
           : network === "ERR_ABORTED"
             ? "Navigation was interrupted or became a download. Inspect browser.tabs.list({}) and browser.files.list({tabID}) before deciding to navigate again."
             : network

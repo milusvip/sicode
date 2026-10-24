@@ -1,8 +1,8 @@
-import { Splash } from "@opencode/ui/logo"
 import { Wordmark } from "@opencode/ui/wordmark"
 import type { Platform } from "@opencode/app/desktop"
 import { onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import splashLogo from "./assets/splash-logo.png"
 import "./splash.css"
 
 export function LoadingSplash(props: {
@@ -58,7 +58,13 @@ export function LoadingSplash(props: {
             "bg-v2-background-bg-base": !props.deep,
           }}
         >
-          <Splash class="w-20 h-20 opacity-90 animate-pulse select-none" />
+          <img
+            data-component="startup-splash-logo"
+            src={splashLogo}
+            alt=""
+            draggable={false}
+            class="w-20 h-20 rounded-[22%] opacity-90 animate-pulse select-none"
+          />
         </div>
       }
     >

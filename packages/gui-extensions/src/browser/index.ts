@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Extension, Ipc, Store } from "../sdk"
+import { SEARCH_ENGINES } from "./address"
 import { Browser } from "./contract"
 import { History } from "./history"
 import en from "./i18n/en"
@@ -18,6 +19,9 @@ export default Extension.define({
     // Pages the browser showed, for the new tab page and the address field's suggestions. One list for every
     // session and server, kept on this device.
     history: Store.global(History, { visits: [] }),
+    // The engine the address field searches with. A stored id this build does not know falls back to the first
+    // engine, so an older or newer value never fails the extension's setup.
+    search: Store.global(Schema.Struct({ engine: Schema.String }), { engine: SEARCH_ENGINES[0].id }),
   },
   i18n: {
     en,

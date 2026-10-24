@@ -334,6 +334,13 @@ export function createBrowserPane(input: {
     async clearSite(window: number, binding: string, tabID: Browser.TabID) {
       await owned(window, binding).pages.get(tabID)?.clearSite()
     },
+    async setCookies(window: number, binding: string, tabID: Browser.TabID, text: string) {
+      const page = owned(window, binding).pages.get(tabID)
+
+      if (!page) throw new Error("This tab has no page to write cookies to. Reload it and try again.")
+
+      return page.setCookies(text)
+    },
     async command(window: number, binding: string, command: Browser.Action) {
       const entry = owned(window, binding)
       const url = command.type === "navigate" || command.type === "tabs.open" ? command.url : undefined

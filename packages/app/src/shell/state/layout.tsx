@@ -516,6 +516,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             toggle() {
               regions.setSideOpened(!regions.sideOpened())
             },
+            close() {
+              regions.setSideOpened(false)
+            },
           },
           session: {
             width: createMemo(() => regions.sessionWidth() ?? DEFAULT_SESSION_WIDTH),

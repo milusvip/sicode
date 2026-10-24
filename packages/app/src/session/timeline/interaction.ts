@@ -363,6 +363,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
       navigateMessage,
       revealMessage: (id: string, partID?: string) => revealMessage(id, partID),
       resume,
+      scrollToMessage,
       setActiveMessage,
     },
     lastUserMessage: timeline.lastUserMessage,

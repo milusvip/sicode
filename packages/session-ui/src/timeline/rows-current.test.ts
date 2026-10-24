@@ -5,6 +5,10 @@ import { storyDocument, storyTool } from "../storybook/current-session-scenarios
 import { timelinePresets } from "./detail"
 import { createTimelineProjection, Timeline, TimelineRow } from "./projection"
 
+function assistantParts(rows: TimelineRow.TimelineRow[]) {
+  return rows.filter((row) => Predicate.isTagged(row, "AssistantPart"))
+}
+
 describe("current session timeline rows", () => {
   test("derives turns and tagged rows from chronological current messages", () => {
     const source = [
@@ -36,8 +40,13 @@ describe("current session timeline rows", () => {
       "assistant-part:part:part:msg_2:msg_2:text:0",
       "turn-gap:msg_3",
       "user-message:msg_3",
+      "work-shell:msg_3",
       "thinking:msg_3",
+      "work-shell-end:msg_3",
     ])
+    expect(result.rows.find((row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === "msg_3")).toEqual(
+      new TimelineRow.UserMessage({ userMessageID: "msg_3", steer: true }),
+    )
   })
 
   test("renders a current shell message as a standalone turn", () => {
@@ -65,6 +74,48 @@ describe("current session timeline rows", () => {
 
     expect(result.activeMessageID).toBe("msg_shell")
     expect(result.rows.map(TimelineRow.key)).toEqual(["shell:msg_shell"])
+  })
+
+  test("puts the work shell above a turn that opens with prose", () => {
+    const source = [
+      { id: "msg_u", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_a",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          { type: "text", text: "let me look at the file first" },
+          {
+            type: "tool",
+            id: "tool_1",
+            name: "read",
+            state: {
+              status: "completed",
+              input: { path: "a.ts" },
+              content: [{ type: "text", text: "content" }],
+              metadata: {},
+            },
+            time: { created: 2, ran: 3, completed: 4 },
+          },
+          { type: "text", text: "found it" },
+        ],
+        time: { created: 2, completed: 5 },
+      },
+      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 6 } },
+    ] satisfies SessionMessageInfo[]
+
+    const result = Timeline.constructSessionMessageRows(source, false, { type: "idle" })
+    const tags = result.rows.map((row) => row._tag)
+
+    // A turn that narrates before its first tool used to put the overview bar *after* that sentence,
+    // so the top of the turn showed text and no bar.
+    const head = tags.indexOf("WorkShell")
+    const end = tags.indexOf("WorkShellEnd")
+
+    expect(head).toBe(1)
+    expect(end).toBeGreaterThan(head)
+    expect(tags.slice(head, end)).toContain("AssistantPart")
   })
 
   test("keeps assistant content when no user root is available", () => {
@@ -173,6 +224,7 @@ describe("current session timeline rows", () => {
 
     expect(result.activeMessageID).toBe("msg_a")
     expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_z", "turn-gap:msg_a", "user-message:msg_a"])
+    expect(result.rows[2]).toEqual(new TimelineRow.UserMessage({ userMessageID: "msg_a", steer: true }))
   })
 
   test("does not infer thinking above a queued user message", () => {
@@ -221,7 +273,9 @@ describe("current session timeline rows", () => {
 
       expect(Timeline.constructSessionMessageRows(source, true, { type: "busy" }).rows.map((row) => row._tag)).toEqual([
         "UserMessage",
+        "WorkShell",
         "AssistantPart",
+        "WorkShellEnd",
       ])
     })
   })
@@ -288,17 +342,27 @@ describe("current session timeline rows", () => {
         timelineDetail: timelinePresets[2].value,
       }).rows
 
-    expect(rows([{ ...thought, time: { created: 1 } }], true).map((row) => row._tag)).toEqual(["UserMessage"])
-    expect(rows([thought], true).map((row) => row._tag)).toEqual(["UserMessage"])
-    expect(rows([thought, { type: "text", text: "" }], true).map((row) => row._tag)).toEqual(["UserMessage"])
+    expect(rows([{ ...thought, time: { created: 1 } }], true).map((row) => row._tag)).toEqual([
+      "UserMessage",
+      "WorkShell",
+      "WorkShellEnd",
+    ])
+    expect(rows([thought], true).map((row) => row._tag)).toEqual(["UserMessage", "WorkShell", "WorkShellEnd"])
+    expect(rows([thought, { type: "text", text: "" }], true).map((row) => row._tag)).toEqual([
+      "UserMessage",
+      "WorkShell",
+      "WorkShellEnd",
+    ])
     expect(rows([thought, { type: "text", text: "Answer" }], true).map((row) => row._tag)).toEqual([
       "UserMessage",
+      "WorkShell",
       "AssistantPart",
       "AssistantPart",
+      "WorkShellEnd",
     ])
     expect(
       rows([thought, storyTool("read", "read", "running", { filePath: "package.json" })], true).map((row) => row._tag),
-    ).toEqual(["UserMessage", "AssistantPart"])
+    ).toEqual(["UserMessage", "WorkShell", "AssistantPart", "WorkShellEnd"])
     expect(rows([thought], false).map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
 
     const failed = storyDocument([thought], true)
@@ -326,6 +390,45 @@ describe("current session timeline rows", () => {
         timelineDetail: { ...timelinePresets[2].value, notices: { placement: "hidden" } },
       }).rows.map((row) => row._tag),
     ).toEqual(["UserMessage", "AssistantPart"])
+  })
+
+  test("keeps a trailing thinking process inside the work shell after a notice", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_tools",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [storyTool("read", "read", "completed", { filePath: "a.ts" })],
+        time: { created: 2, completed: 3 },
+      },
+      { id: "msg_model", type: "model-switched", model: { id: "next", providerID: "provider" }, time: { created: 4 } },
+      {
+        id: "msg_think",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [{ type: "reasoning", text: "Later thought", time: { created: 5, completed: 6 } }],
+        time: { created: 5, completed: 6 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const tags = Timeline.constructSessionMessageRows(
+      source,
+      true,
+      { type: "idle" },
+      undefined,
+      false,
+      false,
+      undefined,
+      timelinePresets[2].value,
+    ).rows.map((row) => row._tag)
+
+    expect(tags[0]).toBe("UserMessage")
+    expect(tags[1]).toBe("WorkShell")
+    expect(tags.at(-1)).toBe("WorkShellEnd")
+    expect(tags.filter((tag) => tag === "AssistantPart").length).toBeGreaterThanOrEqual(2)
   })
 
   test("stops thinking on idle, message completion, errors and retries", () => {
@@ -364,11 +467,19 @@ describe("current session timeline rows", () => {
     )
 
     const result = Timeline.constructSessionMessageRows(document.messages, true, { type: "busy" })
-    expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart", "Thinking"])
-    expect(result.rows[1]).toMatchObject({
+    expect(result.rows.map((row) => row._tag)).toEqual([
+      "UserMessage",
+      "WorkShell",
+      "AssistantPart",
+      "Thinking",
+      "WorkShellEnd",
+    ])
+    expect(assistantParts(result.rows)[0]).toMatchObject({
       group: { type: "context", refs: [{ partID: "msg_tool_projection_assistant:reasoning:0" }, { partID: "read" }] },
     })
-    expect(result.rows[2]).toMatchObject({ ref: { partID: "msg_tool_projection_assistant:reasoning:1" } })
+    expect(result.rows.find((row) => Predicate.isTagged(row, "Thinking"))).toMatchObject({
+      ref: { partID: "msg_tool_projection_assistant:reasoning:1" },
+    })
   })
 
   test("keeps actual thinking with the active prompt above an undelivered prompt", () => {
@@ -383,12 +494,14 @@ describe("current session timeline rows", () => {
 
     expect(result.rows.map((row) => row._tag)).toEqual([
       "UserMessage",
+      "WorkShell",
       "Thinking",
+      "WorkShellEnd",
       "Activity",
       "TurnGap",
       "UserMessage",
     ])
-    expect(result.rows[1].userMessageID).toBe(document.messages[0].id)
+    expect(result.rows[2].userMessageID).toBe(document.messages[0].id)
   })
 
   test("places live status, then a queued compaction, after the active turn and before undelivered prompts", () => {
@@ -408,13 +521,15 @@ describe("current session timeline rows", () => {
 
     expect(result.rows.map((row) => row._tag)).toEqual([
       "UserMessage",
+      "WorkShell",
       "AssistantPart",
+      "WorkShellEnd",
       "Activity",
       "CompactionQueued",
       "TurnGap",
       "UserMessage",
     ])
-    expect(result.rows[3].userMessageID).toBe(document.messages[0].id)
+    expect(result.rows[5].userMessageID).toBe(document.messages[0].id)
   })
 
   test("places a queued compaction ahead of a pending notice, which the server delivers after it", () => {
@@ -442,7 +557,9 @@ describe("current session timeline rows", () => {
 
     expect(result.rows.map((row) => row._tag)).toEqual([
       "UserMessage",
+      "WorkShell",
       "AssistantPart",
+      "WorkShellEnd",
       "Activity",
       "CompactionQueued",
       "Notice",
@@ -471,9 +588,15 @@ describe("current session timeline rows", () => {
       timelinePresets[2].value,
     )
 
-    expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart", "Activity", "AssistantPart"])
-    expect(result.rows[3]).toMatchObject({
-      spacing: "tool",
+    expect(result.rows.map((row) => row._tag)).toEqual([
+      "UserMessage",
+      "WorkShell",
+      "AssistantPart",
+      "WorkShellEnd",
+      "Activity",
+      "AssistantPart",
+    ])
+    expect(result.rows.findLast((row) => Predicate.isTagged(row, "AssistantPart"))).toMatchObject({
       group: { type: "context", refs: [{ messageID: "notice", partID: "notice" }] },
     })
   })
@@ -500,7 +623,13 @@ describe("current session timeline rows", () => {
       timelinePresets[0].value,
     )
 
-    expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "Thinking", "Notice"])
+    expect(result.rows.map((row) => row._tag)).toEqual([
+      "UserMessage",
+      "WorkShell",
+      "Thinking",
+      "WorkShellEnd",
+      "Notice",
+    ])
   })
 
   test.each(["shell", "execute", "subagent"])("does not hide active %s behind a preceding thought", (name) => {
@@ -547,7 +676,9 @@ describe("current session timeline rows", () => {
 
     expect(rows.map(TimelineRow.key)).toEqual([
       "user-message:msg_user",
+      "work-shell:msg_user",
       "assistant-part:context:context:msg_assistant:tool_read",
+      "work-shell-end:msg_user",
       "notice:msg_moved",
       "assistant-part:context:message:msg_skill",
     ])
@@ -694,7 +825,34 @@ describe("current session timeline rows", () => {
 
     const result = Timeline.constructSessionMessageRows(source, true, { type: "busy" })
 
-    expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+    expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "WorkShell", "AssistantPart", "WorkShellEnd"])
+  })
+
+  test("keeps the work shell running after a finished process while the session is still busy", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "inspect", time: { created: 1 } },
+      {
+        id: "msg_assistant",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          storyTool("tool_read", "read", "completed", { filePath: "a.ts" }),
+          storyTool("tool_grep", "grep", "completed", { pattern: "foo" }),
+        ],
+        finish: "tool-calls",
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const busy = Timeline.constructSessionMessageRows(source, true, { type: "busy" })
+    const shell = busy.rows.find((row) => Predicate.isTagged(row, "WorkShell"))
+    expect(shell).toMatchObject({ _tag: "WorkShell", status: "running", endedAt: undefined })
+
+    const idle = Timeline.constructSessionMessageRows(source, true, { type: "idle" })
+    const done = idle.rows.find((row) => Predicate.isTagged(row, "WorkShell"))
+    expect(done).toMatchObject({ _tag: "WorkShell", status: "done" })
+    expect(Predicate.isTagged(done, "WorkShell") && done.endedAt).toBe(3)
   })
 
   test("keeps content IDs and groups adjacent context tools", () => {
@@ -845,9 +1003,11 @@ describe("current session timeline rows", () => {
 
     expect(keys).toEqual([
       "user-message:msg_user",
+      "work-shell:msg_user",
       "assistant-part:context:context:msg_assistant_1:tool_0",
       "assistant-part:part:part:msg_assistant_2:tool_0",
       "assistant-part:context:context:msg_assistant_3:tool_0",
+      "work-shell-end:msg_user",
     ])
   })
 
@@ -1131,7 +1291,7 @@ describe("current session timeline rows", () => {
         previousRows,
       })
 
-      const groups = result.rows.filter((row) => Predicate.isTagged(row, "AssistantPart"))
+      const groups = assistantParts(result.rows)
       expect(groups).toHaveLength(1)
       expect(groups[0].group).toMatchObject({
         type: "context",
@@ -1140,7 +1300,7 @@ describe("current session timeline rows", () => {
           { messageID: "next-step", partID: "active" },
         ],
       })
-      expect(TimelineRow.key(groups[0])).toBe(TimelineRow.key(initial.rows[1]))
+      expect(TimelineRow.key(groups[0])).toBe(TimelineRow.key(assistantParts(initial.rows)[0]!))
 
       if (index > 0) expect(groups[0]).toBe(previousRows.find((row) => Predicate.isTagged(row, "AssistantPart"))!)
 
@@ -1393,7 +1553,7 @@ describe("current session timeline rows", () => {
 
     expect(
       Timeline.constructSessionMessageRows(betweenSteps, true, { type: "idle" }).rows.map((row) => row._tag),
-    ).toEqual(["UserMessage", "AssistantPart", "Error"])
+    ).toEqual(["UserMessage", "WorkShell", "AssistantPart", "WorkShellEnd", "Error"])
 
     const duplicate = [
       { id: "msg_user", type: "user", text: "prompt", time: { created: 1 } },
@@ -1563,6 +1723,12 @@ describe("current session timeline rows", () => {
       "assistant-part:part:part:msg_answer:msg_answer:text:0",
       "turn-diff:msg_idle_1",
     ])
+    expect(rows.find((row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === "msg_steer")).toEqual(
+      new TimelineRow.UserMessage({ userMessageID: "msg_steer", steer: true }),
+    )
+    expect(rows.find((row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === "msg_open")).toEqual(
+      new TimelineRow.UserMessage({ userMessageID: "msg_open" }),
+    )
     // Hosts opt in, so a timeline without the setting lists no summaries.
     expect(
       Timeline.constructSessionMessageRows(source, true, { type: "busy" }).rows.some((row) =>

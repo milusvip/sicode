@@ -32,6 +32,9 @@ export function TabNavItem(props: {
   fallbackTitle?: string
   onRename: (title: string) => Promise<void>
   onClose: () => void
+  onCloseOthers: () => void
+  onCloseAll: () => void
+  closeOthersDisabled: boolean
   onNavigate: () => void
   active?: boolean
   suppressNavigation?: boolean
@@ -41,7 +44,7 @@ export function TabNavItem(props: {
   orientation?: "horizontal" | "vertical"
 }) {
   const language = useLanguage()
-  const [menu, setMenu] = createStore({ open: false, rename: false })
+  const [menu, setMenu] = createStore({ open: false })
   const [editing, setEditing] = createSignal(false)
   const [titleOverflowing, setTitleOverflowing] = createSignal(false)
   let tabRoot!: HTMLDivElement
@@ -404,18 +407,13 @@ export function TabNavItem(props: {
         }}
       />
       <Menu.Context.Portal>
-        <Menu.Context.Content
-          onCloseAutoFocus={(event) => {
-            if (!menu.rename) return
-            event.preventDefault()
-            setMenu("rename", false)
-            openRename()
-          }}
-        >
-          <Menu.Item disabled={!props.session || rename.isPending} onSelect={() => setMenu("rename", true)}>
-            {language.t("common.rename")}
-          </Menu.Item>
+        <Menu.Context.Content>
           <Menu.Item onSelect={props.onClose}>{language.t("common.closeTab")}</Menu.Item>
+          <Menu.Separator />
+          <Menu.Item disabled={props.closeOthersDisabled} onSelect={props.onCloseOthers}>
+            {language.t("common.closeOtherTabs")}
+          </Menu.Item>
+          <Menu.Item onSelect={props.onCloseAll}>{language.t("common.closeAllTabs")}</Menu.Item>
         </Menu.Context.Content>
       </Menu.Context.Portal>
     </Menu.Context>
@@ -429,6 +427,9 @@ export function DraftTabItem(props: {
   active?: boolean
   onNavigate: () => void
   onClose: () => void
+  onCloseOthers: () => void
+  onCloseAll: () => void
+  closeOthersDisabled: boolean
   suppressNavigation?: boolean
   dragging?: boolean
   pressed?: boolean
@@ -436,6 +437,7 @@ export function DraftTabItem(props: {
   orientation?: "horizontal" | "vertical"
 }) {
   const language = useLanguage()
+  const [menu, setMenu] = createStore({ open: false })
 
   const closeTab = (event: MouseEvent) => {
     event.preventDefault()
@@ -443,7 +445,7 @@ export function DraftTabItem(props: {
     props.onClose()
   }
 
-  return (
+  const tab = () => (
     <div
       ref={(el) => {
         if (Predicate.isFunction(props.ref)) props.ref(el)
@@ -466,7 +468,11 @@ export function DraftTabItem(props: {
         closeTab(event)
       }}
     >
-      <a
+      <Menu.Context.Trigger
+        as="a"
+        disabled={props.dragging}
+        aria-haspopup="menu"
+        aria-expanded={menu.open}
         data-slot="tab-link"
         data-titlebar-tab-link
         href={props.href}
@@ -515,7 +521,7 @@ export function DraftTabItem(props: {
         >
           {props.title}
         </span>
-      </a>
+      </Menu.Context.Trigger>
       <div data-slot="tab-close">
         <IconButton
           size="small"
@@ -535,5 +541,21 @@ export function DraftTabItem(props: {
         />
       </div>
     </div>
+  )
+
+  return (
+    <Menu.Context modal={false} onOpenChange={(open) => setMenu("open", open)}>
+      {tab()}
+      <Menu.Context.Portal>
+        <Menu.Context.Content>
+          <Menu.Item onSelect={props.onClose}>{language.t("common.closeTab")}</Menu.Item>
+          <Menu.Separator />
+          <Menu.Item disabled={props.closeOthersDisabled} onSelect={props.onCloseOthers}>
+            {language.t("common.closeOtherTabs")}
+          </Menu.Item>
+          <Menu.Item onSelect={props.onCloseAll}>{language.t("common.closeAllTabs")}</Menu.Item>
+        </Menu.Context.Content>
+      </Menu.Context.Portal>
+    </Menu.Context>
   )
 }

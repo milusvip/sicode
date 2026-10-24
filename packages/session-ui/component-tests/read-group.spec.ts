@@ -10,7 +10,7 @@ const runs = [
 story("collapses each run of reads inside a Used group into one row", async ({ mount }) => {
   const root = await mount("current-read-group--used-group", { args: { width: "960" } })
   const group = root.locator('[data-component="collapsed-tool-group"]')
-  await expect(group.getByRole("button", { name: "Used 65 Read, Shell", exact: true })).toBeVisible()
+  await expect(group.getByRole("button", { name: "Process · Read, Shell · 65 tools", exact: true })).toBeVisible()
   const reads = group.locator('[data-component="read-tool-group"]')
   await expect(reads).toHaveCount(9)
   await expect(reads.locator('[data-slot="basic-tool-tool-subtitle"]').first()).toHaveText(runs[0]!)

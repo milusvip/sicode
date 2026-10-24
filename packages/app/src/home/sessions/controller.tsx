@@ -269,6 +269,43 @@ export function createHomeSessionsController(home: HomeController) {
       })
   }
 
+  // Bulk delete keeps the single-delete contract: each selected session takes
+  // its own child tree with it, so no orphan subagent sessions are left behind.
+  const removeMany = async (server: ServerConnection.Key, sessions: readonly SessionInfo[]) => {
+    const conn = home.server.list().find((item) => ServerConnection.key(item) === server)
+    const ctx = conn ? home.server.context(conn) : undefined
+
+    if (!conn || !ctx) return false
+
+    if (sessions.length === 0) return true
+
+    const list = ctx.data.session.list()
+    const targets = sessions.map((session) => ({ session, ids: sessionTreeIDs(list, session.id) }))
+    const results = await Promise.allSettled(targets.map((target) => ctx.data.session.remove(target.session.id)))
+    const removed = targets.filter((_, index) => results[index]?.status === "fulfilled")
+
+    if (removed.length > 0) {
+      notifySessionTabsRemoved({
+        server: ServerConnection.key(conn),
+        directory: removed[0].session.location.directory,
+        sessionIDs: [...new Set(removed.flatMap((target) => target.ids))],
+      })
+    }
+
+    const failure = results.find((result) => result.status === "rejected")
+
+    if (failure) {
+      showToast({
+        title: language.t("session.delete.failed.title"),
+        description: errorMessage(failure.reason, language.t("session.delete.failed.title")),
+      })
+    }
+
+    void queryClient.invalidateQueries({ queryKey: ["home-sessions", conn], exact: true })
+
+    return removed.length === targets.length
+  }
+
   function DeleteDialog(props: { server: ServerConnection.Key; session: SessionInfo }) {
     const name = () => sessionTitle(props.session.title) ?? language.t("command.session.new")
 
@@ -291,6 +328,37 @@ export function createHomeSessionsController(home: HomeController) {
           </Button>
           <Button variant="danger" onClick={confirm}>
             {language.t("session.delete.button")}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    )
+  }
+
+  function DeleteManyDialog(props: { server: ServerConnection.Key; sessions: SessionInfo[] }) {
+    const confirm = async () => {
+      await removeMany(props.server, props.sessions)
+      dialog.close()
+    }
+
+    return (
+      <Dialog fit>
+        <DialogHeader hideClose>
+          <DialogTitleGroup
+            title={language.t("session.delete.many.title")}
+            description={
+              <div class="flex flex-col gap-2">
+                <div>{language.plural("session.delete.many.confirm", props.sessions.length)}</div>
+                <div>{language.t("session.delete.many.warning")}</div>
+              </div>
+            }
+          />
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button variant="danger" onClick={confirm}>
+            {language.t("session.delete.many.button")}
           </Button>
         </DialogFooter>
       </Dialog>
@@ -380,6 +448,15 @@ export function createHomeSessionsController(home: HomeController) {
       export: exportSession,
       showDelete: (server: ServerConnection.Key, session: SessionInfo) =>
         dialog.show(() => <DeleteDialog server={server} session={session} />),
+      showDeleteMany: (server: ServerConnection.Key, sessions: readonly SessionInfo[]) => {
+        if (sessions.length === 0) return
+
+        if (sessions.length === 1) return dialog.show(() => <DeleteDialog server={server} session={sessions[0]!} />)
+
+        const snapshot = [...sessions]
+
+        return dialog.show(() => <DeleteManyDialog server={server} sessions={snapshot} />)
+      },
     },
     tab: {
       isOpen: (record: HomeSessionRecord) => {

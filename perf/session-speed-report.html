@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiCode 会话速度 · 改动前后对比</title>
+<style>
+  :root {
+    --bg: #16161a;
+    --panel: #1e1e24;
+    --panel-2: #25252d;
+    --line: #33333d;
+    --text: #e8e8ec;
+    --muted: #9a9aa6;
+    --dim: #6c6c78;
+    --amber: #d08a28;
+    --teal: #2f9e7e;
+    --red: #b5444a;
+    --blue: #4a86c8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 72px;
+    background: var(--bg); color: var(--text);
+    font: 400 14px/1.65 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 15px; font-weight: 500; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h2 .n { color: var(--dim); font-weight: 400; margin-right: 8px; }
+  p { margin: 0 0 12px; color: var(--muted); }
+  code, .mono { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12.5px; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; color: #cfcfd8; }
+
+  .verdict { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--teal);
+    border-radius: 8px; padding: 16px 18px; margin-bottom: 8px; }
+  .verdict b { font-weight: 500; }
+  .verdict .big { font-size: 26px; font-weight: 500; color: var(--teal); letter-spacing: -0.02em; }
+
+  .grid { display: grid; gap: 12px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 720px) { .g4 { grid-template-columns: repeat(2, 1fr); } .g2 { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .card .k { color: var(--dim); font-size: 12px; margin-bottom: 6px; }
+  .card .v { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
+  .card .v small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 400; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: "JetBrains Mono", Consolas, monospace; }
+  tr:last-child td { border-bottom: 0; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; line-height: 1.7; }
+  .tag.ok { background: rgba(47,158,126,.16); color: #5cc9a4; }
+  .tag.wait { background: rgba(208,138,40,.16); color: #e0a851; }
+  .tag.no { background: rgba(108,108,120,.2); color: var(--muted); }
+
+  .bars { margin-top: 4px; }
+  .bar-row { display: grid; grid-template-columns: 92px 1fr 62px; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 12.5px; }
+  .bar-track { height: 22px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .bar-row .lbl { color: var(--muted); }
+  .bar-row .val { text-align: right; font-variant-numeric: tabular-nums; font-family: "JetBrains Mono", Consolas, monospace; color: var(--text); }
+
+  .note { border-left: 2px solid var(--amber); background: rgba(208,138,40,.07); padding: 12px 16px;
+    border-radius: 0 6px 6px 0; font-size: 13px; color: #d9c4a4; margin-top: 14px; }
+  .note b { color: #e8c88a; font-weight: 500; }
+  ul { margin: 0 0 12px; padding-left: 20px; color: var(--muted); }
+  li { margin-bottom: 6px; }
+  .foot { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>SiCode 会话速度 · 改动前后对比</h1>
+  <div class="sub">
+    数据源 <code>opencode-local.db</code> ·
+    基准会话 <code>ses_e964f39bfffe…</code>（思考强度语言不跟随设置）·
+    生成于 2026-10-24 01:30
+  </div>
+
+  <div class="verdict">
+    同一个会话回放：<span class="big">698s → 642s</span>
+    <span style="color:var(--muted)">（-56s，-8%）</span>
+    <div style="color:var(--muted); margin-top: 6px; font-size: 13px">
+      这一轮只算「不回放历史思考」。末轮上下文从 <b style="color:var(--text)">108,913</b> 降到
+      <b style="color:var(--text)">83,974</b>，少 23%。
+    </div>
+  </div>
+
+  <h2><span class="n">01</span>核心指标</h2>
+  <div class="grid g4">
+    <div class="card"><div class="k">耗时</div><div class="v">698<small>s</small> → 642<small>s</small></div></div>
+    <div class="card"><div class="k">末轮上下文</div><div class="v">109<small>K</small> → 84<small>K</small></div></div>
+    <div class="card"><div class="k">压缩次数</div><div class="v">13<small>次 → 0</small></div></div>
+    <div class="card"><div class="k">多工具轮</div><div class="v">36<small>% → 60%</small></div></div>
+  </div>
+
+  <h2><span class="n">02</span>上下文里装了什么</h2>
+  <p>这是决定 prefill 成本的唯一来源。同一会话累计注入 271K 字符，末轮实测 108,913 token，能对上。</p>
+  <div class="bars">
+    <div class="bar-row">
+      <div class="lbl">工具输出</div>
+      <div class="bar-track"><div class="bar-fill" style="width:70%; background:var(--amber)"></div></div>
+      <div class="val">70%</div>
+    </div>
+    <div class="bar-row">
+      <div class="lbl">思考</div>
+      <div class="bar-track"><div class="bar-fill" style="width:30%; background:var(--red)"></div></div>
+      <div class="val">30%</div>
+    </div>
+    <div class="bar-row">
+      <div class="lbl">助手正文</div>
+      <div class="bar-track"><div class="bar-fill" style="width:1%; background:var(--blue)"></div></div>
+      <div class="val">1%</div>
+    </div>
+    <div class="bar-row">
+      <div class="lbl">用户输入</div>
+      <div class="bar-track"><div class="bar-fill" style="width:0.3%; background:var(--blue)"></div></div>
+      <div class="val">0%</div>
+    </div>
+  </div>
+  <p style="margin-top:14px; font-size:13px">
+    工具输出明细：<code>read 73K</code> · <code>grep 63K</code> · <code>shell 43K</code> · <code>glob 8.7K</code> 字符。
+    思考 80,346 字符 ≈ 25,187 token —— 这块原来每一轮都在重发。
+  </p>
+
+  <h2><span class="n">03</span>上下文越大，每轮越慢</h2>
+  <p>把同一会话的 55 轮按上下文大小分桶，生成 token 归一化后的每轮耗时（缓存命中率 96.2% 也一样慢）：</p>
+  <div class="bars">
+    <div class="bar-row">
+      <div class="lbl">17.8K</div>
+      <div class="bar-track"><div class="bar-fill" style="width:46%; background:var(--teal)"></div></div>
+      <div class="val">5.3s</div>
+    </div>
+    <div class="bar-row">
+      <div class="lbl">43.9K</div>
+      <div class="bar-track"><div class="bar-fill" style="width:61%; background:var(--teal)"></div></div>
+      <div class="val">7.0s</div>
+    </div>
+    <div class="bar-row">
+      <div class="lbl">82.3K</div>
+      <div class="bar-track"><div class="bar-fill" style="width:92%; background:var(--amber)"></div></div>
+      <div class="val">10.6s</div>
+    </div>
+    <div class="bar-row">
+      <div class="lbl">100.6K</div>
+      <div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--amber)"></div></div>
+      <div class="val">11.5s</div>
+    </div>
+  </div>
+  <p style="margin-top:14px; font-size:13px">
+    约 <b style="color:var(--text)">0.075 秒 / 1000 token</b>。回归式：
+    <code>dur = 3.94 + 0.00519 × 生成token + 0.00008 × 上下文token</code>（拟合 696s，实测 698s）。
+  </p>
+
+  <h2><span class="n">04</span>四项改动</h2>
+  <table>
+    <tr>
+      <th style="width:32%">改动</th>
+      <th style="width:12%">状态</th>
+      <th>效果</th>
+      <th style="width:14%" class="num">收益</th>
+    </tr>
+    <tr>
+      <td>删 <code>limit</code>（不压缩）</td>
+      <td><span class="tag ok">已生效</span></td>
+      <td>压缩 13 次 → 0 次。但上下文一路涨到 109K，每轮 prefill 多花 6s —— 见下方提醒</td>
+      <td class="num">±0</td>
+    </tr>
+    <tr>
+      <td>deepseek 禁重读 prompt</td>
+      <td><span class="tag ok">已生效</span></td>
+      <td>多工具轮 36% → 60%（单样本，任务类型不同，不能算证实）</td>
+      <td class="num">待观察</td>
+    </tr>
+    <tr>
+      <td>read 会话级去重</td>
+      <td><span class="tag no">已撤除</span></td>
+      <td>两次实测 0 命中 —— 模型从不重复同一 <code>offset+limit</code></td>
+      <td class="num">0</td>
+    </tr>
+    <tr>
+      <td>不回放历史思考</td>
+      <td><span class="tag wait">已改未重启</span></td>
+      <td>只给最后一条 assistant 保留 readable reasoning；带 provider state 的一律保留</td>
+      <td class="num" style="color:#5cc9a4">-56s</td>
+    </tr>
+  </table>
+
+  <h2><span class="n">05</span>9:41 的时间去哪了</h2>
+  <table>
+    <tr><th>成分</th><th class="num" style="width:16%">占比</th><th>能不能动</th></tr>
+    <tr>
+      <td>上下文 prefill</td><td class="num">43%</td>
+      <td>能 —— 压工具输出、压思考、用 subagent 把探索挪出主上下文</td>
+    </tr>
+    <tr>
+      <td>生成 token</td><td class="num">28%</td>
+      <td>能，但空间小 —— 引导用 <code>patch</code> 而不是整文件 <code>write</code></td>
+    </tr>
+    <tr>
+      <td>固定延迟（排队 + 首字）</td><td class="num">29%</td>
+      <td><b style="color:#e0a851">不能</b> —— provider 层面，只能换供应商</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <b>关于「不压缩」的一个纠正。</b>
+    之前判断「删掉 limit 让上下文不压缩」是优化，实测反证：每轮耗时随上下文单调上升，
+    上下文从 18K 涨到 100K，每轮多花 6 秒。压缩的价值不是省一次调用，而是把每轮 prefill 按住
+    —— 只要后面还剩 3 轮就回本。
+    建议把 <code>limit.context</code> 设回 <code>96000</code>（ceiling 算出来 80000），
+    而不是维持现在的「无上限 → ceiling 170000」。
+  </div>
+
+  <h2><span class="n">06</span>还差多少到 Cursor</h2>
+  <table>
+    <tr><th style="width:36%">阶段</th><th class="num" style="width:18%">同一任务耗时</th><th>说明</th></tr>
+    <tr><td>现在</td><td class="num">9:41</td><td>实测</td></tr>
+    <tr><td>+ 不回放思考</td><td class="num">8:57</td><td>回放预测（-8%）</td></tr>
+    <tr><td>+ 激进降级工具输出</td><td class="num">≈7:30</td><td>估算，工具输出占 70%</td></tr>
+    <tr><td>+ 探索交给 subagent</td><td class="num">≈6:00</td><td>估算，主上下文可降到 20K</td></tr>
+    <tr><td>Cursor 同级</td><td class="num">4–5 分</td><td>它还有自建推理的低 TTFT，这块改代码拿不到</td></tr>
+  </table>
+
+  <div class="foot">
+    实测 = 从数据库读到的真实耗时；回放预测 = 用实测回归式重算每轮；估算 = 按比例推算，未验证。
+    「不回放思考」需要重启 sidecar 才生效。
+  </div>
+
+</div>
+</body>
+</html>

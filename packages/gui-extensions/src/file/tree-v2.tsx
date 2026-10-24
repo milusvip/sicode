@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show, splitProps, type ComponentProps, type ParentProps } from "solid-js"
+import { createMemo, createSignal, For, on, Show, splitProps, type ComponentProps, type ParentProps } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { createVirtualizer, defaultRangeExtractor } from "@tanstack/solid-virtual"
 import { FileIcon } from "@opencode/ui/file-icon"
@@ -8,6 +8,7 @@ import { createKeyed, useExtension, type FileNode, type MountedSession, type Ses
 import { startFileDrag } from "./drag"
 import { OpenInAppContextMenuV2, useOpenInApp } from "./open-in-app"
 import { resolveOpenInAppPath } from "./path"
+import { refreshFileTree } from "./refresh"
 import {
   buildFileTreeV2Model,
   flattenFileTreeV2,
@@ -192,6 +193,28 @@ export default function FileTreeV2(props: {
       return root?.loaded ? undefined : { root }
     },
     () => void file.tree.sync(""),
+  )
+
+  // SiCode: rows come from a listing a directory keeps, and the server watches only the git head, so a file the
+  // session deleted would stay in them. List the loaded directories again when the tree shows, and after each turn:
+  // the cached expansion and the scroll offset stay, so the rows only move where the workspace changed. Listing is a
+  // request, so this waits for the server and runs again when it reconnects.
+  createKeyed(
+    () => live() && props.session.server.connected,
+    () => void refreshFileTree(file),
+  )
+
+  const finished = createMemo(
+    on(
+      () => props.session.server.data.session.status(props.session.id),
+      (next, previous) => (next === "idle" && previous !== undefined && previous !== "idle" ? {} : undefined),
+      { defer: true },
+    ),
+  )
+
+  createKeyed(
+    () => live() && props.session.server.connected && finished(),
+    () => void refreshFileTree(file),
   )
 
   // Only scroll when the active path changes (or first appears in the tree).

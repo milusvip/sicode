@@ -1,13 +1,16 @@
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Tooltip } from "@opencode/ui/tooltip"
+import { createSignal, onCleanup } from "solid-js"
 import { render } from "solid-js/web"
 
 export type TableLabels = {
   size: (rows: number, columns: number) => string
   copy: string
+  copied: string
   download: string
   expand: string
+  close: string
 }
 
 const disposers = new WeakMap<HTMLElement, () => void>()
@@ -37,22 +40,108 @@ function save(name: string, text: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function expand(table: HTMLTableElement) {
+function action(label: string, icon: string, onClick: () => void) {
+  return (
+    <Tooltip placement="top" value={label}>
+      <IconButton
+        type="button"
+        size="small"
+        variant="ghost-muted"
+        aria-label={label}
+        icon={<Icon name={icon} size="small" />}
+        onClick={onClick}
+      />
+    </Tooltip>
+  )
+}
+
+function CopyAction(props: { table: HTMLTableElement; copy: string; copied: string }) {
+  const [copied, setCopied] = createSignal(false)
+  let reset: ReturnType<typeof setTimeout> | undefined
+
+  onCleanup(() => {
+    if (reset) clearTimeout(reset)
+  })
+
+  const label = () => (copied() ? props.copied : props.copy)
+
+  return (
+    <Tooltip placement="top" value={label()}>
+      <IconButton
+        type="button"
+        size="small"
+        variant="ghost-muted"
+        aria-label={label()}
+        data-slot="markdown-table-copy"
+        data-copied={copied() ? "true" : undefined}
+        icon={
+          <>
+            <Icon name="outline-copy" size="small" data-copy-icon />
+            <Icon name="check" size="small" data-check-icon />
+          </>
+        }
+        onClick={() => {
+          void navigator.clipboard.writeText(tsv(props.table)).then(() => {
+            setCopied(true)
+            if (reset) clearTimeout(reset)
+            reset = setTimeout(() => setCopied(false), 1500)
+          })
+        }}
+      />
+    </Tooltip>
+  )
+}
+
+function TableActions(props: { table: HTMLTableElement; labels: TableLabels; onExpand?: () => void; onClose?: () => void }) {
+  return (
+    <>
+      <CopyAction table={props.table} copy={props.labels.copy} copied={props.labels.copied} />
+      {action(props.labels.download, "outline-download", () =>
+        save("table.csv", "\ufeff" + csv(props.table), "text/csv;charset=utf-8"),
+      )}
+      {props.onExpand ? action(props.labels.expand, "outline-maximize", props.onExpand) : undefined}
+      {props.onClose ? action(props.labels.close, "close-small", props.onClose) : undefined}
+    </>
+  )
+}
+
+function expand(table: HTMLTableElement, labels: TableLabels) {
   const overlay = document.createElement("div")
   overlay.setAttribute("data-slot", "markdown-table-zoom")
 
   const panel = document.createElement("div")
   panel.setAttribute("data-slot", "markdown-table-zoom-panel")
-  panel.appendChild(table.cloneNode(true))
-  overlay.appendChild(panel)
 
+  const head = document.createElement("div")
+  head.setAttribute("data-slot", "markdown-table-zoom-head")
+
+  const title = document.createElement("span")
+  title.setAttribute("data-slot", "markdown-table-zoom-label")
+  const columns = table.rows[0]?.cells.length ?? 0
+  title.textContent = labels.size(table.rows.length, columns)
+
+  const tools = document.createElement("div")
+  tools.setAttribute("data-slot", "markdown-table-zoom-tools")
+
+  const scroll = document.createElement("div")
+  scroll.setAttribute("data-slot", "markdown-table-zoom-scroll")
+  scroll.appendChild(table.cloneNode(true))
+
+  let dispose = () => {}
   const close = () => {
     document.removeEventListener("keydown", onKey)
+    dispose()
     overlay.remove()
   }
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") close()
   }
+
+  dispose = render(() => <TableActions table={table} labels={labels} onClose={close} />, tools)
+
+  head.append(title, tools)
+  panel.append(head, scroll)
+  overlay.appendChild(panel)
 
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) close()
@@ -62,26 +151,9 @@ function expand(table: HTMLTableElement) {
 }
 
 function TableTools(props: { table: HTMLTableElement; labels: TableLabels }) {
-  const action = (label: string, icon: string, onClick: () => void) => (
-    <Tooltip placement="top" value={label}>
-      <IconButton
-        type="button"
-        size="normal"
-        variant="ghost-muted"
-        aria-label={label}
-        icon={<Icon name={icon} />}
-        onClick={onClick}
-      />
-    </Tooltip>
-  )
-
   return (
     <div data-slot="markdown-table-tools">
-      {action(props.labels.copy, "outline-copy", () => void navigator.clipboard.writeText(tsv(props.table)))}
-      {action(props.labels.download, "outline-square-arrow", () =>
-        save("table.csv", "\ufeff" + csv(props.table), "text/csv;charset=utf-8"),
-      )}
-      {action(props.labels.expand, "outline-arrow-to-corner-top-right", () => expand(props.table))}
+      <TableActions table={props.table} labels={props.labels} onExpand={() => expand(props.table, props.labels)} />
     </div>
   )
 }

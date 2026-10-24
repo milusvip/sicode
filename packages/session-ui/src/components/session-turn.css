@@ -115,13 +115,25 @@
     }
   }
 
+  /* A session error is an outcome, not a sentence: give it the same soft danger surface the
+     diagnostics block uses, so it reads as a state instead of stray red text in the transcript. */
   [data-component="card"][data-kind="session-error-card"] {
-    --card-pad-y: 0px;
-    --card-pad-l: 0px;
-    --card-pad-r: 0px;
+    --card-pad-y: 8px;
+    --card-pad-l: 10px;
+    --card-pad-r: 10px;
+
+    border: 1px solid var(--v2-state-border-danger);
+    border-radius: 8px;
+    background: var(--v2-state-bg-danger);
+    color: var(--v2-text-text-base);
 
     &::before {
       display: none;
+    }
+
+    [data-slot="icon-svg"] {
+      margin-top: 1px;
+      color: var(--v2-state-fg-danger);
     }
   }
 

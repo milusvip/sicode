@@ -185,6 +185,28 @@
       transition: none;
     }
 
+    /* Mid-execution follow-up: capsule before the first character. */
+    &[data-steer] {
+      [data-slot="user-message-steer"] {
+        display: inline-flex;
+        align-items: center;
+        vertical-align: 0.05em;
+        margin-inline-end: 6px;
+        padding: 1px 6px;
+        border-radius: 9999px;
+        border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+        background: color-mix(in srgb, currentColor 12%, transparent);
+        font-size: 11px;
+        font-weight: 530;
+        line-height: 1.35;
+        letter-spacing: 0.02em;
+        color: inherit;
+        opacity: 0.78;
+        white-space: nowrap;
+        user-select: none;
+      }
+    }
+
     [data-highlight="file"],
     [data-highlight="agent"] {
       color: inherit;
@@ -216,6 +238,7 @@
     transition: opacity 0.15s ease;
     will-change: opacity;
 
+    /* The whole meta line (agent · model · time) waits for hover, like the response meta below. */
     @media (hover: hover) {
       opacity: 0;
       pointer-events: none;
@@ -356,6 +379,30 @@
         margin-top: 0;
       }
     }
+  }
+
+  /* Live thinking preview: one line that keeps the newest text in view while the start
+     scrolls out, so the head reads like a ticker instead of a frozen heading.
+     The left padding reserves the fade zone, so text that fits is never dimmed. */
+  [data-slot="basic-tool-tool-subtitle"][data-live] {
+    display: flex;
+    justify-content: flex-end;
+    overflow: hidden;
+    padding-left: 10px;
+    mask-image: linear-gradient(to right, transparent 0, black 10px);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 10px);
+
+    &:dir(rtl) {
+      padding-left: 0;
+      padding-right: 10px;
+      mask-image: linear-gradient(to left, transparent 0, black 10px);
+      -webkit-mask-image: linear-gradient(to left, transparent 0, black 10px);
+    }
+  }
+
+  [data-slot="reasoning-live-text"] {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 }
 
@@ -643,19 +690,34 @@
 
 [data-component="context-tool-group-trigger"] {
   width: 100%;
-  min-height: 24px;
+  min-height: 26px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 0px;
-  cursor: default;
+  gap: 8px;
+  /* This row is the collapse control for the whole chain; it used to read as static text. */
+  cursor: pointer;
+
+  [data-slot="process-shell-icon"] {
+    flex: 0 0 19px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    color: var(--v2-text-text-faint);
+  }
 
   [data-slot="context-tool-group-title"] {
     display: flex;
     align-items: center;
     gap: 4px;
-    flex-shrink: 1;
+    flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: var(--process-shell-size, 12.5px);
+    font-weight: var(--process-shell-weight, 440);
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    color: var(--v2-text-text-faint);
   }
 
   [data-slot="context-tool-group-usage"] {
@@ -663,12 +725,12 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    color: var(--v2-text-text-muted);
+    color: var(--v2-text-text-faint);
     font-family: var(--v2-font-family-sans);
-    font-size: 13px;
-    font-weight: 440;
-    line-height: var(--line-height-compact);
-    letter-spacing: -0.04px;
+    font-size: var(--process-shell-size, 12.5px);
+    font-weight: var(--process-shell-weight, 440);
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    letter-spacing: var(--process-shell-tracking, -0.04px);
 
     & > [data-slot="context-tool-group-prefix"],
     & > [data-slot="context-tool-group-count"] {
@@ -677,7 +739,7 @@
   }
 
   [data-slot="context-tool-group-count"] {
-    color: var(--v2-text-text-base);
+    color: var(--v2-text-text-faint);
     font-variant-numeric: tabular-nums;
   }
 
@@ -689,12 +751,48 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--process-shell-size, 12.5px);
+    font-weight: var(--process-shell-weight, 440);
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    color: var(--v2-text-text-faint);
   }
 
-  [data-slot="collapsible-arrow"] {
-    color: var(--icon-weaker);
-    cursor: pointer;
+  [data-slot="process-shell-meta"] {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    font-family: var(--v2-font-family-sans);
+    font-size: var(--process-shell-size, 12.5px);
+    font-weight: var(--process-shell-weight, 440);
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    letter-spacing: var(--process-shell-tracking, -0.04px);
+    font-variant-numeric: tabular-nums;
+    color: var(--v2-text-text-faint);
   }
+
+  [data-slot="process-shell-chevron"] {
+    flex: 0 0 12px;
+    display: grid;
+    place-items: center;
+    color: var(--v2-text-text-faint);
+    opacity: 0.75;
+    transition: transform 200ms ease;
+  }
+}
+
+/* Completed process: green check whether the row is open or closed. A process that contains a
+   failed tool keeps the warning glyph and the danger colour instead. */
+[data-component="collapsed-tool-group"][data-process-shell]:not([data-pending="true"]):not([data-failed="true"])
+  [data-slot="process-shell-icon"] {
+  color: var(--v2-state-fg-success, var(--icon-success-base, #8adfa6));
+}
+
+/* The icon carries the failure; the title stays readable and does not paint every tool name red. */
+[data-component="collapsed-tool-group"][data-process-shell][data-failed="true"] [data-slot="process-shell-icon"] {
+  color: var(--v2-state-fg-danger, var(--icon-critical-base, #e5756a));
+}
+
+[data-component="collapsed-tool-group"][data-process-shell][data-open="true"] [data-slot="process-shell-chevron"] {
+  transform: rotate(90deg);
 }
 
 [data-component="collapsed-tool-group"] {
@@ -721,51 +819,465 @@
   }
 }
 
+/* Process head matches design demo: light bar, no sticky chrome, always-visible chevron. */
+[data-component="collapsed-tool-group"][data-process-shell] {
+  --process-shell-size: 12.5px;
+  --process-shell-weight: 440;
+  --process-shell-leading: var(--line-height-compact);
+  --process-shell-tracking: -0.04px;
+  overflow: visible;
+  overflow-anchor: none;
+
+  > [data-component="collapsible"].tool-collapsible {
+    --tool-content-gap: 2px;
+    gap: 2px;
+    overflow: visible;
+
+    > [data-slot="collapsible-trigger"] {
+      position: static;
+      height: auto;
+      min-height: 26px;
+      /* 5px left matches the work-shell 1px border + 4px pad so icons line up. */
+      padding: 3px 8px 3px 5px;
+      border-radius: 6px;
+      /* The design's light bar: the row owns a fill whether or not the pointer is on it. Hover used to
+         be the only way to see it at all, so the header read as plain text until you found it. */
+      background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
+      box-shadow: inset 0 0 0 1px transparent;
+      transition:
+        background-color 120ms ease,
+        box-shadow 120ms ease;
+    }
+
+    /* Hover lights the rim instead of the fill, so the bar does not blink from flat to filled. */
+    > [data-slot="collapsible-trigger"]:hover {
+      box-shadow: inset 0 0 0 1px var(--v2-border-border-strong, rgba(255, 255, 255, 0.2));
+    }
+
+    > [data-slot="collapsible-trigger"][aria-expanded="true"] {
+      position: static;
+      height: auto;
+      min-height: 26px;
+      padding: 3px 8px 3px 5px;
+      background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
+      z-index: auto;
+    }
+
+    > [data-slot="collapsible-trigger"][aria-expanded="true"]:hover {
+      box-shadow: inset 0 0 0 1px var(--v2-border-border-strong, rgba(255, 255, 255, 0.2));
+    }
+
+    /* Demo .process-head is width:100%: the head must span the row so the meta/chevron pin right.
+       Without this the trigger hugs its text, clips "N tools" and leaves a short hover target. */
+    > [data-slot="collapsible-trigger"]
+      > [data-component="tool-trigger"]
+      > [data-slot="basic-tool-tool-trigger-content"],
+    > [data-slot="collapsible-trigger"] [data-slot="basic-tool-tool-info"] {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: none;
+      min-width: 0;
+    }
+
+    /* Keep chain rail stubs visible between tool rows (Kobalte defaults to overflow:hidden).
+       Nested file/tool headers stay in flow so a fold opens under the clicked row. */
+    > [data-slot="collapsible-content"] {
+      --sticky-accordion-top: 0px;
+      --sticky-accordion-offset: 0px;
+      overflow: visible;
+      padding-inline: 5px 8px;
+    }
+
+    > [data-slot="collapsible-trigger"] [data-slot="collapsible-arrow"] {
+      display: none;
+    }
+  }
+}
+
+/* Silky folds. Kobalte measures the content and publishes `--kb-collapsible-content-height`, so a
+   click can grow the row instead of teleporting the transcript under the pointer. Scoped to the
+   process shell on purpose: the timeline above it is virtualized and the rest of the app keeps its
+   snap-open behaviour. `overflow` rides inside the keyframes — a discrete property held at `hidden`
+   in both frames clips the reveal, then reverts to the `visible` the chain needs for its rail. */
+[data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-content"][data-expanded] {
+  animation: process-shell-open 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-content"][data-closed] {
+  animation: process-shell-close 140ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes process-shell-open {
+  from {
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+  to {
+    height: var(--kb-collapsible-content-height);
+    opacity: 1;
+    overflow: hidden;
+  }
+}
+
+@keyframes process-shell-close {
+  from {
+    height: var(--kb-collapsible-content-height);
+    opacity: 1;
+    overflow: hidden;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-content"] {
+    animation: none;
+  }
+}
+
+/* Keyboard focus. Rows are Kobalte triggers, and `collapsible.css` trades its focus ring for a
+   background flash — which the `background: transparent` set above wins back, so a focused row
+   showed literally nothing (bg transparent / outline none / no shadow). Give the shell one ring. */
+[data-component="collapsed-tool-group"][data-process-shell] [data-slot="collapsible-trigger"]:focus-visible,
+[data-slot="context-tool-group-list"] [data-slot="collapsible-trigger"]:focus-visible,
+[data-slot="context-tool-group-list"] [data-component="read-tool-group"]:focus-visible {
+  outline: 1px solid var(--v2-border-border-focus);
+  outline-offset: -1px;
+  background: transparent;
+}
+
+/* Demo .p-title ramp: the tool names inside the head sit on the process title metric, not compact 13px/530. */
+[data-component="collapsed-tool-group"][data-process-shell]
+  > [data-component="collapsible"].tool-collapsible
+  > [data-slot="collapsible-trigger"]
+  [data-slot="basic-tool-tool-title"] {
+  font-family: var(--v2-font-family-sans);
+  font-size: var(--process-shell-size, 12.5px);
+  font-weight: var(--process-shell-weight, 440);
+  line-height: var(--process-shell-leading, var(--line-height-compact));
+  letter-spacing: var(--process-shell-tracking, -0.04px);
+}
+
 [data-notices-only] > [data-component="collapsed-tool-group"] > [data-component="collapsible"].tool-collapsible {
   --tool-content-gap: 0px;
 }
-
 [data-component="context-tool-group-list"] {
+  --process-shell-size: 12.5px;
+  --process-shell-weight: 440;
+  --process-shell-leading: var(--line-height-compact);
+  --process-shell-tracking: -0.04px;
+  /* Match demo .chain: the icon column threads every row (19px wide / 28px row). */
+  --ind-col: 19px;
+  --ind-h: 18px;
+  --row-min: 28px;
+  --rail-x: calc(var(--ind-col) / 2);
+  --rail-y: calc(var(--row-min) / 2);
+  /* Only the reasoning body still draws a rail — the fade beside a block of thinking text. The rows
+     themselves no longer carry one: it ran inside the icon column while the edit rows are full-width
+     cards whose edge is the item's left edge, so it disappeared under a card and came back in the
+     gutter below it. Rows align on the icon column now. */
+  --chain-rail: color-mix(in srgb, var(--v2-text-text-faint, rgba(255, 255, 255, 0.45)) 75%, transparent);
+  --chain-row-hover: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.045)) 100%, transparent);
+  position: relative;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 1px;
+  overflow: visible;
+  overflow-anchor: none;
 
   [data-slot="context-tool-group-item"] {
+    position: relative;
     min-width: 0;
-    min-height: 28px;
+    min-height: var(--row-min);
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     padding: 0;
+    overflow: visible;
+
+    /* No chain rail. The vertical line ran down the icon column while the edit rows are full-width
+       cards whose left edge sits at the item's left edge — the rail landed 9.5px inside a card that
+       painted over it, and reappeared in the 27px gutter under it, so a chain read as "line, gap,
+       line" across every file card. Cards carry their own edge; rows align on the 19px icon column. */
+
+    > * {
+      position: relative;
+      z-index: 1;
+    }
 
     > [data-component="tool-part-wrapper"] {
       width: 100%;
+      overflow: visible;
+    }
+
+    > [data-component="tool-part-wrapper"] > [data-component="collapsible"].tool-collapsible,
+    > [data-component="reasoning-part"] > [data-component="collapsible"].tool-collapsible,
+    > [data-component="collapsible"].tool-collapsible {
+      --tool-content-gap: 0px;
+      gap: 0;
+      overflow: visible;
     }
 
     > [data-component="tool-part-wrapper"]
       > [data-component="collapsible"]
-      > [data-slot="collapsible-trigger"]:not([data-hide-details="true"]) {
-      height: 28px;
+      > [data-slot="collapsible-trigger"]:not([data-hide-details="true"]),
+    > [data-component="reasoning-part"]
+      > [data-component="collapsible"]
+      > [data-slot="collapsible-trigger"]:not([data-hide-details="true"]),
+    > [data-component="collapsible"] > [data-slot="collapsible-trigger"]:not([data-hide-details="true"]),
+    > [data-component="tool-trigger"],
+    > [data-component="read-tool-group"] {
+      min-height: var(--row-min);
+      height: auto;
+      padding: 3px 6px 3px 0;
+      border-radius: 6px;
+      background: transparent;
+    }
+
+    > [data-component="tool-part-wrapper"] > [data-component="collapsible"] > [data-slot="collapsible-trigger"]:hover,
+    > [data-component="reasoning-part"] > [data-component="collapsible"] > [data-slot="collapsible-trigger"]:hover,
+    > [data-component="collapsible"] > [data-slot="collapsible-trigger"]:hover,
+    > [data-component="tool-trigger"]:hover,
+    > [data-component="read-tool-group"]:hover {
+      background: var(--chain-row-hover);
+    }
+
+    /* Icon chip matches the row (incl. hover) so it does not read as a black hole. */
+    > [data-component="tool-part-wrapper"]
+      > [data-component="collapsible"]
+      > [data-slot="collapsible-trigger"]:hover
+      [data-slot="basic-tool-tool-indicator"],
+    > [data-component="reasoning-part"]
+      > [data-component="collapsible"]
+      > [data-slot="collapsible-trigger"]:hover
+      [data-slot="basic-tool-tool-indicator"],
+    > [data-component="collapsible"] > [data-slot="collapsible-trigger"]:hover [data-slot="basic-tool-tool-indicator"],
+    > [data-component="tool-trigger"]:hover [data-slot="basic-tool-tool-indicator"],
+    > [data-component="read-tool-group"]:hover [data-slot="basic-tool-tool-indicator"] {
+      background: var(--chain-row-hover);
+    }
+
+    [data-component="tool-trigger"] {
+      width: 100%;
+      gap: 0;
+
+      [data-slot="basic-tool-tool-trigger-content"] {
+        gap: 8px;
+      }
+    }
+
+    [data-slot="basic-tool-tool-indicator"] {
+      position: relative;
+      z-index: 1;
+      flex: 0 0 var(--ind-col);
+      width: var(--ind-col);
+      height: 18px;
+      display: grid;
+      place-items: center;
+      background: var(--v2-background-bg-base);
+      color: var(--v2-text-text-faint);
+
+      [data-slot="icon-svg"] {
+        color: inherit;
+        stroke: currentColor;
+      }
+    }
+
+    [data-component="tool-trigger"][data-status="running"] [data-slot="basic-tool-tool-indicator"],
+    [data-component="tool-trigger"][data-status="streaming"] [data-slot="basic-tool-tool-indicator"] {
+      color: var(--v2-text-text-base);
+    }
+
+    [data-component="tool-trigger"][data-status="error"] [data-slot="basic-tool-tool-indicator"] {
+      color: var(--v2-state-fg-danger, var(--icon-critical-base, #e5756a));
     }
 
     [data-slot="basic-tool-tool-info-structured"] {
-      gap: 6px;
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: 100%;
+      gap: 8px;
+      justify-content: flex-start;
     }
 
-    [data-slot="basic-tool-tool-title"],
+    [data-slot="basic-tool-tool-info-main"] {
+      flex: 1 1 auto;
+      min-width: 0;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    [data-slot="basic-tool-tool-title"] {
+      flex-shrink: 0;
+      font-family: var(--v2-font-family-sans);
+      font-size: var(--process-shell-size, 12.5px);
+      font-weight: var(--process-shell-weight, 440);
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
+      color: var(--v2-text-text-muted);
+      white-space: nowrap;
+    }
+
+    /* One type ramp for the whole chain. Compact collapsible is 13px/530 — restate with
+       enough specificity to keep title, path, and duration on the same size. */
+    [data-component="collapsible"].tool-collapsible
+      > [data-slot="collapsible-trigger"]
+      [data-slot="basic-tool-tool-title"],
+    [data-component="collapsible"].tool-collapsible
+      > [data-slot="collapsible-trigger"]
+      [data-slot="basic-tool-tool-subtitle"],
+    [data-component="collapsible"].tool-collapsible
+      > [data-slot="collapsible-trigger"]
+      [data-slot="basic-tool-tool-arg"] {
+      font-family: var(--v2-font-family-sans);
+      font-size: var(--process-shell-size, 12.5px);
+      font-weight: var(--process-shell-weight, 440);
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
+    }
+
+    [data-component="tool-trigger"][data-status="running"] [data-slot="basic-tool-tool-title"],
+    [data-component="tool-trigger"][data-status="streaming"] [data-slot="basic-tool-tool-title"] {
+      color: var(--v2-text-text-base);
+    }
+
+    [data-component="tool-trigger"][data-status="error"] [data-slot="basic-tool-tool-title"] {
+      color: var(--v2-state-fg-danger, var(--text-critical-base, #e5756a));
+    }
+
     [data-slot="basic-tool-tool-subtitle"],
     [data-slot="basic-tool-tool-arg"],
     [data-slot="context-tool-group-matches"] {
       font-family: var(--v2-font-family-sans);
-      font-size: 13px;
-      font-weight: 440;
-      line-height: var(--line-height-compact);
-      letter-spacing: -0.04px;
+      font-size: var(--process-shell-size, 12.5px);
+      font-weight: var(--process-shell-weight, 440);
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
+      color: var(--v2-text-text-faint);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     [data-slot="basic-tool-tool-subtitle"] {
+      flex: 0 1 auto;
+      color: var(--v2-text-text-muted);
+    }
+
+    /* Read rows carry one project-relative path; truncate from the head so the filename survives
+       (same direction trick as the apply-patch directory). */
+    [data-slot="basic-tool-tool-subtitle"].tool-path {
+      direction: rtl;
+      text-align: left;
+    }
+
+    [data-slot="basic-tool-tool-arg"] {
+      flex: 0 1 auto;
       color: var(--v2-text-text-faint);
+    }
+
+    [data-slot="basic-tool-tool-trigger-content"] {
+      flex: 1 1 auto;
+      max-width: none;
+      width: 100%;
+      min-width: 0;
+      gap: 8px;
+    }
+
+    [data-slot="basic-tool-tool-info"] {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: none;
+      /* The block's own strut is what makes a 28px row 30px tall; keep it on the compact metric. */
+      line-height: var(--line-height-compact);
+    }
+
+    [data-slot="basic-tool-tool-action"],
+    [data-slot="context-tool-group-meta"],
+    [data-slot="chain-tool-meta"] {
+      flex: 0 0 auto;
+      margin-inline-start: auto;
+      font-family: var(--v2-font-family-sans);
+      font-size: var(--process-shell-size, 12.5px);
+      font-weight: var(--process-shell-weight, 440);
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      color: var(--v2-text-text-faint);
+    }
+
+    [data-slot="collapsible-arrow"] {
+      flex: 0 0 12px;
+      width: 12px;
+      height: 12px;
+      opacity: 0;
+      color: var(--v2-text-text-faint);
+      transition:
+        opacity 120ms ease,
+        transform 180ms ease;
+    }
+
+    /* Read results repeat the path already in the row subtitle. Indent it under the title column
+       and drop the 13px/530 emphasis so it reads as detail instead of a section heading —
+       at the item's left edge it also ran straight through the chain rail. */
+    [data-component="tool-loaded-item"] {
+      padding-inline-start: calc(var(--ind-col) + 8px);
+      font-family: var(--v2-font-family-sans);
+      font-size: var(--process-shell-size, 12.5px);
+      font-weight: var(--process-shell-weight, 440);
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+
+      [data-slot="tool-loaded-label"] {
+        font-weight: 440;
+        color: var(--v2-text-text-faint);
+      }
+
+      [data-slot="tool-loaded-value"],
+      [data-slot="tool-loaded-kind"] {
+        font-weight: 440;
+        color: var(--v2-text-text-faint);
+        opacity: 0.9;
+      }
+    }
+
+    [data-slot="collapsible-arrow-icon"] {
+      width: 10px;
+      height: 10px;
+      color: inherit;
+      transform: translateZ(0) rotate(-90deg);
+    }
+
+    [data-slot="collapsible-trigger"]:hover [data-slot="collapsible-arrow"],
+    [data-slot="collapsible-trigger"][aria-expanded="true"] [data-slot="collapsible-arrow"],
+    > [data-component="read-tool-group"]:hover [data-slot="read-tool-group-arrow"],
+    > [data-component="read-tool-group"][data-expanded="true"] [data-slot="read-tool-group-arrow"] {
+      opacity: 0.85;
+    }
+
+    [data-slot="collapsible-trigger"][aria-expanded="true"] [data-slot="collapsible-arrow-icon"] {
+      transform: translateZ(0) rotate(0deg);
+    }
+
+    /* Expanded body sits under the rail column like demo .body-pad */
+    > [data-component="tool-part-wrapper"] > [data-component="collapsible"] > [data-slot="collapsible-content"],
+    > [data-component="collapsible"] > [data-slot="collapsible-content"] {
+      padding: 4px 0 10px 19px;
+    }
+
+    /* Reasoning masks the chain rail; only the fading accent shows (demo .reason-text). */
+    > [data-component="reasoning-part"] > [data-component="collapsible"] > [data-slot="collapsible-content"] {
+      position: relative;
+      z-index: 1;
+      padding: 0;
+      background: var(--v2-background-bg-base);
     }
 
     [data-slot="context-tool-group-dot"] {
@@ -790,7 +1302,233 @@
       white-space: nowrap;
       color: var(--v2-text-text-faint);
     }
+
+    /* Reasoning in-chain matches tool row chrome */
+    > [data-component="reasoning-part"] {
+      color: inherit;
+
+      [data-slot="basic-tool-tool-indicator"] {
+        color: var(--v2-text-text-faint);
+      }
+
+      [data-component="tool-trigger"][data-status="running"] [data-slot="basic-tool-tool-indicator"],
+      [data-component="tool-trigger"][data-status="streaming"] [data-slot="basic-tool-tool-indicator"] {
+        color: var(--v2-text-text-base);
+      }
+
+      [data-slot="basic-tool-tool-trigger-content"] {
+        gap: 8px;
+        max-width: none;
+      }
+
+      /* Title + summary as one inline run so a short line cannot sit in a right-hand column. */
+      [data-slot="basic-tool-tool-info-structured"] {
+        justify-content: flex-start;
+        gap: 8px;
+      }
+
+      [data-slot="basic-tool-tool-info-main"] {
+        display: block;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        text-align: start;
+      }
+
+      [data-slot="basic-tool-tool-title"] {
+        display: inline;
+        flex: none;
+        width: auto;
+        margin-inline-end: 6px;
+        color: var(--v2-text-text-muted);
+      }
+
+      [data-slot="basic-tool-tool-title"] [data-component="text-shimmer"] {
+        display: inline;
+      }
+
+      > [data-component="collapsible"].tool-collapsible
+        > [data-slot="collapsible-trigger"]
+        [data-slot="basic-tool-tool-subtitle"] {
+        display: inline;
+        flex: none;
+        width: auto;
+        min-width: 0;
+        margin-inline-start: 0;
+        font-family: var(--v2-font-family-sans);
+        font-size: var(--process-shell-size, 12.5px);
+        font-weight: var(--process-shell-weight, 440);
+        line-height: var(--process-shell-leading, var(--line-height-compact));
+        letter-spacing: var(--process-shell-tracking, -0.04px);
+        color: var(--v2-text-text-muted);
+      }
+
+      > [data-component="collapsible"].tool-collapsible
+        > [data-slot="collapsible-trigger"]
+        [data-slot="chain-tool-meta"] {
+        flex: 0 0 auto;
+        margin-inline-start: auto;
+        font-family: var(--v2-font-family-sans);
+        font-size: var(--process-shell-size, 12.5px);
+        font-weight: var(--process-shell-weight, 440);
+        line-height: var(--process-shell-leading, var(--line-height-compact));
+        letter-spacing: var(--process-shell-tracking, -0.04px);
+        font-variant-numeric: tabular-nums;
+        color: var(--v2-text-text-faint);
+      }
+
+      [data-component="markdown"] {
+        position: relative;
+        z-index: 1;
+        margin: 0;
+        padding: 2px 0 4px 19px;
+        font-size: 12.5px;
+        line-height: 1.76;
+        color: var(--v2-text-text-muted);
+        background: var(--v2-background-bg-base);
+
+        &::before {
+          content: "";
+          position: absolute;
+          left: var(--rail-x, calc(var(--ind-col, 19px) / 2));
+          top: 6px;
+          bottom: 2px;
+          width: 2px;
+          transform: translateX(-50%);
+          border-radius: 2px;
+          background: linear-gradient(var(--chain-rail, rgba(255, 255, 255, 0.28)), transparent);
+        }
+
+        p {
+          margin: 0 0 6px;
+        }
+
+        p:last-child {
+          margin: 0;
+        }
+      }
+    }
+
+    /* The edit row is a card, and the card is the accordion *item*, not the trigger. The trigger is
+       only the title strip, so making it the card meant an expanded file was two boxes with two
+       widths: a bordered header, then a diff that started 27px in and ran 27px past the header's
+       right edge — the reason the chain rail appeared to miss the card and the diff stuck out.
+       One container owns the edge, the fill and the radius; the header adds a hairline when open.
+       Two details are load-bearing: the background needs `!important` because the apply-patch scope
+       below pins every trigger to `bg-base` for the end-of-turn list, and the item rules have to
+       stay inside this list block so that same end-of-turn list keeps its flat rows. */
+    [data-component="apply-patch-tool"] [data-slot="accordion-item"] {
+      border: 1px solid color-mix(in srgb, var(--border-weak-base, rgba(255, 255, 255, 0.075)) 70%, transparent);
+      border-radius: 6px;
+      background: color-mix(
+        in srgb,
+        var(--v2-background-bg-layer-02, var(--background-stronger)) 72%,
+        var(--v2-background-bg-base, var(--background-base))
+      );
+      /* The diff paints its rows edge to edge, so the radius has to clip them. */
+      overflow: hidden;
+      transition: border-color 120ms ease;
+      /* The chain body carries a 5px/8px inset so every row's text clears the shell edge; a card has
+         to reach that edge itself, or it reads as a narrower block floating inside the process bar
+         (measured 819px vs the bar's 832px). Pull the card back out and re-add the inset to the
+         header, so the title still lines up with the rows above and below it. */
+      /* `accordion.css` pins every item to `width: 100%`, and a percentage width ignores negative
+         margins — the card would slide left without getting any wider. `auto` lets the margins
+         stretch it back to the shell edge. */
+      width: auto;
+      margin-inline: -5px -8px;
+
+      /* `accordion.css` pulls neighbouring items up 1px so their borders merge into one line; cards
+         need a gap instead, or a two-file turn reads as one tall block. */
+      & + [data-slot="accordion-item"] {
+        margin-top: 4px;
+      }
+
+      &:hover,
+      &[data-expanded] {
+        border-color: var(--v2-border-border-base, rgba(255, 255, 255, 0.1));
+      }
+
+      /* The trigger's own focus ring is `outline: none` (accordion.css) and an outline would be
+         clipped by this item's `overflow: hidden`, so the card edge carries the focus state. */
+      &:has(> [data-slot="accordion-header"] [data-slot="accordion-trigger"]:focus-visible) {
+        border-color: var(--v2-border-border-focus);
+      }
+
+      &[data-expanded] [data-slot="accordion-header"] {
+        border-bottom: 1px solid var(--v2-border-border-base, rgba(255, 255, 255, 0.1));
+      }
+    }
+
+    [data-component="apply-patch-tool"] [data-slot="accordion-header"] [data-slot="accordion-trigger"],
+    [data-component="edit-tool"] [data-slot="accordion-header"] [data-slot="accordion-trigger"],
+    [data-component="write-tool"] [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
+      height: auto;
+      min-height: var(--row-min);
+      border: 0;
+      border-radius: 0;
+      padding-block: 3px;
+      /* The 5px/8px the card pulled back out of the chain body: the icon column has to stay on the
+         same axis as every other row's. */
+      padding-inline: 5px 8px;
+      background: transparent !important;
+    }
+
+    /* Edit/write/patch rows keep the file icon in the same indicator column as 思考. */
+    [data-component="apply-patch-tool"],
+    [data-component="edit-tool"],
+    [data-component="write-tool"] {
+      padding-inline-start: 0;
+
+      [data-slot="apply-patch-file-info"] {
+        gap: 8px;
+      }
+
+      /* SiCode: the glyph takes the same 19px indicator column as 思考/Shell, or this label lands
+         5.4px left of every row above and below it. */
+      [data-slot="apply-patch-file-info"] [data-component="file-icon"] {
+        width: var(--ind-col, 19px);
+        height: 13px;
+      }
+
+      [data-slot="apply-patch-change"],
+      [data-slot="apply-patch-change"][data-type="added"],
+      [data-slot="apply-patch-change"][data-type="removed"],
+      [data-slot="apply-patch-change"][data-type="modified"] {
+        flex-shrink: 0;
+        font-family: var(--v2-font-family-sans);
+        font-size: var(--process-shell-size, 12.5px);
+        font-weight: var(--process-shell-weight, 440);
+        line-height: var(--process-shell-leading, var(--line-height-compact));
+        color: var(--v2-text-text-muted);
+      }
+    }
   }
+}
+
+/* Work-shell body rhythm: pack process/text under the head like demo .work-inner.
+   Virtual rows are not DOM siblings, so padding lives on this row. */
+[data-timeline-row="WorkShell"] {
+  margin-bottom: 0;
+  /* The head sits right under the user message's faint meta line; without top padding the two
+     read as one block. Demo .timeline keeps 14px between a bubble and its shell, and the 24px meta
+     row already leaves 2px under its 20px line box. */
+  padding-top: 12px;
+  padding-bottom: 8px;
+}
+
+[data-work-shell-member] {
+  margin-top: 0;
+}
+
+[data-work-shell-member][data-timeline-spacing="tool"] {
+  padding-top: 2px;
+}
+
+[data-work-shell-member][data-timeline-spacing="content"] {
+  padding-top: 8px;
 }
 
 [data-component="diagnostics"] {
@@ -843,6 +1581,7 @@
 [data-component="write-content"],
 [data-component="todos"],
 [data-component="diagnostics"],
+[data-component="question-answers"],
 .error-card {
   -webkit-user-select: text;
   user-select: text;
@@ -966,24 +1705,47 @@
   }
 }
 
+/* The Q&A body carries its own indent (title column), so drop the generic body indent that
+   would otherwise stack on top of it — 12px standalone, 19px inside a process chain.
+   `[data-expanded]` is what makes this beat the 12px rule in basic-tool.css. */
+[data-component="collapsible"].tool-collapsible
+  > [data-slot="collapsible-content"][data-expanded]:has(> [data-component="question-answers"]) {
+  padding-inline-start: 0;
+}
+
 [data-component="question-answers"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 0;
+  /* Under the row's title column: the question body answers the row above it, it is not a
+     new paragraph at the transcript's left edge. */
+  padding: 2px 0 10px calc(var(--ind-col, 19px) + 8px);
 
   [data-slot="question-answer-item"] {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     font-size: 13px;
 
     [data-slot="question-text"] {
+      font-size: 12.5px;
+      line-height: var(--line-height-compact);
+      letter-spacing: -0.04px;
       color: var(--v2-text-text-muted);
+      overflow-wrap: anywhere;
     }
 
+    /* The answer is the outcome, so it hangs off a rail instead of reading as a second paragraph. */
     [data-slot="answer-text"] {
+      padding-inline-start: 10px;
+      border-inline-start: 2px solid var(--v2-border-border-strong, var(--v2-border-border-base));
+      border-radius: 2px;
+      font-size: 13px;
+      font-weight: 440;
+      line-height: var(--line-height-compact);
+      letter-spacing: -0.04px;
       color: var(--v2-text-text-base);
+      overflow-wrap: anywhere;
     }
   }
 }
@@ -1021,9 +1783,69 @@
   }
 }
 
+/* The diff body belongs to the card, so it starts and ends on the card's edges instead of being
+   indented to the file-name column: a 27px inset with no matching right inset is what made the body
+   27px wider than the card it sits in. `accordion.css` also gives an expanded content a border and a
+   `layer-01` fill of its own — both would draw a second box inside the card, so drop them. */
+[data-component="collapsed-tool-group"][data-process-shell]
+  [data-slot="context-tool-group-item"]
+  [data-component="edit-tool"]
+  > [data-component="collapsible"]
+  > [data-slot="collapsible-content"],
+[data-component="collapsed-tool-group"][data-process-shell]
+  [data-slot="context-tool-group-item"]
+  [data-component="write-tool"]
+  > [data-component="collapsible"]
+  > [data-slot="collapsible-content"],
+[data-component="collapsed-tool-group"][data-process-shell]
+  [data-slot="context-tool-group-item"]
+  [data-component="apply-patch-tool"]
+  [data-slot="accordion-content"] {
+  margin-inline: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Process-shell folds stay in document flow: content grows under the clicked row, never pins to the timeline top. */
+[data-component="collapsed-tool-group"][data-process-shell] {
+  [data-slot="collapsible-trigger"][aria-expanded="true"],
+  [data-slot="collapsible-trigger"][data-locked],
+  [data-component="edit-tool"]
+    > [data-component="collapsible"]
+    > [data-slot="collapsible-trigger"][aria-expanded="true"],
+  [data-component="edit-tool"] > [data-component="collapsible"] > [data-slot="collapsible-trigger"][data-locked],
+  [data-component="write-tool"]
+    > [data-component="collapsible"]
+    > [data-slot="collapsible-trigger"][aria-expanded="true"],
+  [data-component="write-tool"] > [data-component="collapsible"] > [data-slot="collapsible-trigger"][data-locked],
+  [data-component="apply-patch-tool"]
+    > [data-component="collapsible"]
+    > [data-slot="collapsible-trigger"][aria-expanded="true"],
+  [data-component="apply-patch-tool"] > [data-component="collapsible"] > [data-slot="collapsible-trigger"][data-locked],
+  [data-component="sticky-accordion-header"],
+  [data-slot="accordion-header"] {
+    position: static;
+    top: auto;
+    z-index: auto;
+    height: auto;
+    padding-bottom: unset;
+    background-color: transparent;
+  }
+
+  [data-component="edit-tool"] > [data-component="collapsible"].tool-collapsible,
+  [data-component="write-tool"] > [data-component="collapsible"].tool-collapsible,
+  [data-component="apply-patch-tool"] > [data-component="collapsible"].tool-collapsible {
+    --sticky-accordion-offset: 0px;
+  }
+}
+
 [data-component="accordion"][data-scope="apply-patch"] {
   [data-slot="accordion-trigger"] {
     background-color: var(--v2-background-bg-base) !important;
+    /* Same file row in both places: inside the process chain the trigger is reset to zero inline
+       padding, so the file icon sits on the block's left edge. The end-of-turn file list kept the
+       12px default, which indented the same component differently. */
+    padding-inline: 0;
   }
 
   [data-slot="apply-patch-trigger-content"] {
@@ -1038,8 +1860,13 @@
     flex-grow: 1;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     min-width: 0;
+  }
+
+  [data-slot="apply-patch-file-info"] [data-component="file-icon"] {
+    width: 16px;
+    height: 16px;
   }
 
   [data-slot="apply-patch-file-name-container"] {
@@ -1076,6 +1903,42 @@
     justify-content: flex-end;
   }
 
+  [data-slot="apply-patch-row-controls"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  [data-slot="apply-patch-open-changes"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    color: var(--v2-icon-icon-accent);
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      color 0.15s ease,
+      background-color 0.15s ease;
+
+    &:hover {
+      color: var(--v2-icon-icon-accent-hover);
+      background-color: var(--v2-overlay-simple-overlay-hover);
+      transform: scale(1.15);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--v2-border-border-focus);
+      outline-offset: 1px;
+    }
+  }
+
   [data-slot="apply-patch-change"] {
     font-family: var(--font-family-sans);
     font-size: var(--font-size-small);
@@ -1109,6 +1972,110 @@
   [data-component="diff"] {
     border-radius: inherit;
     overflow: hidden;
+  }
+}
+
+/* Folding a file card animates its height in flow. `grid-template-rows: 0fr → 1fr` is the only way
+   to transition to and from `auto` height without measuring the content in JS; the content keeps
+   `overflow: hidden` so the diff is clipped frame by frame. `visibility` is delayed on the way out so
+   the collapse is still visible while it plays, and it takes the folded subtree out of the tab order
+   and the accessibility tree (`display: none` from the old <Show> would have cut the animation). */
+[data-slot="accordion-fold"] {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  visibility: hidden;
+  /* Closing runs shorter and eases in, so it leaves fast and lands soft; opening eases out so the
+     diff is already in place as the last rows arrive. Same pair as the process shell. */
+  transition:
+    grid-template-rows 140ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s 140ms;
+}
+
+[data-slot="accordion-fold"][data-expanded] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+}
+
+[data-slot="accordion-fold"] > [data-slot="accordion-content"] {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="accordion-fold"] {
+    transition: none;
+  }
+}
+
+/* A written file is often hundreds of lines, and expanded at full height it pushes the rest of the
+   turn — and the next turn — off screen. `data-scroll` (set when the item has a collapse bar) caps
+   the body and scrolls it inside the card. */
+[data-slot="accordion-item"][data-scroll] [data-slot="accordion-content"] {
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  min-height: 0;
+}
+
+[data-slot="accordion-item"][data-scroll] [data-slot="accordion-body"] {
+  min-height: 0;
+  overflow-y: auto;
+  /* Reaching the end of the diff must not keep scrolling the transcript behind it. */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--v2-text-text-faint) 40%, transparent) transparent;
+
+  &::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 6px;
+    background-clip: padding-box;
+    background-color: color-mix(in srgb, var(--v2-text-text-faint) 35%, transparent);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--v2-text-text-faint) 60%, transparent);
+  }
+}
+
+/* The bar under a long body: collapsing from here means the pointer does not have to travel back to
+   the header it just scrolled away from. */
+[data-slot="accordion-collapse"] {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  border: 0;
+  border-top: 1px solid var(--v2-border-border-base);
+  background: transparent;
+  color: var(--v2-text-text-faint);
+  font-family: var(--v2-font-family-sans);
+  font-size: 12.5px;
+  font-weight: 440;
+  letter-spacing: -0.04px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--v2-background-bg-layer-02) 55%, transparent);
+    color: var(--v2-text-text-muted);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--v2-border-border-focus);
+    outline-offset: -1px;
   }
 }
 
