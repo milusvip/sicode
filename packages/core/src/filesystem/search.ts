@@ -22,6 +22,8 @@ export interface Options {
 export class Service extends Context.Service<Service, Interface>()("@opencode/FileSystem/Search") {}
 
 const REFRESH_INTERVAL = Duration.toMillis("10 seconds")
+// SiCode: fff indexes asynchronously, so bound how long the first search waits for the initial scan.
+const SCAN_TIMEOUT = Duration.toMillis("5 seconds")
 type Prepared = ReturnType<typeof fuzzysort.prepare>
 
 function emptyIndex() {
@@ -135,9 +137,19 @@ export const fffLayer = Layer.effect(
       })
     }
     yield* Effect.addFinalizer(() => Effect.sync(() => result.value.destroy()))
+    // SiCode: fff builds its index asynchronously, so `create` returns before a single
+    // file is indexed and early searches silently come back empty — the model then reads
+    // that as "the file does not exist" and goes the wrong way. Wait for the initial scan
+    // on the first `find` instead of at construction so location setup stays immediate,
+    // and bound the wait so a slow scan degrades to partial results rather than hanging.
+    let scanned: Promise<void> | undefined
+    const waitForScan = Effect.promise(
+      () => (scanned ??= result.value.waitForScan(SCAN_TIMEOUT).then(() => undefined)),
+    ).pipe(Effect.orElseSucceed(() => {}))
     return Service.of({
       find: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          yield* waitForScan
           const options = { pageIndex: 0, pageSize: input.limit ?? 50 }
           const items = (() => {
             if (input.type === "file") {

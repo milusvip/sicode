@@ -194,6 +194,70 @@ describe("ReadTool", () => {
     }),
   )
 
+  it.effect("reads several paths in one call", () =>
+    Effect.gen(function* () {
+      const registry = yield* Tool.Service
+      readOverride = (input) => {
+        const name = path.basename(input)
+        const file: ReadToolFileSystem.FileContent = {
+          type: "file",
+          uri: `file:///${name}`,
+          name,
+          content: `body of ${name}`,
+          encoding: "utf8",
+          mime: "text/plain",
+        }
+        return Effect.succeed(file)
+      }
+
+      const execution = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-multi", name: "read", input: { path: ["a.txt", "b.txt"] } },
+      })
+      expect(execution.status).toBe("completed")
+      if (execution.status !== "completed") return
+      expect(execution.content).toEqual([
+        { type: "text", text: "Read file a.txt, lines 1-1\n1: body of a.txt" },
+        { type: "text", text: "\nRead file b.txt, lines 1-1\n1: body of b.txt" },
+      ])
+      expect(execution.metadata).toEqual({ files: 2, truncated: false })
+      expect(readCalls.map((call) => path.basename(call.input))).toEqual(["a.txt", "b.txt"])
+    }),
+  )
+
+  it.effect("keeps the readable paths when another path in the batch is missing", () =>
+    Effect.gen(function* () {
+      const registry = yield* Tool.Service
+      readOverride = (input) => {
+        const name = path.basename(input)
+        if (name === "missing.txt") return Effect.fail(new Environment.NotFound({ path: input }))
+        const file: ReadToolFileSystem.FileContent = {
+          type: "file",
+          uri: `file:///${name}`,
+          name,
+          content: "ok",
+          encoding: "utf8",
+          mime: "text/plain",
+        }
+        return Effect.succeed(file)
+      }
+
+      const execution = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-partial", name: "read", input: { path: ["missing.txt", "a.txt"] } },
+      })
+      expect(execution.status).toBe("completed")
+      if (execution.status !== "completed") return
+      expect(execution.content).toEqual([
+        { type: "text", text: "Read file a.txt, lines 1-1\n1: ok" },
+        { type: "text", text: "File not found: missing.txt" },
+      ])
+      expect(execution.metadata).toEqual({ files: 1, truncated: false })
+    }),
+  )
+
   it.effect("asks for external_directory approval before reading an external absolute path", () =>
     Effect.gen(function* () {
       const registry = yield* Tool.Service

@@ -11,8 +11,13 @@ import { FileSystem } from "../filesystem.js"
 import { Mime } from "../mime.js"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath } from "../schema.js"
 
-export const MAX_READ_LINES = 2_000
-export const MAX_READ_BYTES = 50 * 1024
+// SiCode: 2_000 行 / 50KB 会把常见的 60KB 源码文件强制分页。实测 review.spec.ts（63KB、1_399 行）
+// 在单个会话里被读了 21 次、每次只跟读 40-110 行，21 次往返 ≈ 3.4 分钟。放宽后这类文件一次读完。
+export const MAX_READ_LINES = 3_000
+export const MAX_READ_BYTES = 128 * 1024
+// SiCode: 低于这个行数的文件不值得为「小 limit」再分页一次 —— 多分一页就多一整轮模型往返。
+// 配合下面的「只讨要了不到一半」条件，放大后多注入的 token 远小于省下的一轮往返（9.8s）。
+const WHOLE_FILE_MIN_LINES = 150
 export const MAX_MEDIA_INGEST_BYTES = 20 * 1024 * 1024
 const FIRST_CHUNK = 256 * 1024
 const MAX_LINE_LENGTH = 2_000
@@ -162,14 +167,20 @@ export const read = Effect.fn("ReadTool.read")(function* (
   }
 
   if (first.bytes.length >= first.info.size) {
-    const result = textPage(first.bytes, true, page)
+    const total = textLeaf(first.bytes).summary.lines
+    // SiCode: 模型习惯性只讨要文件的一小半（实测 host-apis.tsx 901 行被读 14 次，每次 35-120 行，
+    // review.spec.ts 1_399 行被读 21 次），每次都要一整轮往返。既然整份文件已经读进内存、也不大，
+    // 就把 limit 提到文件末尾，一次给全 —— 后续那十几次往返就没了。
+    // 只在小 limit 时这么做，保留调用方明确要求大范围（或分页测试）时的原有语义。
+    const whole = total >= WHOLE_FILE_MIN_LINES && total <= MAX_READ_LINES && page.limit !== undefined && page.limit * 2 < total
+    const result = textPage(first.bytes, true, whole ? { offset: page.offset, limit: MAX_READ_LINES } : page)
     if (result === undefined) return yield* Effect.die("Read page did not settle for a complete first chunk")
     return yield* makeTextPage(
       input,
       resource,
       result,
       first.bytes.subarray(0, result.consumed).includes(0),
-      lineCount(textLeaf(first.bytes).summary.lines, first.bytes.at(-1)),
+      lineCount(total, first.bytes.at(-1)),
     )
   }
 

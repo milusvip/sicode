@@ -20,7 +20,7 @@ const ERROR_BYTES = 8 * 1024
 const MAX_SUBMATCHES = 100
 
 const RawMatch = Schema.Struct({
-  type: Schema.Literal("match"),
+  type: Schema.Literals(["match", "context"]),
   data: Schema.Struct({
     path: Schema.Struct({ text: Schema.String }),
     lines: Schema.Struct({ text: Schema.String }),
@@ -38,6 +38,7 @@ const RawMatch = Schema.Struct({
 const decodeJsonRecord = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 type RawMatchData = (typeof RawMatch.Type)["data"]
+type RawRow = { kind: "match" | "context" } & RawMatchData
 
 export class Error extends Schema.TaggedError<Error>()("Ripgrep.Error", {
   message: Schema.String,
@@ -77,13 +78,23 @@ export interface GrepInput {
   readonly literal?: boolean
   readonly caseSensitive?: boolean
   readonly limit: number
+  /** Lines of context to emit before and after each match. Content mode only. */
+  readonly context?: number
+  /** Row shape: per-line content (default), one row per matching file, or one row per file with its match count. */
+  readonly mode?: "content" | "files" | "count"
   readonly signal?: AbortSignal
+}
+
+/** A grep output row: a match, or a context line pulled in around one. */
+export interface GrepRow {
+  readonly kind: "match" | "context"
+  readonly match: Match
 }
 
 export interface Interface {
   readonly find: (input: FindInput) => Effect.Effect<readonly Entry[], Error>
   readonly glob: (input: GlobInput) => Effect.Effect<readonly Entry[], Error>
-  readonly grep: (input: GrepInput) => Effect.Effect<readonly Match[], Error | InvalidPatternError>
+  readonly grep: (input: GrepInput) => Effect.Effect<readonly GrepRow[], Error | InvalidPatternError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Ripgrep") {}
@@ -216,9 +227,65 @@ const layer = Layer.effect(
           },
           onItem: input.onEntry,
         }).pipe(Effect.catchTag("Ripgrep.InvalidPatternError", (cause) => Effect.fail(failure(cause.message, cause)))),
-      grep: (input) =>
-        run<RawMatchData>({
-          ...input,
+      grep: (input) => {
+        // Count mode answers "how wide is this search?" in one row per matching file, so it skips
+        // JSON events entirely and parses rg's plain `path:count` lines.
+        if (input.mode === "count")
+          return run<string>({
+            cwd: input.cwd,
+            limit: input.limit,
+            signal: input.signal,
+            pattern: input.pattern,
+            args: [
+              "--no-config",
+              "--count-matches",
+              "--hidden",
+              "--no-messages",
+              ...(input.literal ? ["--fixed-strings"] : []),
+              ...(input.caseSensitive === false ? ["--ignore-case"] : []),
+              ...(input.include ? [`--glob=${input.include}`] : []),
+              "--glob=!**/.git/**",
+              "--",
+              input.pattern,
+              input.file ?? ".",
+            ],
+            parse: (line) => {
+              const index = line.lastIndexOf(":")
+              const count = index === -1 ? Number.NaN : Number.parseInt(line.slice(index + 1), 10)
+              if (!Number.isSafeInteger(count) || count <= 0) return Effect.succeed(undefined)
+              return Effect.succeed(`${normalizePath(line.slice(0, index))}:${count}`)
+            },
+          }).pipe(
+            Effect.map((result) =>
+              result.map((row) => {
+                const index = row.lastIndexOf(":")
+                return {
+                  kind: "match" as const,
+                  match: Match.make({
+                    entry: Entry.make({ path: RelativePath.make(row.slice(0, index)), type: "file" }),
+                    line: Number.parseInt(row.slice(index + 1), 10),
+                    offset: 0,
+                    text: "",
+                    submatches: [],
+                  }),
+                }
+              }),
+            ),
+          )
+        // Files mode emits at most one match per file, so rows map one-to-one onto unique paths.
+        const bounded =
+          input.mode === "files"
+            ? input.limit
+            : // Context rows travel in the same stdout stream as matches, so the stream bound
+              // has to grow to still observe `limit` matches. The caller trims back to `limit`.
+              input.context
+              ? input.limit * (input.context * 2 + 1) + 1
+              : input.limit
+        return run<RawRow>({
+          cwd: input.cwd,
+          limit: bounded,
+          signal: input.signal,
+          pattern: input.pattern,
           args: [
             "--no-config",
             "--json",
@@ -226,6 +293,8 @@ const layer = Layer.effect(
             "--no-messages",
             ...(input.literal ? ["--fixed-strings"] : []),
             ...(input.caseSensitive === false ? ["--ignore-case"] : []),
+            ...(input.mode === "files" ? ["--max-count=1"] : []),
+            ...(input.context && (input.mode ?? "content") === "content" ? [`--context=${input.context}`] : []),
             ...(input.include ? [`--glob=${input.include}`] : []),
             "--glob=!**/.git/**",
             "--",
@@ -236,13 +305,14 @@ const layer = Layer.effect(
             decodeJsonRecord(line).pipe(
               Effect.mapError((cause) => failure("Invalid ripgrep JSON output", cause)),
               Effect.flatMap((json) => {
-                if (!json || typeof json !== "object" || !("type" in json) || json.type !== "match")
-                  return Effect.undefined
+                if (!json || typeof json !== "object" || !("type" in json)) return Effect.undefined
+                if (json.type !== "match" && json.type !== "context") return Effect.undefined
                 return Schema.decodeUnknownEffect(RawMatch)(json).pipe(
-                  Effect.map((match) => ({
-                    ...match.data,
-                    path: { text: normalizePath(match.data.path.text) },
-                    submatches: match.data.submatches.slice(0, MAX_SUBMATCHES),
+                  Effect.map((raw) => ({
+                    kind: raw.type,
+                    ...raw.data,
+                    path: { text: normalizePath(raw.data.path.text) },
+                    submatches: raw.data.submatches.slice(0, MAX_SUBMATCHES),
                   })),
                   Effect.mapError((cause) => failure("Invalid ripgrep match output", cause)),
                 )
@@ -250,24 +320,26 @@ const layer = Layer.effect(
             ),
         }).pipe(
           Effect.map((result) =>
-            result.map((match) =>
-              Match.make({
+            result.map((row) => ({
+              kind: row.kind,
+              match: Match.make({
                 entry: Entry.make({
-                  path: RelativePath.make(match.path.text),
+                  path: RelativePath.make(row.path.text),
                   type: "file",
                 }),
-                line: match.line_number,
-                offset: match.absolute_offset,
-                text: match.lines.text.length > 2_000 ? match.lines.text.slice(0, 2_000) + "..." : match.lines.text,
-                submatches: match.submatches.map((submatch) => ({
+                line: row.line_number,
+                offset: row.absolute_offset,
+                text: row.lines.text.length > 2_000 ? row.lines.text.slice(0, 2_000) + "..." : row.lines.text,
+                submatches: row.submatches.map((submatch) => ({
                   text: submatch.match.text,
                   start: submatch.start,
                   end: submatch.end,
                 })),
               }),
-            ),
+            })),
           ),
-        ),
+        )
+      },
     })
   }),
 )

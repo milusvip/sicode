@@ -10,9 +10,18 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { Ripgrep } from "../../ripgrep.js"
-import { RelativePath } from "../../schema.js"
+import { NonNegativeInt, RelativePath } from "../../schema.js"
 
 export const name = "grep"
+
+/**
+ * SiCode: cap the rendered text, not just the row count. A single minified bundle or fixture line can
+ * dwarf a hundred normal matches, so rows alone do not bound what the model pays for.
+ */
+export const CHAR_BUDGET = 15_000
+
+const MODES = ["content", "files_with_matches", "count"] as const
+export type Mode = (typeof MODES)[number]
 
 export const Input = Schema.Struct({
   pattern: FileSystem.GrepInput.fields.pattern
@@ -33,31 +42,133 @@ export const Input = Schema.Struct({
     description: "Use case-sensitive matching (default: true).",
   }),
   limit: FileSystem.GrepInput.fields.limit.annotate({
-    description: `Maximum number of matching lines to return (default: ${FileSystem.DEFAULT_SEARCH_LIMIT})`,
+    description: `Maximum number of results in the returned page (default: ${FileSystem.DEFAULT_SEARCH_LIMIT})`,
+  }),
+  offset: Schema.optionalKey(NonNegativeInt).annotate({
+    description:
+      "Number of results to skip before the returned page. Use it to walk a large result set instead of re-running a wider search (default: 0).",
+  }),
+  context: Schema.optionalKey(NonNegativeInt.check(Schema.isLessThanOrEqualTo(50))).annotate({
+    description:
+      "Lines of context to show before and after each match, so you can read the surrounding code without a follow-up read. Content mode only; output grows by roughly 2*context+1 lines per match (default: 0, max: 50).",
+  }),
+  mode: Schema.optionalKey(Schema.Literals(MODES)).annotate({
+    description:
+      'Output mode: "content" shows matching lines (default, supports "context"), "files_with_matches" shows one line per matching file, "count" shows how many matches each file has. When a search might be broad, start with "count" or "files_with_matches" to see its size, then re-run with "content" on a narrowed path.',
   }),
 })
 
 export const Output = Schema.Array(FileSystem.Match)
 type EncodedOutput = typeof Output.Encoded
+/** Row as produced by the search layer: branded paths, before the model-facing text resolves them. */
+type Row = { readonly kind: "match" | "context"; readonly match: typeof FileSystem.Match.Type }
+/** Row as the formatter reads it: paths already resolved to absolute strings. */
+type ContentRow = { readonly kind: "match" | "context"; readonly match: EncodedOutput[number] }
 
-/** Format raw search matches into concise model content. */
-export const toModelContent = (matches: EncodedOutput, truncated = false) => {
-  const lines = matches.length === 0 ? ["No matches found"] : [`Found ${matches.length} matches`]
-  let current = ""
-  for (const match of matches) {
-    if (current !== match.entry.path) {
-      if (current) lines.push("")
-      current = match.entry.path
-      lines.push(`${match.entry.path}:`)
-    }
-    lines.push(`  Line ${match.line}: ${match.text}`)
+const truncatedNote = (offset: number, shown: number) =>
+  `(Results are truncated: showing ${offset + 1}-${offset + shown} of at least ${offset + shown + 1}. Use "offset" to page through the rest, or narrow the search with "path" or "include".)`
+
+const cap = (text: string) => {
+  if (text.length <= CHAR_BUDGET) return text
+  const lines = text.split("\n")
+  const kept: string[] = []
+  let used = 0
+  for (const line of lines) {
+    if (used + line.length + 1 > CHAR_BUDGET) break
+    kept.push(line)
+    used += line.length + 1
   }
-  if (truncated)
-    lines.push(
-      "",
-      `(Results are truncated: showing first ${matches.length} results. Consider using a more specific path or pattern.)`,
-    )
-  return lines.join("\n")
+  return [
+    ...kept,
+    "",
+    `(Output capped at ${CHAR_BUDGET} characters; ${lines.length - kept.length} lines hidden. Narrow the search, or page with "offset".)`,
+  ].join("\n")
+}
+
+/** Format grep rows into model content. Context rows carry a `|` marker instead of `:`. */
+export const toModelContent = (
+  rows: readonly ContentRow[],
+  options: { readonly mode: Mode; readonly truncated: boolean; readonly offset: number },
+) => {
+  const shown = rows.filter((row) => row.kind === "match").length
+  if (rows.length === 0) return options.offset === 0 ? "No matches found" : `No results past offset ${options.offset}.`
+  const atLeast = options.truncated ? "at least " : ""
+
+  if (options.mode === "count") {
+    const total = rows.reduce((sum, row) => sum + row.match.line, 0)
+    // Highest count first: the point of this mode is the distribution, and rg order carries no meaning.
+    const ordered = [...rows].sort((a, b) => b.match.line - a.match.line)
+    const lines = [`Found ${atLeast}${total} matches in ${rows.length} files`]
+    for (const row of ordered) lines.push(`  ${row.match.entry.path}: ${row.match.line}`)
+    if (options.truncated) lines.push("", truncatedNote(options.offset, rows.length))
+    return cap(lines.join("\n"))
+  }
+
+  if (options.mode === "files_with_matches") {
+    const lines = [`Found ${atLeast}${rows.length} files with matches`]
+    for (const row of rows) {
+      const text = row.match.text.trimEnd()
+      lines.push(
+        `  ${row.match.entry.path}:${row.match.line}: ${text.length > 300 ? text.slice(0, 300) + "..." : text}`,
+      )
+    }
+    if (options.truncated) lines.push("", truncatedNote(options.offset, rows.length))
+    return cap(lines.join("\n"))
+  }
+
+  // SiCode: group by file and lead with the hit distribution. A flat line list makes the model read
+  // files one by one to find out which of them actually matter; the distribution answers that up front.
+  const groups = new Map<string, ContentRow[]>()
+  for (const row of rows) {
+    const file = row.match.entry.path
+    const list = groups.get(file)
+    if (list) list.push(row)
+    else groups.set(file, [row])
+  }
+  const ordered = [...groups]
+    .map(([file, list]) => ({ file, list, count: list.filter((row) => row.kind === "match").length }))
+    .sort((a, b) => b.count - a.count)
+
+  const lines = [`Found ${atLeast}${shown} matches in ${ordered.length} files`]
+  // Only worth printing when the hits are concentrated: a flat scatter of one hit per file says nothing.
+  if (ordered.length > 1 && (ordered[0]?.count ?? 0) >= 2) {
+    const preview = ordered
+      .slice(0, 8)
+      .map((group) => `${group.file} (${group.count})`)
+      .join(", ")
+    lines.push(`Files by hit count: ${preview}${ordered.length > 8 ? `, +${ordered.length - 8} more` : ""}`)
+  }
+  for (const group of ordered) {
+    lines.push("", `${group.file}:`)
+    for (const row of group.list)
+      lines.push(
+        row.kind === "match"
+          ? `  Line ${row.match.line}: ${row.match.text}`
+          : `  Line ${row.match.line} | ${row.match.text}`,
+      )
+  }
+  if (options.truncated) lines.push("", truncatedNote(options.offset, shown))
+  return cap(lines.join("\n"))
+}
+
+/**
+ * Content rows interleave context with matches, so a page has to break on match boundaries: a context
+ * row always belongs to the match it surrounds, never to a page that happens to start mid-block.
+ */
+const groupByMatch = (rows: readonly Row[]) => {
+  const units: Row[][] = []
+  let pending: Row[] = []
+  for (const row of rows) {
+    if (row.kind === "match") {
+      units.push([...pending, row])
+      pending = []
+    } else if (units.length > 0) {
+      units[units.length - 1]!.push(row)
+    } else {
+      pending.push(row)
+    }
+  }
+  return units
 }
 
 /** Grep leaf that defaults its filesystem root to the active Location. */
@@ -76,7 +187,7 @@ export const Plugin = {
           name,
           options: { codemode: false },
           description:
-            "Search file contents using ripgrep's regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Returns matching file paths, line numbers, and line previews.",
+            'Search file contents using ripgrep\'s regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Output modes: "content" shows matching lines (default, supports `context`), "files_with_matches" shows one line per matching file, "count" shows how many matches each file has. Prefer "count" or "files_with_matches" first when a search might be broad, then re-run with "content" on the files that matter.',
           input: Input,
           output: Output,
           execute: (input, context) =>
@@ -95,6 +206,8 @@ export const Plugin = {
                   literal: input.literal,
                   caseSensitive: input.caseSensitive,
                   limit: input.limit,
+                  offset: input.offset,
+                  mode: input.mode,
                 },
                 sessionID: context.sessionID,
                 agent: context.agent,
@@ -107,8 +220,11 @@ export const Plugin = {
                 ),
               )
               const cwd = type === "directory" ? root : path.dirname(root)
+              const mode = input.mode ?? "content"
               const limit = input.limit ?? FileSystem.DEFAULT_SEARCH_LIMIT
-              const matches = yield* ripgrep
+              const offset = input.offset ?? 0
+              const wanted = offset + limit
+              const rows = yield* ripgrep
                 .grep({
                   cwd,
                   pattern: input.pattern,
@@ -116,7 +232,10 @@ export const Plugin = {
                   include: input.include,
                   literal: input.literal,
                   caseSensitive: input.caseSensitive,
-                  limit: limit + 1,
+                  context: mode === "content" ? input.context : undefined,
+                  mode: mode === "files_with_matches" ? "files" : mode,
+                  // One row past the page is what tells us whether anything remains.
+                  limit: wanted + 1,
                 })
                 .pipe(
                   Effect.timeoutOrElse({
@@ -129,31 +248,45 @@ export const Plugin = {
                       ),
                   }),
                   Effect.map((result) =>
-                    result.map((match) =>
-                      FileSystem.Match.make({
-                        ...match,
+                    result.map((row) => ({
+                      kind: row.kind,
+                      match: FileSystem.Match.make({
+                        ...row.match,
                         entry: FileSystem.Entry.make({
-                          ...match.entry,
+                          ...row.match.entry,
                           path: RelativePath.make(
-                            path.relative(location.directory, path.resolve(cwd, match.entry.path)),
+                            path.relative(location.directory, path.resolve(cwd, row.match.entry.path)),
                           ),
                         }),
                       }),
-                    ),
+                    })),
                   ),
                 )
-              return { matches: matches.slice(0, limit), truncated: matches.length > limit }
+              // Content pages break on matches; the other modes are already one row per file.
+              const units = mode === "content" ? groupByMatch(rows) : rows.map((row) => [row])
+              const page = units.slice(offset, wanted).flat()
+              const matches = page.flatMap((row) => (row.kind === "match" ? [row.match] : []))
+              return {
+                rows: page,
+                matches,
+                // Count rows carry a per-file total, so the page represents more matches than it has rows.
+                total: mode === "count" ? page.reduce((sum, row) => sum + row.match.line, 0) : matches.length,
+                truncated: units.length > wanted,
+              }
             }).pipe(
               Effect.map((result) => ({
                 output: result.matches,
                 content: toModelContent(
-                  result.matches.map((match) => ({
-                    ...match,
-                    entry: { ...match.entry, path: path.resolve(location.directory, match.entry.path) },
+                  result.rows.map((row) => ({
+                    kind: row.kind,
+                    match: {
+                      ...row.match,
+                      entry: { ...row.match.entry, path: path.resolve(location.directory, row.match.entry.path) },
+                    },
                   })),
-                  result.truncated,
+                  { mode: input.mode ?? "content", truncated: result.truncated, offset: input.offset ?? 0 },
                 ),
-                metadata: { matches: result.matches.length, truncated: result.truncated },
+                metadata: { matches: result.total, truncated: result.truncated, mode: input.mode ?? "content" },
               })),
               Effect.mapError((error) =>
                 error instanceof ToolFailure

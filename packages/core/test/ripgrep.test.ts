@@ -76,8 +76,9 @@ describe("Ripgrep", () => {
             limit: 10,
           })
           expect(result).toHaveLength(1)
-          expect(result[0]?.entry.path).toBe(RelativePath.make("src/match.ts"))
-          expect(result[0]?.submatches[0]?.text).toBe("needle")
+          expect(result[0]?.kind).toBe("match")
+          expect(result[0]?.match.entry.path).toBe(RelativePath.make("src/match.ts"))
+          expect(result[0]?.match.submatches[0]?.text).toBe("needle")
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
@@ -129,8 +130,8 @@ describe("Ripgrep", () => {
           expect(observed).toEqual(limited.map((item) => item.path))
 
           const matches = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "config", limit: 10 })
-          expect(matches.map((item) => item.entry.path)).toContain(RelativePath.make(".opencode/config"))
-          expect(matches.map((item) => item.entry.path)).not.toContain(RelativePath.make(".git/config"))
+          expect(matches.map((item) => item.match.entry.path)).toContain(RelativePath.make(".opencode/config"))
+          expect(matches.map((item) => item.match.entry.path)).not.toContain(RelativePath.make(".git/config"))
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
@@ -177,10 +178,30 @@ describe("Ripgrep", () => {
           })
 
           expect(matches).toHaveLength(1)
-          expect(matches[0]?.entry.path).toBe(RelativePath.make("generated.ts"))
-          expect(matches[0]?.text).toHaveLength(2_003)
-          expect(matches[0]?.text.endsWith("...")).toBe(true)
-          expect(matches[0]?.submatches).toEqual([{ text: "Cloudflare", start: 0, end: 10 }])
+          expect(matches[0]?.match.entry.path).toBe(RelativePath.make("generated.ts"))
+          expect(matches[0]?.match.text).toHaveLength(2_003)
+          expect(matches[0]?.match.text.endsWith("...")).toBe(true)
+          expect(matches[0]?.match.submatches).toEqual([{ text: "Cloudflare", start: 0, end: 10 }])
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("emits context rows around each match", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            fs.writeFile(path.join(tmp.path, "sample.ts"), "first\nsecond\nneedle\nfourth\nfifth\n"),
+          )
+
+          const ripgrep = yield* Ripgrep.Service
+          const rows = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", context: 1, limit: 10 })
+
+          expect(rows.map((row) => row.kind)).toEqual(["context", "match", "context"])
+          expect(rows.map((row) => row.match.line)).toEqual([2, 3, 4])
+          expect(rows[1]?.match.text.trim()).toBe("needle")
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),

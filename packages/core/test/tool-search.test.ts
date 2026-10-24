@@ -124,7 +124,11 @@ describe("search tools", () => {
               const grep = yield* executeTool(registry, call("grep", { pattern: "needle" }))
 
               expect(glob.metadata).toEqual({ count: FileSystem.DEFAULT_SEARCH_LIMIT, truncated: true })
-              expect(grep.metadata).toEqual({ matches: FileSystem.DEFAULT_SEARCH_LIMIT, truncated: true })
+              expect(grep.metadata).toEqual({
+                matches: FileSystem.DEFAULT_SEARCH_LIMIT,
+                truncated: true,
+                mode: "content",
+              })
               expect(glob.content).toHaveLength(1)
               expect(grep.content).toHaveLength(1)
               const globText = glob.content?.[0]?.type === "text" ? glob.content[0].text : ""
@@ -133,9 +137,9 @@ describe("search tools", () => {
               expect(globText).toEndWith(
                 `(Results are truncated: showing first ${FileSystem.DEFAULT_SEARCH_LIMIT} results. Consider using a more specific path or pattern.)`,
               )
-              expect(grepText).toStartWith(`Found ${FileSystem.DEFAULT_SEARCH_LIMIT} matches\n`)
-              expect(grepText).toEndWith(
-                `(Results are truncated: showing first ${FileSystem.DEFAULT_SEARCH_LIMIT} results. Consider using a more specific path or pattern.)`,
+              expect(grepText).toStartWith(`Found at least ${FileSystem.DEFAULT_SEARCH_LIMIT} matches in `)
+              expect(grepText).toContain(
+                `showing 1-${FileSystem.DEFAULT_SEARCH_LIMIT} of at least ${FileSystem.DEFAULT_SEARCH_LIMIT + 1}`,
               )
             }),
           )
@@ -181,13 +185,13 @@ describe("search tools", () => {
                 expect(file).toMatchObject({
                   status: "completed",
                   output: [{ entry: { path: "target.txt" }, line: 1, text: "needle\n" }],
-                  metadata: { matches: 1, truncated: false },
+                  metadata: { matches: 1, truncated: false, mode: "content" },
                 })
 
                 const directory = yield* executeTool(registry, call("grep", { path: ".", pattern: "needle" }))
                 expect(directory).toMatchObject({
                   status: "completed",
-                  metadata: { matches: 2, truncated: false },
+                  metadata: { matches: 2, truncated: false, mode: "content" },
                 })
                 if (directory.status !== "completed") return
                 expect(directory.output).toEqual(
@@ -215,8 +219,152 @@ describe("search tools", () => {
               expect(result).toMatchObject({
                 status: "completed",
                 content: [{ type: "text", text: "No matches found" }],
-                metadata: { matches: 0, truncated: false },
+                metadata: { matches: 0, truncated: false, mode: "content" },
               })
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("includes context lines around each match", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          fs.writeFile(path.join(tmp.path, "sample.ts"), "alpha\nbeta\nneedle\ndelta\nepsilon\n"),
+        ).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) => executeTool(registry, call("grep", { pattern: "needle", context: 1 }))),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(text).toContain("Line 2 | beta")
+              expect(text).toContain("Line 3: needle")
+              expect(text).toContain("Line 4 | delta")
+              expect(text).not.toContain("alpha")
+              // Context is presentation only; machine output stays matches-only.
+              expect(result.output).toHaveLength(1)
+              expect(result.metadata).toEqual({ matches: 1, truncated: false, mode: "content" })
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("counts matches per file", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          Promise.all([
+            fs.writeFile(path.join(tmp.path, "many.txt"), "needle\nneedle\nneedle\n"),
+            fs.writeFile(path.join(tmp.path, "one.txt"), "needle\n"),
+          ]),
+        ).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) =>
+              executeTool(registry, call("grep", { pattern: "needle", mode: "count" })),
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(text).toStartWith("Found 4 matches in 2 files")
+              // 计数降序：这一档的价值就是分布本身
+              expect(text.indexOf("many.txt: 3")).toBeLessThan(text.indexOf("one.txt: 1"))
+              expect(result.output).toHaveLength(2)
+              // 一页代表 4 条命中，而不是 2 行
+              expect(result.metadata).toEqual({ matches: 4, truncated: false, mode: "count" })
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("lists one row per matching file", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          Promise.all([
+            fs.writeFile(path.join(tmp.path, "a.txt"), "needle here\n"),
+            fs.writeFile(path.join(tmp.path, "b.txt"), "filler\nneedle there\n"),
+          ]),
+        ).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) =>
+              executeTool(registry, call("grep", { pattern: "needle", mode: "files_with_matches" })),
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(text).toStartWith("Found 2 files with matches")
+              expect(text).toContain("a.txt:1: needle here")
+              expect(text).toContain("b.txt:2: needle there")
+              expect(result.output).toHaveLength(2)
+              expect(result.metadata).toEqual({ matches: 2, truncated: false, mode: "files_with_matches" })
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("pages through matches with offset", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() => fs.writeFile(path.join(tmp.path, "lines.txt"), "needle1\nneedle2\nneedle3\n")).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) =>
+              executeTool(registry, call("grep", { pattern: "needle", limit: 1, offset: 1 })),
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(result.output).toMatchObject([{ line: 2, text: "needle2\n" }])
+              expect(text).toContain("showing 2-2 of at least 3")
+              expect(result.metadata).toEqual({ matches: 1, truncated: true, mode: "content" })
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("caps output by characters", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          fs.writeFile(
+            path.join(tmp.path, "wide.txt"),
+            Array.from({ length: 300 }, (_, index) => `needle ${index} ${"x".repeat(180)}\n`).join(""),
+          ),
+        ).pipe(
+          Effect.andThen(withTools(tmp.path, (registry) => executeTool(registry, call("grep", { pattern: "needle" })))),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(text).toContain(`Output capped at ${GrepTool.CHAR_BUDGET} characters`)
+              expect(text.length).toBeLessThan(GrepTool.CHAR_BUDGET + 300)
             }),
           ),
         ),

@@ -277,11 +277,26 @@ describe("ReadToolFileSystem", () => {
 
       expect(lines).toMatchObject({ type: "text-page", truncated: true, next: 2_001 })
       expect(lines.type === "text-page" ? lines.content.split("\n") : []).toHaveLength(2_000)
-      expect(bytes).toMatchObject({ type: "text-page", truncated: true, next: 26 })
+      // SiCode: MAX_READ_BYTES 由 50KB 放宽到 128KB，2001 字节/行时首页边界从第 26 行移到第 66 行。
+      expect(bytes).toMatchObject({ type: "text-page", truncated: true, next: 66 })
       expect(bytes.type === "text-page" ? Buffer.byteLength(bytes.content) : Infinity).toBeLessThanOrEqual(
         ReadToolFileSystem.MAX_READ_BYTES,
       )
       expect(ranges).toEqual([{ offset: 0, length: 256 * 1024 }])
+    }),
+  )
+
+  it.effect("SiCode: widens a small limit to the rest of the file instead of paging again", () =>
+    Effect.gen(function* () {
+      const { environment, files, directory } = yield* fixture
+      const file = path.join(directory, "wide.txt")
+      yield* files.writeFileString(file, Array.from({ length: 900 }, (_, index) => `line ${index}`).join("\n"))
+
+      const result = yield* ReadToolFileSystem.read(environment, absolute(file), "wide.txt", { offset: 40, limit: 55 })
+
+      // 只讨要了不到一半的行，就不值得再分一页：直接给到文件末尾，省掉后续十几轮往返。
+      expect(result).toMatchObject({ type: "text-page", offset: 40, truncated: false })
+      expect(result.type === "text-page" ? result.content.split("\n") : []).toHaveLength(861)
     }),
   )
 
