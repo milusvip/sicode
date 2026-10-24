@@ -992,6 +992,45 @@ describe("SessionRunnerLLM", () => {
     yield* Fiber.interrupt(fiber)
   })
 
+  scenario("nudges the model once when it repeats the same tool call", function* (s) {
+    yield* s.admit("Repeat the call")
+    // Three identical calls: same name, same arguments, same result.
+    for (const index of [1, 2, 3]) {
+      yield* s.llm.push(
+        TestLLM.toolCalls(LLMEvent.toolCall({ id: `call-${index}`, name: "echo", input: { text: "same" } })),
+      )
+    }
+    yield* s.llm.push(TestLLM.text("Done", "text-final"))
+
+    yield* s.resume
+
+    // The loop is only visible once the third identical step has finished, so the nudge rides on the
+    // fourth request and not before it.
+    expect(s.requests).toHaveLength(4)
+    expect(JSON.stringify(s.requests[2]!.messages)).not.toContain("repeating the same tool call")
+    expect(JSON.stringify(s.requests[3]!.messages)).toContain("repeating the same tool call")
+  })
+
+  scenario("stops the turn when the nudge does not break the loop", function* (s) {
+    yield* s.admit("Repeat the call")
+    // Five identical calls: the first three earn a nudge, the fourth re-triggers it, and the fifth
+    // request must arrive with tools withdrawn instead of another nudge.
+    for (const index of [1, 2, 3, 4, 5]) {
+      yield* s.llm.push(
+        TestLLM.toolCalls(LLMEvent.toolCall({ id: `call-${index}`, name: "echo", input: { text: "same" } })),
+      )
+    }
+    yield* s.llm.push(TestLLM.text("Done", "text-final"))
+
+    yield* s.resume
+
+    const nudged = s.requests.filter((request) => JSON.stringify(request.messages).includes("repeating the same tool call"))
+    expect(nudged).toHaveLength(1)
+    const stopped = s.requests.find((request) => JSON.stringify(request.messages).includes("CRITICAL - REPEATED TOOL CALLS"))
+    expect(stopped).toBeDefined()
+    expect(stopped!.toolChoice?.type).toBe("none")
+  })
+
   scenario("does not automatically replace an existing session title", function* (s) {
     yield* prepareTitleGeneration
     yield* s.session.rename({ sessionID, title: "Manual title" })
