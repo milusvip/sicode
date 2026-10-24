@@ -12,11 +12,11 @@ const model = (id: string) => ({
 
 test("only the no-thinking strength adds the DeepSeek switch", () => {
   const variants = Variant.resolve(model("deepseek-v4.1-flash"), [{ type: "effort", values: ["low", "high"] }])
-  expect(variants.map((variant) => variant.id)).toEqual(["low", "high"])
+  expect(variants.map((variant) => variant.id)).toEqual([Model.VariantID.make("low"), Model.VariantID.make("high")])
   // Thinking is on by default, so enabling it would be a no-op; leaving the field off keeps these
   // paths byte-identical to the generic route.
-  expect(variants[0]).toEqual({ id: "low", settings: { reasoningEffort: "low" } })
-  expect(variants[1]).toEqual({ id: "high", settings: { reasoningEffort: "high" } })
+  expect(variants[0]).toEqual({ id: Model.VariantID.make("low"), settings: { reasoningEffort: "low" } })
+  expect(variants[1]).toEqual({ id: Model.VariantID.make("high"), settings: { reasoningEffort: "high" } })
 })
 
 test("a disabled strength turns the switch off rather than omitting it", () => {
@@ -26,5 +26,5 @@ test("a disabled strength turns the switch off rather than omitting it", () => {
 
 test("other models keep the plain reasoning_effort overlay", () => {
   const variants = Variant.resolve(model("gpt-5"), [{ type: "effort", values: ["low"] }])
-  expect(variants[0]).toEqual({ id: "low", settings: { reasoningEffort: "low" } })
+  expect(variants[0]).toEqual({ id: Model.VariantID.make("low"), settings: { reasoningEffort: "low" } })
 })
