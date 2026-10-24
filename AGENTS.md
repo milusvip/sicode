@@ -1,8 +1,8 @@
 - After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit generated client files directly.
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk` composes Client, Core, and Server.
 - This repository does not use Changesets. Do not add `.changeset` files; follow the existing release workflow instead.
-- The default branch is `dev`. Base branches and worktrees on `origin/dev`, target PRs at `dev`, and diff against `origin/dev` unless told otherwise.
-- **SiCode fork**: the working branch is `main-sicode`, upstream is the `upstream` remote (`sst/opencode`, branch `dev`), and the fork baseline is `76fd05ff45`. The `dev`-branch rules above apply to upstream PRs only. Read `UPSTREAM.md` before touching `packages/core` or `packages/ai`: it holds the sync flow, conflict policy, and the order in which to prefer change sites. **Any edit to an upstream-owned file must carry a `// SiCode:` comment** explaining why, so a future upstream merge can tell our edits from theirs.
+- **SiCode fork**: this is a fork, not upstream. Work happens on `main-sicode`. `origin` is `milusvip/sicode`; it has no `dev` branch and did not have `main-sicode` either, so the first push creates `origin/main-sicode` and needs no `--force`. Branch and worktree from `main-sicode`, and reach for `--force` only if the local history gets rebuilt again (a rebase onto a newer baseline, for example). Upstream is the `upstream` remote (`sst/opencode`, branch `dev`), and the fork baseline is `76fd05ff45`. Read `UPSTREAM.md` before touching `packages/core` or `packages/ai`: it holds the sync flow, conflict policy, and the order in which to prefer change sites. **Any edit to an upstream-owned file must carry a `// SiCode:` comment** explaining why, so a future upstream merge can tell our edits from theirs.
+- Upstream's own convention is `dev`: `sst/opencode` bases everything on `dev`, and PRs there target `dev`. That applies only when preparing a change for upstream, never to work done in this fork.
 - **Repo map**: `.sicode/structure.md` is injected into every request — package responsibilities, where common changes belong, and the dependency direction, in one page. Do not read it again; it is already above you. It stops at package level, so file-level details belong in the notes below.
 - **Investigation notes**: the section index of `.sicode/notes.md` is injected too, so you can see which areas already have a conclusion without searching. Read the file only for the section you need. After an investigation longer than five rounds, record what you learned with `bun script/notes.ts add --area "<area>"`, passing the bullets on stdin — the files involved, what renders what, and why the change belongs where it does. **Never edit or rewrite that file by hand**: several agents write it at the same time, and a whole-file save silently drops the paragraphs someone else just added. Use a bare area name with no date, keep one section per area, and run `bun script/notes.ts verify` to confirm the paths you quoted still exist. Do not record project status, progress, or "what I am doing now": that goes stale, and stale notes are worse than none.
 
@@ -26,6 +26,11 @@
 - Use `text.feedback` and `background.feedback` only for outcome or status feedback such as errors, warnings, success messages, and informational messages. Use `formfield` states for form-control text, ordinals, and selection markers, and `action` states for actions.
 - If the theme does not expose a token for the required semantic role, extend the theme schema, defaults, resolution, and types with that role before using it in a component. Do not repurpose the nearest-looking existing token.
 - When changing the public theme token surface, verify the built-in light and dark defaults and the custom-theme fallback path in addition to the affected TUI component.
+
+## Web UI
+
+- The values — font stack, weight reality per platform, type and radius ladders, spacing grid, elevation, color roles — live in `packages/ui/DESIGN.md`. Read it before changing CSS in `packages/ui`, `packages/session-ui`, or `packages/app`.
+- The rules for applying those values live in each package's own `AGENTS.md`, under `## Design tokens`. Read the one for the package you are editing; their coverage differs by role (primitive vs. consumer vs. layout).
 
 ## Branch Names
 

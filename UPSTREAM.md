@@ -31,15 +31,60 @@ git merge-tree --write-tree --name-only main-sicode upstream/dev
 
 第一次合并后的实测：42 个冲突，22 个是 `README.*.md`，其余是 `bun.lock`、`nix/hashes.json`、desktop 打包配置和 `patches/*`，**没有核心源码冲突**。
 
+## 要不要直接合并
+
+判据不是「改了多少」，是「我们的改动和上游的改动碰不碰面」。跑一次预演就知道：
+
+```bash
+git merge-tree --write-tree main-sicode upstream/dev 2>&1 | grep -c "^CONFLICT"
+```
+
+2026-10-25 实测：我方改动 716 个文件，上游自基线起 728 个，**重叠只有 82 个（11%）**，直接合并预演 **32 个冲突**，其中 **3 个需要看代码**。原因是我们只动品牌、i18n、图标和桌面端，上游动内核，两边铺在不同文件上，git 能自动合掉 88%。
+
+所以默认动作是 `git merge upstream/dev`，不是按需抄。按需抄的代价：上游的修复收不到（例如 `core/src/mcp/client.ts` 的 MCP output schema 问题上游已修，merge 后本地补丁自动消解，cherry-pick 则要一直背着），而且差距会随时间放大。
+
+**但「能合」不等于「合完就推」。** 80% 的风险在没报冲突的地方：两边都改、git 静默合掉的文件。2026-10-25 实测 50 个静默合并文件里有 42 个源码，其中 21 个是本仓真实改动，内核占 3 个。合完必须验：
+
+```bash
+bun run check
+cd packages/core && bun test
+git diff 76fd05ff45 upstream/dev -- packages/core/src/mcp/client.ts
+```
+
+最后一条最重要：看上游这次想怎么改，再判断本地补丁还要不要。**别让两份修复并存**——能编译、能跑、但多一层冗余逻辑，以后没人敢删。
+
+嫌在主分支上试合不可逆，就先在旁路跑一遍：
+
+```bash
+git worktree add ../sicode-merge-check main-sicode
+cd ../sicode-merge-check && git merge upstream/dev
+# 解冲突、跑 check 和测试；通过后回主分支做同样的 merge
+git worktree remove ../sicode-merge-check
+```
+
 ## 冲突怎么解
 
 | 冲突文件 | 处理 |
 | --- | --- |
-| `README.*.md` | 保留我们的（品牌名） |
-| `bun.lock`、`nix/hashes.json`、`patches/*` | 取上游，再 `bun install` 重建 |
-| `packages/desktop/electron-builder.config.*`、`resources/linux/*.desktop` | 保留我们的（appId、安装包名、可执行文件名） |
+| `README.md` | 保留我们的（品牌名） |
+| `README.{lang}.md`（22 个多语言） | 保持删除，不要恢复上游版本 |
+| `.opencode/skills/opencode-dev/SKILL.md` | 保持删除 |
+| `packages/desktop/resources/linux/*.desktop` | 保持我们的（已改名为 `sicode-desktop.desktop`） |
+| `bun.lock`、`nix/hashes.json`、`package.json`、`packages/*/package.json` | 取上游，再 `bun install` 重建 |
+| `patches/*` | 上游删掉的补丁跟着删（说明已上游化），删完 `bun install` 验证 |
+| 根 `AGENTS.md` | 上游内容照收，我们新增的 `## Web UI` 节追加在 `## Branch Names` 之前 |
+| `packages/{ui,session-ui,app}/AGENTS.md` | `## Localization` 与 `## Design tokens` 两节以本仓为准（上游那三份是复制粘贴出来的，已经漂移），其余照收上游 |
 | `packages/*/src/**` 源码 | 逐个人工看，默认取上游，再补回我们的改动 |
 | 其他 | 默认取上游 |
+
+## 不维护的部分
+
+根 `AGENTS.md` 里这几节是上游 TUI 与内核开发者的日常。本 fork 不改内核、不改 TUI，日常用不上，但**不要删** —— 删了每次 merge 都冲突：
+
+- `## Live TUI Testing`、`## TUI Stories`、`## TUI Theme Tokens`（共 12 条）
+- `## Session Core`（11 条）
+
+冲突时整段取上游，不做本地改写。
 
 ## 改代码的纪律
 

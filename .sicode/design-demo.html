@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiCode 写 UI 的六条约束 · 渐进对比</title>
+<style>
+  :root {
+    --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "微软雅黑", sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "Cascadia Mono", ui-monospace, monospace;
+
+    --bg: #131316;
+    --panel: #191a1f;
+    --panel-2: #1f2026;
+    --line: #2a2b33;
+    --line-strong: #3f404b;
+    --fg: #e7e7ec;
+    --fg-mid: #9c9ca8;
+    --fg-dim: #71717d;
+    --accent: #6c8cff;
+    --add: #6fbf73;
+    --del: #e07272;
+    --r: 6px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 780px; margin: 0 auto; padding: 44px 32px 88px; }
+
+  .eyebrow { margin: 0 0 10px; font-size: 11px; letter-spacing: .1em; color: var(--fg-dim); }
+  h1 { margin: 0 0 10px; font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+  .lede { margin: 0; color: var(--fg-mid); max-width: 600px; }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 28px 0 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: transparent;
+    color: var(--fg-mid);
+    font-family: var(--sans);
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color .12s, color .12s;
+  }
+
+  .chip:hover { border-color: var(--line-strong); color: var(--fg); }
+
+  .chip[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--fg);
+    background: rgba(108, 140, 255, .09);
+  }
+
+  .chip i {
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+
+  .chip[aria-pressed="true"] i { color: var(--accent); }
+
+  .spacer { flex: 1; }
+
+  .bulk {
+    border: 0;
+    background: none;
+    padding: 4px 2px;
+    color: var(--fg-dim);
+    font-family: var(--sans);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .bulk:hover { color: var(--fg); }
+
+  /* ---------- 舞台：默认即裸跑状态 ---------- */
+
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+  }
+
+  .stage-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+    color: var(--fg-dim);
+    margin-bottom: 16px;
+  }
+  .stage-head b { font-weight: 500; color: var(--fg-mid); font-size: 13px; }
+
+  .turn { margin-bottom: 16px; }
+
+  .ask {
+    padding: 12px 14px;
+    background: var(--panel-2);
+    border-radius: 10px;
+    color: var(--fg);
+    font-size: 14px;
+  }
+
+  .answer { padding: 14px 4px 0; }
+  .answer p { margin: 0 0 12px; font-size: 13.5px; color: var(--fg); }
+
+  .card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--line-strong);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .45);
+    margin-bottom: 14px;
+  }
+  .card:nth-child(1) { border-radius: 10px; }
+  .card:nth-child(2) { border-radius: 14px; }
+  .card:nth-child(3) { border-radius: 18px; }
+
+  .card-l { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .verb { font-size: 12px; color: var(--fg-dim); }
+  .file { font-family: var(--mono); font-size: 13px; color: var(--fg); }
+  .num { font-size: 11px; font-family: var(--sans); color: var(--fg-dim); margin-left: 2px; }
+
+  .foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--fg-dim);
+  }
+  .foot button {
+    border: 0;
+    background: none;
+    padding: 0;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--accent);
+    cursor: pointer;
+  }
+
+  /* ---------- 01 圆角唯一 ---------- */
+  .stage.on-radius .card { border-radius: var(--r); }
+  .stage.on-radius .ask { border-radius: var(--r); }
+
+  /* ---------- 02 零阴影 ---------- */
+  .stage.on-shadow .card { box-shadow: none; }
+
+  /* ---------- 03 间距分组 ---------- */
+  .stage.on-space .list {
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    overflow: hidden;
+  }
+  .stage.on-space .card {
+    margin-bottom: 0;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    padding: 7px 12px;
+    background: transparent;
+  }
+  .stage.on-space .card:last-child { border-bottom: 0; }
+  .stage.on-space .answer { padding-top: 16px; }
+  .stage.on-space .answer p { margin-bottom: 10px; }
+  .stage.on-space .foot { margin-top: 20px; }
+  .stage.on-space .turn { margin-bottom: 0; }
+  .stage.on-space .stage-head { margin-bottom: 20px; }
+
+  /* ---------- 04 字号梯度 ---------- */
+  .stage.on-type .stage-head { font-size: 11px; }
+  .stage.on-type .stage-head b { font-size: 12px; color: var(--fg); }
+  .stage.on-type .ask { font-size: 13px; }
+  .stage.on-type .answer p { font-size: 13px; }
+  .stage.on-type .verb { font-size: 11px; }
+  .stage.on-type .file { font-size: 12px; }
+  .stage.on-type .foot { font-size: 12px; }
+
+  /* ---------- 05 字重两档 ---------- */
+  .stage.on-weight .stage-head b { font-weight: 700; }
+  .stage.on-weight .answer p { font-weight: 400; }
+  .stage.on-weight .answer p b { font-weight: 700; }
+
+  /* ---------- 06 数字等宽 ---------- */
+  .stage.on-num .card { justify-content: space-between; }
+  .stage.on-num .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: right;
+    min-width: 62px;
+    margin-left: 0;
+    color: var(--fg-mid);
+  }
+  .stage.on-num .num.add { color: var(--add); }
+  .stage.on-num .num.del { color: var(--del); }
+
+  /* ---------- 状态栏：把不可见的度量摊开 ---------- */
+  .statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 2px;
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    line-height: 1.9;
+    color: #5c5c66;
+  }
+  .statusbar .ok { color: var(--fg-mid); }
+  .statusbar .sep { color: #3a3a43; }
+
+  /* ---------- 计分 ---------- */
+  .score {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--fg-dim);
+  }
+  .score b {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--fg);
+  }
+
+  /* ---------- 说明 ---------- */
+  .notes { margin-top: 56px; }
+  .notes h2 { margin: 0 0 4px; font-size: 14px; font-weight: 700; }
+  .notes .sub { margin: 0 0 20px; font-size: 12px; color: var(--fg-dim); }
+
+  .note {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+  }
+  .note:last-child { border-bottom: 1px solid var(--line); }
+  .note em {
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 11px;
+    color: var(--fg-dim);
+    padding-top: 2px;
+  }
+  .note b { display: block; font-size: 13px; font-weight: 700; }
+  .note p { margin: 3px 0 0; color: var(--fg-mid); font-size: 12.5px; }
+  .note code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--fg);
+    background: var(--panel-2);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">SiCode · 设计约束</p>
+  <h1>六条规则，一条一条开</h1>
+  <p class="lede">下面是同一个会话片段。每条规则一个开关，你自己点。注意层级不是某条规则带来的——它是 04 和 05 同时打开之后自己浮出来的。</p>
+
+  <div class="toolbar">
+    <button class="chip" data-on="radius" aria-pressed="false"><i>01</i>圆角唯一</button>
+    <button class="chip" data-on="shadow" aria-pressed="false"><i>02</i>零阴影</button>
+    <button class="chip" data-on="space" aria-pressed="false"><i>03</i>间距分组</button>
+    <button class="chip" data-on="type" aria-pressed="false"><i>04</i>字号梯度</button>
+    <button class="chip" data-on="weight" aria-pressed="false"><i>05</i>字重两档</button>
+    <button class="chip" data-on="num" aria-pressed="false"><i>06</i>数字等宽</button>
+    <span class="spacer"></span>
+    <button class="bulk" id="all">全开</button>
+    <button class="bulk" id="none">全关</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="stage-head">
+      <b>SiCode · 会话</b>
+      <span>12:04</span>
+    </div>
+
+    <div class="turn">
+      <div class="ask">把侧边栏文件树改成虚拟滚动，现在两万个文件打开就卡死</div>
+
+      <div class="answer">
+        <p>虚拟滚动接上了，顺手修了一个复用的坑：<b>行高估算和实测差 12px</b>，快速滚动时会跳。</p>
+
+        <div class="list">
+          <div class="card">
+            <div class="card-l"><span class="verb">read</span><span class="file">virtualizer.tsx</span></div>
+            <span class="num add">+12</span>
+          </div>
+          <div class="card">
+            <div class="card-l"><span class="verb">write</span><span class="file">file-tree.tsx</span></div>
+            <span class="num del">−4</span>
+          </div>
+          <div class="card">
+            <div class="card-l"><span class="verb">run</span><span class="file">bun test</span></div>
+            <span class="num">16 passed</span>
+          </div>
+        </div>
+
+        <div class="foot">
+          <span>3 个文件 · 无冲突</span>
+          <button>全部保留</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="statusbar" id="specs"></div>
+  </div>
+
+  <div class="score">
+    <span>已启用</span>
+    <b id="cnt">0 / 6</b>
+    <span id="hint">现在这个状态，是 agent 不加约束时给你的样子。</span>
+  </div>
+
+  <section class="notes">
+    <h2>每条规则在挡什么</h2>
+    <p class="sub">都是这个仓库实测出来的，不是通用套话。</p>
+
+    <div class="note">
+      <em>01</em>
+      <div>
+        <b>圆角唯一</b>
+        <p>上面那三行默认圆角是 10 / 14 / 18。仓库里 <code>var(--radius-*)</code> 只用 20 次、字面值约 100 次，说明梯子存在但没人走。</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <em>02</em>
+      <div>
+        <b>零阴影</b>
+        <p>三张卡三层阴影等于没有层级——都浮起来就都没浮起来。仓库有 24 处显式 <code>box-shadow: none</code>，这个习惯保持住。</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <em>03</em>
+      <div>
+        <b>间距分组</b>
+        <p>这条收益最直观：关着的时候卡片间距和组间距都是 14px，内外不分；打开后行内 7px、组间 20px，眼睛立刻知道哪三行是一伙的。</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <em>04</em>
+      <div>
+        <b>字号梯度</b>
+        <p>关着时所有字挤在 12.5–13.5 之间，等于没有梯度。仓库实测 10 档字号里 6 档不在梯子上，<code>12.5px</code> 这种就是梯度拉不开时的手工补贴。</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <em>05</em>
+      <div>
+        <b>字重两档</b>
+        <p>微软雅黑只有 300 / 400 / 700。<code>font-weight: 460</code> 和 <code>500</code> 在这里静默回落成 400——你们整套层级就建立在 460 上，在这台机器上是失效的。</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <em>06</em>
+      <div>
+        <b>数字等宽右对齐</b>
+        <p>关着时 <code>+12</code> 和 <code>−4</code> 宽度不同、位置在漂；打开后右边缘对齐、位数可比，扫一眼就知道哪个改得多。</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const stage = document.getElementById("stage");
+  const chips = [...document.querySelectorAll(".chip")];
+  const cnt = document.getElementById("cnt");
+  const hint = document.getElementById("hint");
+  const keys = chips.map((c) => c.dataset.on);
+
+  const hints = [
+    "现在这个状态，是 agent 不加约束时给你的样子。",
+    "三个圆角还在打架，但已经不那么晃了。",
+    "阴影拿掉之后，那些边框开始显得多余。",
+    "内外间距分开了，视线第一次有了落点。",
+    "梯度出来了，但标题和正文还是一样重。",
+    "字重一到位，层级自己浮出来——它不是参数，是前面几步的结果。",
+    "现在是能用、也能进生产的样子。"
+  ];
+
+  const on = (i) => chips[i].getAttribute("aria-pressed") === "true";
+
+  const rules = [
+    ["radius", "r 10/14/18", "r 6"],
+    ["shadow", "shadow 1", "shadow 0"],
+    ["space", "内 14 / 组 14", "内 7 / 组 20"],
+    ["type", "fs 14/13.5/13/12.5", "fs 13/12/11"],
+    ["weight", "w 500/400", "w 700/400"],
+    ["num", "num 左", "num 右等宽"]
+  ];
+
+  const specs = document.getElementById("specs");
+
+  const render = () => {
+    keys.forEach((k, i) => stage.classList.toggle("on-" + k, on(i)));
+    const n = chips.filter((c) => c.getAttribute("aria-pressed") === "true").length;
+    cnt.textContent = n + " / 6";
+    hint.textContent = hints[n];
+    specs.innerHTML = rules.map(([k, off, good]) => {
+      const hit = stage.classList.contains("on-" + k);
+      return '<span class="' + (hit ? "ok" : "") + '">' + (hit ? good : off) + "</span>";
+    }).join('<span class="sep"> · </span>');
+  };
+
+  chips.forEach((c) => c.addEventListener("click", () => {
+    c.setAttribute("aria-pressed", on(chips.indexOf(c)) ? "false" : "true");
+    render();
+  }));
+
+  document.getElementById("all").addEventListener("click", () => {
+    chips.forEach((c) => c.setAttribute("aria-pressed", "true"));
+    render();
+  });
+
+  document.getElementById("none").addEventListener("click", () => {
+    chips.forEach((c) => c.setAttribute("aria-pressed", "false"));
+    render();
+  });
+
+  const q = new URLSearchParams(location.search).get("on");
+  if (q) {
+    const want = q.split(",");
+    chips.forEach((c) => c.setAttribute("aria-pressed", want.includes(c.dataset.on) ? "true" : "false"));
+  }
+
+  render();
+</script>
+</body>
+</html>
