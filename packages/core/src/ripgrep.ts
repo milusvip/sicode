@@ -74,6 +74,8 @@ export interface GrepInput {
   readonly cwd: string
   readonly pattern: string
   readonly file?: string
+  /** SiCode: explicit candidate files (relative to cwd) from the trigram prefilter; bypasses a full sweep. */
+  readonly paths?: readonly string[]
   readonly include?: string
   readonly literal?: boolean
   readonly caseSensitive?: boolean
@@ -247,7 +249,7 @@ const layer = Layer.effect(
               "--glob=!**/.git/**",
               "--",
               input.pattern,
-              input.file ?? ".",
+              ...(input.paths && input.paths.length > 0 ? input.paths : [input.file ?? "."]),
             ],
             parse: (line) => {
               const index = line.lastIndexOf(":")
@@ -299,7 +301,7 @@ const layer = Layer.effect(
             "--glob=!**/.git/**",
             "--",
             input.pattern,
-            input.file ?? ".",
+            ...(input.paths && input.paths.length > 0 ? input.paths : [input.file ?? "."]),
           ],
           parse: (line) =>
             decodeJsonRecord(line).pipe(

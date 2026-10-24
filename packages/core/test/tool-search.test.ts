@@ -11,6 +11,8 @@ import { Location } from "@opencode/core/location"
 import { FileAccess } from "@opencode/core/file-access"
 import { Permission } from "@opencode/core/permission"
 import { Ripgrep } from "@opencode/core/ripgrep"
+import { Global } from "@opencode/util/global"
+import { TrigramSearch } from "@opencode/core/filesystem/trigram-search"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
 import { GlobTool } from "@opencode/core/tool/plugin/glob"
@@ -30,7 +32,15 @@ const globToolNode = makeLocationNode({
 const grepToolNode = makeLocationNode({
   name: "test/grep-tool-plugin",
   layer: Layer.effectDiscard(registerToolPlugin(GrepTool.Plugin)),
-  deps: [Tool.node, Environment.node, Ripgrep.node, Location.node, FileAccess.node, Permission.node],
+  deps: [
+    Tool.node,
+    Environment.node,
+    Ripgrep.node,
+    Location.node,
+    FileAccess.node,
+    Permission.node,
+    TrigramSearch.node,
+  ],
 })
 const sessionID = Session.ID.make("ses_search_tool_test")
 
@@ -128,6 +138,7 @@ describe("search tools", () => {
                 matches: FileSystem.DEFAULT_SEARCH_LIMIT,
                 truncated: true,
                 mode: "content",
+                prefiltered: false,
               })
               expect(glob.content).toHaveLength(1)
               expect(grep.content).toHaveLength(1)
@@ -249,7 +260,7 @@ describe("search tools", () => {
               expect(text).not.toContain("alpha")
               // Context is presentation only; machine output stays matches-only.
               expect(result.output).toHaveLength(1)
-              expect(result.metadata).toEqual({ matches: 1, truncated: false, mode: "content" })
+              expect(result.metadata).toEqual({ matches: 1, truncated: false, mode: "content", prefiltered: false })
             }),
           ),
         ),
@@ -282,7 +293,7 @@ describe("search tools", () => {
               expect(text.indexOf("many.txt: 3")).toBeLessThan(text.indexOf("one.txt: 1"))
               expect(result.output).toHaveLength(2)
               // 一页代表 4 条命中，而不是 2 行
-              expect(result.metadata).toEqual({ matches: 4, truncated: false, mode: "count" })
+              expect(result.metadata).toEqual({ matches: 4, truncated: false, mode: "count", prefiltered: false })
             }),
           ),
         ),
@@ -314,7 +325,7 @@ describe("search tools", () => {
               expect(text).toContain("a.txt:1: needle here")
               expect(text).toContain("b.txt:2: needle there")
               expect(result.output).toHaveLength(2)
-              expect(result.metadata).toEqual({ matches: 2, truncated: false, mode: "files_with_matches" })
+              expect(result.metadata).toEqual({ matches: 2, truncated: false, mode: "files_with_matches", prefiltered: false })
             }),
           ),
         ),
@@ -339,7 +350,7 @@ describe("search tools", () => {
               const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
               expect(result.output).toMatchObject([{ line: 2, text: "needle2\n" }])
               expect(text).toContain("showing 2-2 of at least 3")
-              expect(result.metadata).toEqual({ matches: 1, truncated: true, mode: "content" })
+              expect(result.metadata).toEqual({ matches: 1, truncated: true, mode: "content", prefiltered: false })
             }),
           ),
         ),
@@ -544,5 +555,97 @@ describe("search tools", () => {
           Promise.all([active[Symbol.asyncDispose](), outside[Symbol.asyncDispose]()]).then(() => undefined),
         ),
     ),
+  )
+})
+
+describe("two-stage grep prefilter", () => {
+  const localGlobToolNode = makeLocationNode({
+    name: "test/local-glob-tool-plugin",
+    layer: Layer.effectDiscard(registerToolPlugin(GlobTool.Plugin)),
+    deps: [Tool.node, Environment.node, Ripgrep.node, Location.node, FileAccess.node, Permission.node],
+  })
+  const localGrepToolNode = makeLocationNode({
+    name: "test/local-grep-tool-plugin",
+    layer: Layer.effectDiscard(registerToolPlugin(GrepTool.Plugin)),
+    deps: [
+      Tool.node,
+      Environment.node,
+      Ripgrep.node,
+      Location.node,
+      FileAccess.node,
+      Permission.node,
+      TrigramSearch.node,
+    ],
+  })
+  const withPrefilter = <A, E, R>(
+    directory: string,
+    cache: string,
+    body: (registry: Tool.Interface, trigram: TrigramSearch.Interface) => Effect.Effect<A, E, R>,
+  ) =>
+    Effect.gen(function* () {
+      const registry = yield* Tool.Service
+      const trigram = yield* TrigramSearch.Service
+      return yield* body(registry, trigram)
+    }).pipe(
+      Effect.provide(
+        AppNodeBuilder.build(LayerNode.group([Tool.node, localGlobToolNode, localGrepToolNode, TrigramSearch.node]), [
+          Location.node.replace(
+            Layer.succeed(
+              Location.Service,
+              Location.Service.of(
+                location(
+                  { directory: AbsolutePath.make(directory) },
+                  { vcs: { type: "git", store: AbsolutePath.make(path.join(directory, ".git")) } },
+                ),
+              ),
+            ),
+          ),
+          Global.node.replace(Layer.succeed(Global.Service, Global.Service.of(Global.make({ cache })))),
+          Permission.node.replace(permissionLayer({ assert: () => Effect.void })),
+        ]),
+      ),
+    )
+
+  it.live(
+    "prefilters literal searches through the trigram index and falls back for regex",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped("sicode-trigram-")
+        const cache = yield* tmpdirScoped("sicode-trigram-cache-")
+        yield* Effect.promise(() =>
+          Promise.all([
+            Bun.write(path.join(tmp.path, "alpha.ts"), "export const waitForScan = 1\n"),
+            Bun.write(path.join(tmp.path, "beta.ts"), "export const unrelated = 2\n"),
+            Bun.write(path.join(tmp.path, "nested/gamma.ts"), "// uses waitForScan here\n"),
+          ]),
+        )
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            const literal = yield* executeTool(registry, call("grep", { pattern: "waitForScan" }))
+            expect(literal.metadata).toEqual({
+              matches: 2,
+              truncated: false,
+              mode: "content",
+              prefiltered: true,
+            })
+            const text = literal.content?.[0]?.type === "text" ? literal.content[0].text : ""
+            expect(text).toContain("alpha.ts")
+            expect(text).toContain("gamma.ts")
+            expect(text).not.toContain("beta.ts")
+
+            // Regex patterns are not sound to prefilter; they must take the full sweep.
+            const regex = yield* executeTool(registry, call("grep", { pattern: "waitForS.*n" }))
+            expect(regex.metadata).toMatchObject({ matches: 2, prefiltered: false })
+
+            // The watcher keeps the index fresh: a file written after the build shows up.
+            yield* Effect.promise(() => Bun.write(path.join(tmp.path, "delta.ts"), "// waitForScan later\n"))
+            yield* Effect.sleep("2 seconds")
+            const incremental = yield* executeTool(registry, call("grep", { pattern: "waitForScan" }))
+            expect(incremental.metadata).toMatchObject({ matches: 3, prefiltered: true })
+          }),
+        )
+      }),
+    { timeout: 30_000 },
   )
 })

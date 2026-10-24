@@ -6,7 +6,7 @@
 // 15MB on disk, 5-85ms per candidate query; a full rg sweep of the same tree is 3.5-4.4s.
 import { Database } from "bun:sqlite"
 
-const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 1
 
 /** Normalize to forward slashes so stored paths, watcher events and rg output agree. */
 const normalize = (path: string) => path.replaceAll("\\", "/")
@@ -68,7 +68,7 @@ export class TrigramIndex {
     return this.db.prepare<{ v: string }, [string]>("SELECT v FROM meta WHERE k = ?").get(key)?.v
   }
 
-  private setMeta(key: string, value: string): void {
+  setMeta(key: string, value: string): void {
     this.db.prepare("INSERT INTO meta(k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run(key, value)
   }
 

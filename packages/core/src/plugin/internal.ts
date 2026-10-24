@@ -73,6 +73,8 @@ import { Snapshot } from "../snapshot.js"
 import { Skill } from "../skill.js"
 import { SkillDiscovery } from "../skill/discovery.js"
 import { Watcher } from "../filesystem/watcher.js"
+// SiCode: trigram candidate index feeding the grep tool's two-stage search.
+import { TrigramSearch } from "../filesystem/trigram-search.js"
 import { PatchTool } from "../tool/plugin/patch.js"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
@@ -159,6 +161,7 @@ const services = [
   SkillDiscovery.Service,
   Tool.Service,
   ToolOutput.Service,
+  TrigramSearch.Service,
   Voice.Service,
   Watcher.Service,
   WellKnown.Service,
@@ -214,6 +217,7 @@ export const requirements = LayerNode.group([
   SkillDiscovery.node,
   Tool.node,
   ToolOutput.node,
+  TrigramSearch.node,
   Voice.node,
   Watcher.node,
   WellKnown.node,

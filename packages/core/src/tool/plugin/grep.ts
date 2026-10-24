@@ -6,6 +6,7 @@ import { Effect, Schema } from "effect"
 import path from "path"
 import { Environment } from "../../environment/index.js"
 import { FileSystem } from "../../filesystem.js"
+import { literalQuery, chunkPaths, scopedCandidates, TrigramSearch } from "../../filesystem/trigram-search.js"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
@@ -177,6 +178,7 @@ export const Plugin = {
   effect: Effect.fn("GrepTool.Plugin")(function* (ctx: Context) {
     const environment = yield* Environment.Service
     const ripgrep = yield* Ripgrep.Service
+    const trigram = yield* TrigramSearch.Service
     const location = yield* Location.Service
     const access = yield* FileAccess.Service
     const permission = yield* Permission.Service
@@ -224,44 +226,65 @@ export const Plugin = {
               const limit = input.limit ?? FileSystem.DEFAULT_SEARCH_LIMIT
               const offset = input.offset ?? 0
               const wanted = offset + limit
-              const rows = yield* ripgrep
-                .grep({
-                  cwd,
-                  pattern: input.pattern,
-                  file: type === "file" ? path.basename(root) : undefined,
-                  include: input.include,
-                  literal: input.literal,
-                  caseSensitive: input.caseSensitive,
-                  context: mode === "content" ? input.context : undefined,
-                  mode: mode === "files_with_matches" ? "files" : mode,
-                  // One row past the page is what tells us whether anything remains.
-                  limit: wanted + 1,
-                })
-                .pipe(
-                  Effect.timeoutOrElse({
-                    duration: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
-                    orElse: () =>
-                      Effect.fail(
-                        new ToolFailure({
-                          message: `Search timed out after ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000} seconds. Consider using a more specific path or pattern.`,
+              // SiCode: two-stage search. Stage one asks the trigram index which files could
+              // contain the pattern as literal text; stage two runs rg over just those files.
+              // Any doubt — regex pattern, index still building, huge candidate set, search
+              // outside the indexed root — falls back to a full sweep, so the fast path only
+              // changes speed, never results.
+              const literal = type === "directory" ? literalQuery(input.pattern, input.literal) : null
+              const global = literal ? yield* trigram.candidates(literal) : null
+              const candidates = global ? scopedCandidates(global, cwd, location.directory) : null
+              const chunks = candidates ? chunkPaths(candidates) : undefined
+              const sweep = (paths?: readonly string[]) =>
+                ripgrep
+                  .grep({
+                    cwd,
+                    pattern: input.pattern,
+                    file: type === "file" ? path.basename(root) : undefined,
+                    paths,
+                    include: input.include,
+                    literal: input.literal,
+                    caseSensitive: input.caseSensitive,
+                    context: mode === "content" ? input.context : undefined,
+                    mode: mode === "files_with_matches" ? "files" : mode,
+                    // One row past the page is what tells us whether anything remains.
+                    limit: wanted + 1,
+                  })
+                  .pipe(
+                    Effect.timeoutOrElse({
+                      duration: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
+                      orElse: () =>
+                        Effect.fail(
+                          new ToolFailure({
+                            message: `Search timed out after ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000} seconds. Consider using a more specific path or pattern.`,
+                          }),
+                        ),
+                    }),
+                    Effect.map((result) =>
+                      result.map((row) => ({
+                        kind: row.kind,
+                        match: FileSystem.Match.make({
+                          ...row.match,
+                          entry: FileSystem.Entry.make({
+                            ...row.match.entry,
+                            path: RelativePath.make(
+                              path.relative(location.directory, path.resolve(cwd, row.match.entry.path)),
+                            ),
+                          }),
                         }),
-                      ),
-                  }),
-                  Effect.map((result) =>
-                    result.map((row) => ({
-                      kind: row.kind,
-                      match: FileSystem.Match.make({
-                        ...row.match,
-                        entry: FileSystem.Entry.make({
-                          ...row.match.entry,
-                          path: RelativePath.make(
-                            path.relative(location.directory, path.resolve(cwd, row.match.entry.path)),
-                          ),
-                        }),
-                      }),
-                    })),
-                  ),
-                )
+                      })),
+                    ),
+                  )
+              let rows: Ripgrep.GrepRow[] = []
+              if (chunks) {
+                for (const chunk of chunks) {
+                  rows.push(...(yield* sweep(chunk)))
+                  const counted = mode === "content" ? groupByMatch(rows).length : rows.length
+                  if (counted > wanted) break
+                }
+              } else {
+                rows = [...(yield* sweep())]
+              }
               // Content pages break on matches; the other modes are already one row per file.
               const units = mode === "content" ? groupByMatch(rows) : rows.map((row) => [row])
               const page = units.slice(offset, wanted).flat()
@@ -272,6 +295,7 @@ export const Plugin = {
                 // Count rows carry a per-file total, so the page represents more matches than it has rows.
                 total: mode === "count" ? page.reduce((sum, row) => sum + row.match.line, 0) : matches.length,
                 truncated: units.length > wanted,
+                prefiltered: chunks !== undefined,
               }
             }).pipe(
               Effect.map((result) => ({
@@ -286,7 +310,12 @@ export const Plugin = {
                   })),
                   { mode: input.mode ?? "content", truncated: result.truncated, offset: input.offset ?? 0 },
                 ),
-                metadata: { matches: result.total, truncated: result.truncated, mode: input.mode ?? "content" },
+                metadata: {
+                  matches: result.total,
+                  truncated: result.truncated,
+                  mode: input.mode ?? "content",
+                  prefiltered: result.prefiltered,
+                },
               })),
               Effect.mapError((error) =>
                 error instanceof ToolFailure

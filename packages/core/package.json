@@ -54,6 +54,12 @@
       "node": "./src/filesystem/fff.node.ts",
       "default": "./src/filesystem/fff.bun.ts"
     },
+    "#trigram": {
+      "workerd": "./src/filesystem/trigram.noop.ts",
+      "bun": "./src/filesystem/trigram.bun.ts",
+      "node": "./src/filesystem/trigram.noop.ts",
+      "default": "./src/filesystem/trigram.bun.ts"
+    },
     "#photon-wasm": {
       "workerd": "./src/image/photon-wasm.workerd.ts",
       "bun": "./src/image/photon-wasm.bun.ts",
