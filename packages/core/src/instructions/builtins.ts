@@ -4,7 +4,26 @@ import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { Global } from "@opencode/util/global"
 import { Location } from "../location.js"
+import { Vcs } from "../vcs.js"
 import { Instructions } from "./index.js"
+
+// SiCode: cap on files listed in the opening git status block. Beyond this the
+// list costs more context than it earns, so the tail collapses to a count and
+// the model can run `git status` itself for the rest.
+const GIT_STATUS_MAX_FILES = 200
+
+const STATUS_PREFIX = { added: "A", deleted: "D", modified: "M" } as const
+
+/** SiCode: render structured FileStatus rows, never raw stdout — Vcs.status already did the parsing. */
+export function renderGitStatus(files: readonly Vcs.FileStatus[]): string {
+  const shown = files.slice(0, GIT_STATUS_MAX_FILES)
+  const lines = shown.map((entry) => {
+    const stat = entry.additions || entry.deletions ? ` (+${entry.additions} -${entry.deletions})` : ""
+    return `  ${STATUS_PREFIX[entry.status]} ${entry.file}${stat}`
+  })
+  if (files.length > shown.length) lines.push(`  ...and ${files.length - shown.length} more files`)
+  return ["<git_status>", ...lines, "</git_status>"].join("\n")
+}
 
 export interface Interface {
   readonly load: () => Effect.Effect<Instructions.List>
@@ -30,11 +49,46 @@ export const AUTHORIZATION = [
   "</authorization>",
 ].join("\n")
 
+const GIT_STATUS_INTRO = [
+  "The following is the git status at the start of the conversation. It is a snapshot and does not update as the conversation goes; run `git status` yourself if you need the current state.",
+  "Do not revert or discard changes you did not make. Check `git diff` before undoing any edit you are unsure about.",
+].join("\n")
+
+const GIT_STATUS_CHANGED = [
+  "The working tree has changed since the status above. Current state:",
+  "Do not revert or discard changes you did not make.",
+].join("\n")
+
+/**
+ * SiCode: the opening git status snapshot.
+ *
+ * `null` means "there is nothing to say" — a non-git directory or a clean tree.
+ * That reports `removed`, an observed absence, so the block disappears entirely
+ * instead of rendering empty scaffolding into every session's system prompt.
+ */
+export function gitStatusSource(
+  status: () => Effect.Effect<readonly Vcs.FileStatus[] | null>,
+): Instructions.List {
+  return Instructions.make({
+    key: Instructions.Key.make("core/git-status"),
+    codec: Schema.toCodecJson(Schema.String),
+    read: status().pipe(
+      Effect.map((files) => (files === null || files.length === 0 ? Instructions.removed : renderGitStatus(files))),
+      Effect.orElseSucceed(() => Instructions.removed),
+    ),
+    render: {
+      initial: (snapshot) => GIT_STATUS_INTRO + "\n\n" + snapshot,
+      changed: (_previous, snapshot) => GIT_STATUS_CHANGED + "\n\n" + snapshot,
+    },
+  })
+}
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const global = yield* Global.Service
     const location = yield* Location.Service
+    const vcs = yield* Vcs.Service
     return Service.of({
       load: () =>
         Effect.succeed(
@@ -79,10 +133,18 @@ const layer = Layer.effect(
                   ["The environment you are running in is now:", environment].join("\n"),
               },
             }),
+            // SiCode: the opening git status snapshot. Deliberately NOT the diff:
+            // a full working-tree diff per turn burns context and duplicates what
+            // the model can fetch itself, so diffs stay on demand (git_diff tool).
+            gitStatusSource(() =>
+              location.vcs?.type !== "git"
+                ? Effect.succeed(null)
+                : vcs.status().pipe(Effect.orElseSucceed(() => [] as Array<Vcs.FileStatus>)),
+            ),
           ]),
         ),
     })
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [Global.node, Location.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [Global.node, Location.node, Vcs.node] })
