@@ -29,9 +29,10 @@ import { SessionRunnerRetry } from "./retry.js"
 import { SessionStep } from "./step.js"
 import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
-import { MAX_STEPS_PROMPT } from "./max-steps.js"
-import { NARRATE_EVERY_STEPS, NARRATE_PROMPT } from "./narrate.js"
-import { EXPLORE_BUDGET_PROMPT, EXPLORE_HARD_STEPS, EXPLORE_SOFT_PROMPT, EXPLORE_SOFT_STEPS, readOnlySteps } from "./explore-budget.js"
+import { NARRATE_EVERY_STEPS } from "./narrate.js"
+import { EXPLORE_HARD_STEPS, EXPLORE_SOFT_STEPS, readOnlySteps } from "./explore-budget.js"
+import { detectLoop } from "./loop-detection.js"
+import { selectSteer } from "./steer.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -80,6 +81,9 @@ const layer = Layer.effect(
       let force = input.force
       let continuing = input.continuation !== undefined
       let step = input.continuation?.step ?? 1
+      // SiCode: loop fingerprints already nudged this turn. A second sighting means the nudge did
+      // not help, so the turn stops rather than being told the same thing again.
+      const loopNudged = new Set<string>()
       let entering = true
       const promotable = input.promotable ?? "input"
       if (!force && !continuing) {
@@ -207,7 +211,7 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step)
+        continuing = yield* runStep(next.context, step, loopNudged)
         step++
         force = false
         entering = false
@@ -222,7 +226,11 @@ const layer = Layer.effect(
     })
 
     /** Owns logical Step policy; each attempt owns its streaming, tools, and durable settlement. */
-    const runStep = Effect.fn("SessionRunner.runStep")(function* (first: SessionContext.Loaded, step: number) {
+    const runStep = Effect.fn("SessionRunner.runStep")(function* (
+      first: SessionContext.Loaded,
+      step: number,
+      loopNudged: Set<string>,
+    ) {
       const sessionID = first.session.id
       let assistantMessageID = SessionMessage.ID.create()
       const retry = yield* SessionRunnerRetry.make(bus, sessionID)
@@ -249,6 +257,15 @@ const layer = Layer.effect(
         const exploring = readOnlySteps(loaded.messages)
         const exploreHard = !stepLimitReached && exploring >= EXPLORE_HARD_STEPS
         const exploreSoft = !stepLimitReached && !exploreHard && exploring > 0 && exploring % EXPLORE_SOFT_STEPS === 0
+        // SiCode: repeating one tool call with the same arguments and the same result. A loop is the
+        // most specific of these signals, so it is raised before the softer pacing ones; a loop that
+        // survived an earlier nudge ends the turn instead of being described again.
+        const loop = stepLimitReached ? null : detectLoop(loaded.messages)
+        const loopStop = loop !== null && loopNudged.has(loop.fingerprint)
+        const loopNudge = loop !== null && !loopStop
+        if (loopNudge) loopNudged.add(loop.fingerprint)
+        // One steering message replaces the tail, most specific first.
+        const steer = selectSteer({ stepLimitReached, loopStopped: loopStop, exploreHard, loopNudged: loopNudge, narrate, exploreSoft })
         const transcript = SessionModelRequest.baseTranscript({
           agent: loaded.agent.info,
           model: loaded.model,
@@ -262,17 +279,14 @@ const layer = Layer.effect(
           model: loaded.model,
           tools: loaded.tools,
           system: transcript.system,
-          messages: stepLimitReached
-            ? [...transcript.messages, Message.assistant(MAX_STEPS_PROMPT)]
-            : exploreHard
-              ? [...transcript.messages, Message.assistant(EXPLORE_BUDGET_PROMPT)]
-              : narrate
-                ? [...transcript.messages, Message.system(NARRATE_PROMPT)]
-                : exploreSoft
-                  ? [...transcript.messages, Message.system(EXPLORE_SOFT_PROMPT)]
-                  : transcript.messages,
+          messages: steer
+            ? [
+                ...transcript.messages,
+                steer.role === "assistant" ? Message.assistant(steer.prompt) : Message.system(steer.prompt),
+              ]
+            : transcript.messages,
           // Keep tool definitions on the final Step to preserve the provider's cached prefix.
-          toolChoice: stepLimitReached || exploreHard ? "none" : undefined,
+          toolChoice: steer?.stop ? "none" : undefined,
           webSocket: "session",
           inputTokens: SessionCompaction.estimatePrompt(loaded),
         })
