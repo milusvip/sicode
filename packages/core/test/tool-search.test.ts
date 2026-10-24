@@ -648,4 +648,48 @@ describe("two-stage grep prefilter", () => {
       }),
     { timeout: 30_000 },
   )
+
+  it.live(
+    "keeps the index correct under a burst of saves and deletes to one large file",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped("sicode-trigram-stress-")
+        const cache = yield* tmpdirScoped("sicode-trigram-stress-cache-")
+        const big = path.join(tmp.path, "big.ts")
+        // A large file so re-reading it is not free; a unique token per generation to prove
+        // the index tracks the *latest* content, not a stale snapshot.
+        const gen = (token: string) => `// ${token}\n${Array.from({ length: 20_000 }, (_, i) => `const v${i} = ${i}`).join("\n")}\n`
+        yield* Effect.promise(() => Bun.write(big, gen("tokenAAA")))
+        yield* Effect.promise(() => Bun.write(path.join(tmp.path, "other.ts"), "export const untouched = 1\n"))
+
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+
+            // A rapid burst of saves: the debounce coalesces them into one upsert round, and
+            // the index must settle on the LAST content, not an intermediate one.
+            yield* Effect.promise(() => Bun.write(big, gen("tokenBBB")))
+            yield* Effect.promise(() => Bun.write(big, gen("tokenCCC")))
+            yield* Effect.promise(() => Bun.write(big, gen("tokenDDD")))
+            yield* Effect.sleep("2 seconds")
+
+            const latest = yield* executeTool(registry, call("grep", { pattern: "tokenDDD" }))
+            expect(latest.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+            const stale = yield* executeTool(registry, call("grep", { pattern: "tokenBBB" }))
+            expect(stale.metadata).toMatchObject({ matches: 0 })
+
+            // A delete (the file vanishes) must drop it from the index.
+            yield* Effect.promise(() => fs.unlink(big))
+            yield* Effect.sleep("2 seconds")
+            const gone = yield* executeTool(registry, call("grep", { pattern: "tokenDDD" }))
+            expect(gone.metadata).toMatchObject({ matches: 0 })
+
+            // The untouched file survives the churn untouched.
+            const other = yield* executeTool(registry, call("grep", { pattern: "untouched" }))
+            expect(other.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+          }),
+        )
+      }),
+    { timeout: 30_000 },
+  )
 })
