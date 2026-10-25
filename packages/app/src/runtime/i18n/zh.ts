@@ -864,7 +864,7 @@ export const dict = {
   "settings.timeline.description.custom": "为每个活动类别使用您选择的位置和详细信息。",
   "settings.timeline.custom": "自定义",
   "settings.timeline.row.turnDiffs.title": "更改的文件",
-  "settings.timeline.row.turnDiffs.description": "在每轮结束时列出该轮更改的文件",
+  "settings.timeline.row.turnDiffs.description": "在每条提问结束时列出它更改的文件",
   "settings.timeline.advanced": "高级",
   "settings.timeline.advanced.description": "设置每个活动类别的位置和详细信息。",
   "settings.timeline.category.shell": "Shell",

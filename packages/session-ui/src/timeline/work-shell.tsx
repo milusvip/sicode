@@ -12,6 +12,16 @@ export function workShellDisclosureKey(userMessageID: string) {
   return `work:${userMessageID}`
 }
 
+/** SiCode: disclosure key for one stage heading inside a work shell. */
+export function workStageDisclosureKey(row: { userMessageID: string; stageKey: string }) {
+  return `stage:${row.userMessageID}:${row.stageKey}`
+}
+
+/** SiCode: disclosure key for a long-turn fold line (early steps or middle stages). */
+export function workFoldDisclosureKey(row: { userMessageID: string; kind: string; foldKey: string }) {
+  return `fold:${row.userMessageID}:${row.kind}:${row.foldKey}`
+}
+
 /**
  * The overview bars behave as an accordion: opening one turn closes every other turn's bar, so the
  * transcript never carries two open work spans and only one bar can be pinned to the top.
@@ -88,10 +98,16 @@ function trailingProseIndexes(rows: readonly TimelineRow.TimelineRow[]) {
   return new Set([...last.values()].flat())
 }
 
-/** Drop members of collapsed work shells; keep the head so status stays visible. */
+/**
+ * Drop members of work shells from the flat timeline list.
+ *
+ * Process steps are withheld either way: open shells paint them inside one composite card
+ * (`workShellCardMembers`); closed shells hide them. The closing answer and outcome markers stay as
+ * sibling rows after the head/card — demo scheme B puts `.answer` outside `.card`.
+ */
 export function filterCollapsedWorkShellRows(
   rows: readonly TimelineRow.TimelineRow[],
-  open: (userMessageID: string, status: WorkShellStatus) => boolean,
+  _open: (userMessageID: string, status: WorkShellStatus) => boolean,
 ) {
   const result: TimelineRow.TimelineRow[] = []
   const answers = trailingProseIndexes(rows)
@@ -99,9 +115,8 @@ export function filterCollapsedWorkShellRows(
 
   for (const [index, row] of rows.entries()) {
     if (Predicate.isTagged(row, "WorkShell")) {
-      const expanded = open(row.userMessageID, row.status)
       result.push(row)
-      hiding = expanded ? undefined : row.userMessageID
+      hiding = row.userMessageID
       continue
     }
 
@@ -110,19 +125,116 @@ export function filterCollapsedWorkShellRows(
       continue
     }
 
-    const member = hiding !== undefined && row.userMessageID === hiding
-    // The closing answer survives the fold; earlier narration goes with the tools.
-    if (member && isWorkShellProse(row)) {
-      if (answers.has(index)) result.push(row)
+    if (hiding !== undefined) {
+      if (row.userMessageID !== hiding) {
+        result.push(row)
+        continue
+      }
+      // Answer + outcomes sit outside the card (open or closed). Everything else is packed or hidden.
+      if (isWorkShellProse(row) && answers.has(index)) result.push(row)
+      else if (isWorkShellOutcome(row)) result.push(row)
       continue
     }
 
-    // 已中断 / errors / retries stay in the overview when the body is tucked away.
-    if (member && !isWorkShellOutcome(row)) continue
     result.push(row)
   }
 
   return result
+}
+
+/**
+ * SiCode: members the open card paints, already filtered by stage/fold disclosure — same rules the
+ * flat list used to apply, so opening a stage still only reveals that stage's steps. Closing answer
+ * and outcome markers are omitted: they render as sibling rows after the card (demo `.answer`).
+ */
+export function workShellCardMembers(
+  rows: readonly TimelineRow.TimelineRow[],
+  userMessageID: string,
+  stageOpen?: (row: { userMessageID: string; stageKey: string; last: boolean }) => boolean,
+  foldOpen?: (row: TimelineRow.WorkFold) => boolean,
+) {
+  const head = rows.findIndex(
+    (row) => Predicate.isTagged(row, "WorkShell") && row.userMessageID === userMessageID,
+  )
+  const end = rows.findIndex(
+    (row) => Predicate.isTagged(row, "WorkShellEnd") && row.userMessageID === userMessageID,
+  )
+  if (head < 0 || end < 0 || end <= head) return [] as TimelineRow.TimelineRow[]
+
+  const answers = trailingProseIndexes(rows)
+  const result: TimelineRow.TimelineRow[] = []
+  const foldedKeys = new Set<string>()
+  let hidingStage: string | undefined
+
+  for (let index = head + 1; index < end; index++) {
+    const row = rows[index]!
+    if (answers.has(index) || isWorkShellOutcome(row)) continue
+    if (Predicate.isTagged(row, "WorkStage")) {
+      const expanded = stageOpen ? stageOpen(row) : true
+      result.push(row)
+      hidingStage = expanded ? undefined : row.stageKey
+      continue
+    }
+    if (Predicate.isTagged(row, "WorkStageEnd")) {
+      if (hidingStage === row.stageKey) hidingStage = undefined
+      continue
+    }
+    if (Predicate.isTagged(row, "WorkFold")) {
+      if (hidingStage !== undefined) continue
+      result.push(row)
+      if (!(foldOpen?.(row) ?? false)) {
+        for (const key of row.keys) foldedKeys.add(key)
+      }
+      continue
+    }
+    if (hidingStage !== undefined) continue
+    if (foldedKeys.has(TimelineRow.key(row))) continue
+    result.push(row)
+  }
+
+  return result
+}
+
+/** Group packed members into demo blocks: optional lead well, then stage(head + well) units. */
+export function workShellCardBlocks(members: readonly TimelineRow.TimelineRow[]) {
+  type Block =
+    | { type: "well"; rows: TimelineRow.TimelineRow[] }
+    | { type: "stage"; stage: TimelineRow.WorkStage; rows: TimelineRow.TimelineRow[] }
+    | { type: "fold"; fold: TimelineRow.WorkFold }
+
+  const blocks: Block[] = []
+  let well: TimelineRow.TimelineRow[] = []
+  let stage: Extract<Block, { type: "stage" }> | undefined
+
+  const flushWell = () => {
+    if (well.length === 0) return
+    blocks.push({ type: "well", rows: well })
+    well = []
+  }
+
+  for (const row of members) {
+    if (Predicate.isTagged(row, "WorkStage")) {
+      flushWell()
+      if (stage) blocks.push(stage)
+      stage = { type: "stage", stage: row, rows: [] }
+      continue
+    }
+    if (Predicate.isTagged(row, "WorkFold")) {
+      flushWell()
+      if (stage) {
+        blocks.push(stage)
+        stage = undefined
+      }
+      blocks.push({ type: "fold", fold: row })
+      continue
+    }
+    if (stage) stage.rows.push(row)
+    else well.push(row)
+  }
+
+  flushWell()
+  if (stage) blocks.push(stage)
+  return blocks
 }
 
 /**
@@ -214,7 +326,7 @@ export function WorkShellHead(props: {
   startedAt: number
   endedAt?: number
   toolCount: number
-  failedCount: number
+  counts?: TimelineRow.WorkShell["counts"]
   hasReply: boolean
   open: boolean
   onToggle: () => void
@@ -239,13 +351,36 @@ export function WorkShellHead(props: {
   // turn is still running, no text just means the model has not written anything yet.
   const silent = createMemo(() => workShellSilent(props.status, props.hasReply))
 
-  const title = createMemo(() => {
-    // Demo head reads "Completed 13 tools": the count is the only signal a collapsed shell carries.
-    if (props.status === "done" && props.toolCount > 0) return i18n.plural("ui.workShell.title.done", props.toolCount)
-    if (props.status === "failed")
-      return i18n.plural("ui.workShell.title.failed", props.toolCount, { failed: props.failedCount })
+  // Preview scheme B: phase label always; done alone adds a · detail. Other phases stay bare.
+  const phase = createMemo(() => statusLabel(i18n, props.status))
+  /**
+   * SiCode: "26 tools" is a count, not information — the reader wants to know whether the agent
+   * read, ran, or changed something. Report the mix in the order a person would say it, capped at
+   * three clauses so the head stays one line; the step pill still carries the exact total.
+   */
+  const detail = createMemo(() => {
+    if (props.status !== "done" || props.toolCount <= 0) return undefined
+    const counts = props.counts
+    if (!counts) return i18n.plural("ui.workShell.detail.done", props.toolCount)
 
-    return statusLabel(i18n, props.status)
+    const clauses: string[] = []
+    const add = (key: Parameters<typeof i18n.plural>[0], count: number) => {
+      if (count > 0) clauses.push(i18n.plural(key, count))
+    }
+    add("ui.workShell.summary.read", counts.read)
+    add("ui.workShell.summary.search", counts.search)
+    add("ui.workShell.summary.command", counts.command)
+    add("ui.workShell.summary.write", counts.write)
+    add("ui.workShell.summary.edit", counts.edit)
+    add("ui.workShell.summary.agent", counts.agent)
+    add("ui.workShell.summary.tool", counts.other)
+
+    if (clauses.length === 0) return i18n.plural("ui.workShell.detail.done", props.toolCount)
+    return clauses.slice(0, 3).join(i18n.t("ui.workShell.summary.separator"))
+  })
+  const steps = createMemo(() => {
+    if (props.toolCount <= 0) return undefined
+    return i18n.plural("ui.workShell.steps", props.toolCount)
   })
 
   return (
@@ -261,10 +396,14 @@ export function WorkShellHead(props: {
       <span data-slot="work-shell-icon">
         <StatusIcon status={props.status} />
       </span>
-      <span data-slot="work-shell-title">{title()}</span>
+      <span data-slot="work-shell-title">
+        <span data-slot="work-shell-phase">{phase()}</span>
+        <Show when={detail()}>{(text) => <span data-slot="work-shell-detail">{text()}</span>}</Show>
+      </span>
       <Show when={silent()}>
         <span data-slot="work-shell-note">{i18n.t("ui.workShell.noReply")}</span>
       </Show>
+      <Show when={steps()}>{(text) => <span data-slot="work-shell-steps">{text()}</span>}</Show>
       {/* The turn total stays put whether the body is open or not: it is the one number that does
           not change when you expand, and hiding it made the head jump. */}
       <span data-slot="work-shell-meta">{elapsed()}</span>

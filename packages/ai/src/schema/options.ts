@@ -56,10 +56,16 @@ export type HttpTimeout = Schema.Schema.Type<typeof HttpTimeout>
 export const DEFAULT_HTTP_TIMEOUT_MS = 300_000
 
 /**
- * Applied to `chunkTimeout` when a request leaves it unset. Some providers, such as DeepSeek, have specifically asked
- * clients to allow at least 15 minutes, because their models can stream nothing for minutes while they reason.
+ * Applied to `chunkTimeout` when a request leaves it unset.
+ *
+ * SiCode: 30s instead of upstream's 900s. The 900s default exists because providers such as DeepSeek can stream
+ * nothing for minutes while their models reason, but a client that waits 15 minutes for a frame cannot tell "still
+ * thinking" from "the relay died" — the observed failure mode was 5m35s of total silence with no timeout, no retry
+ * and no UI feedback. A dead stream is the common case, and a false 30s timeout is recoverable (the retry policy
+ * resends), while a silent 15 minute wait is not. Providers known to think without streaming set `chunkTimeout`
+ * explicitly (900000 or `false`) in their config.
  */
-export const DEFAULT_CHUNK_TIMEOUT_MS = 900_000
+export const DEFAULT_CHUNK_TIMEOUT_MS = 30_000
 
 /** `Content-Encoding` for JSON request bodies; `none` sends plain JSON. */
 export const RequestEncoding = Schema.Literals(["zstd", "gzip", "none"])

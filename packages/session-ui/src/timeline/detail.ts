@@ -44,12 +44,16 @@ export const timelinePresets = [
   {
     id: "compact",
     value: {
-      shell: { placement: "grouped", details: "collapsed" },
-      edit: { placement: "grouped", details: "expanded" },
+      // SiCode: shell/edit/tools were "grouped" here, which folded a tool run into one
+      // "Edit, Shell · 6 steps" row *inside* a work shell the reader had already opened — a second
+      // fold on top of the first. Density now comes from `details`, not from merging rows: the shell
+      // is collapsed by default anyway, so opening it should show the steps themselves.
+      shell: { placement: "separate", details: "collapsed" },
+      edit: { placement: "separate", details: "collapsed" },
       thinking: { placement: "grouped", details: "collapsed" },
       subagents: { placement: "grouped" },
       notices: { placement: "grouped" },
-      tools: { placement: "grouped" },
+      tools: { placement: "separate" },
     },
   },
   {

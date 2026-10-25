@@ -156,6 +156,8 @@ export interface Interface {
     readonly from?: SessionMessage.ID
     readonly to?: SessionMessage.ID
     readonly context?: number
+    /** Diff `from` alone rather than the whole turn containing it. */
+    readonly prompt?: boolean
   }) => Effect.Effect<
     readonly FileDiff.Info[],
     NotFoundError | MessageNotFoundError | TurnRangeError | Snapshot.Error | FileSystem.DirectoryNotFoundError
@@ -426,6 +428,7 @@ const layer = Layer.effect(
           from: input.from,
           to: input.to,
           context: input.context,
+          prompt: input.prompt,
         })
       }),
       inbox: (sessionID) => sessions.forSession(sessionID).inbox(),

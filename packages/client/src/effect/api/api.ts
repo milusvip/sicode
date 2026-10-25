@@ -370,6 +370,7 @@ export type SessionDiffInput = {
   readonly sessionID: Session.ID
   readonly from?: SessionMessage.ID | undefined
   readonly to?: SessionMessage.ID | undefined
+  readonly prompt?: boolean | undefined
   readonly context?: number | undefined
 }
 export type SessionDiffOutput = ReadonlyArray<FileDiff.Info>

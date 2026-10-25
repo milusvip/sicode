@@ -1,4 +1,6 @@
 import { describe, expect } from "bun:test"
+import { Database } from "bun:sqlite"
+import { createHash } from "node:crypto"
 import fs from "fs/promises"
 import path from "path"
 import { Effect, Layer } from "effect"
@@ -724,6 +726,93 @@ describe("two-stage grep prefilter", () => {
             expect(kept.metadata).toMatchObject({ prefiltered: true, matches: 1 })
           }),
         )
+      }),
+    { timeout: 30_000 },
+  )
+
+  it.live(
+    "reindexes when a file's content changed since the last run (no watcher saw the edit)",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped("sicode-trigram-content-")
+        const cache = yield* tmpdirScoped("sicode-trigram-content-cache-")
+        const target = path.join(tmp.path, "a.ts")
+        yield* Effect.promise(() => Bun.write(target, "export const tokenAAA = 1\n"))
+
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            const first = yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))
+            expect(first.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+          }),
+        )
+
+        // Same path, different content, edited while no watcher was alive. The pause keeps the
+        // mtime distinct even on coarse timestamps — the fingerprint has no finer signal.
+        yield* Effect.sleep("20 millis")
+        yield* Effect.promise(() => Bun.write(target, "export const tokenZZZ = 1\n"))
+
+        // Second run: the path set is identical, so only the fingerprint can reveal the edit.
+        // Without it the index answers "no matches" from trigrams for content that is gone.
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            const added = yield* executeTool(registry, call("grep", { pattern: "tokenZZZ" }))
+            expect(added.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+            const removed = yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))
+            expect(removed.metadata).toMatchObject({ prefiltered: true, matches: 0 })
+          }),
+        )
+      }),
+    { timeout: 30_000 },
+  )
+
+  it.live(
+    "reuses the index when nothing changed, even with a binary file present",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped("sicode-trigram-reuse-")
+        const cache = yield* tmpdirScoped("sicode-trigram-reuse-cache-")
+        yield* Effect.promise(() => Bun.write(path.join(tmp.path, "a.ts"), "export const tokenAAA = 1\n"))
+        // ripgrep enumerates this, the index cannot store it. If the reuse check compared only
+        // "files in the index" against "files on disk", the two could never match and every
+        // start would pay a full rebuild — silently, in the background.
+        yield* Effect.promise(() =>
+          Bun.write(path.join(tmp.path, "blob.png"), new Uint8Array([0x89, 0x50, 0x4e, 0x00, 0x01])),
+        )
+
+        // built_at is written only by a rebuild, so an unchanged stamp proves the index was reused.
+        const builtAt = () => {
+          const key = createHash("sha1").update(tmp.path).digest("hex")
+          const db = new Database(path.join(cache.path, "trigram", `${key}.db`), { readonly: true })
+          const row = db.query("SELECT v FROM meta WHERE k = 'built_at'").get() as { v: string } | null
+          db.close()
+          return row?.v
+        }
+
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            expect((yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))).metadata).toMatchObject({
+              prefiltered: true,
+              matches: 1,
+            })
+          }),
+        )
+        const first = builtAt()
+        expect(first).toBeDefined()
+
+        yield* withPrefilter(tmp.path, cache.path, (registry, trigram) =>
+          Effect.gen(function* () {
+            yield* trigram.buildNow
+            // Still serving correct results from the reused index.
+            expect((yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))).metadata).toMatchObject({
+              prefiltered: true,
+              matches: 1,
+            })
+          }),
+        )
+        expect(builtAt()).toBe(first)
       }),
     { timeout: 30_000 },
   )

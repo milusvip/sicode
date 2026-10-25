@@ -32,6 +32,10 @@ const decodeLocation = Schema.decodeUnknownSync(Schema.fromJsonString(Location.R
  * A Session without any idle marker predates them, so its prompts span until the
  * next user message instead.
  *
+ * `prompt` slices the range at `from` instead of normalizing it to the turn's
+ * opening prompt: it ends at the next prompt, so each prompt of a steered turn
+ * reports its own work. `to` does not combine with it.
+ *
  * Snapshot trees live in the repository of the Location that captured them, so a
  * range spanning a location switch is rejected rather than diffed wrongly.
  */
@@ -45,6 +49,8 @@ export const turn = Effect.fn("SessionDiff.turn")(function* (
     readonly from?: SessionMessage.ID
     readonly to?: SessionMessage.ID
     readonly context?: number
+    /** Slice the range at `from` rather than expanding it to the whole turn. */
+    readonly prompt?: boolean
   },
 ) {
   const sessionID = input.session.id
@@ -75,15 +81,28 @@ export const turn = Effect.fn("SessionDiff.turn")(function* (
   })
   const anchor = input.from ? yield* resolve("from", input.from) : users[users.length - 1]
   if (!anchor) return []
-  const last = input.to ? yield* resolve("to", input.to) : anchor
+  const last = input.to && !input.prompt ? yield* resolve("to", input.to) : anchor
   if (last.seq < anchor.seq)
     return yield* new TurnRangeError({ sessionID, field: "to", message: `Message ${last.id} precedes ${anchor.id}` })
   // Without any marker, history predates idle markers and a prompt's turn ends at the next prompt.
   const legacy = markers.length === 0
   // The turn opens with the first prompt after the previous idle marker; the anchor itself is the latest candidate.
   const opened = markers.findLast((row) => row.seq < anchor.seq)?.seq ?? -1
-  const start = legacy ? anchor.seq : (users.find((row) => row.seq > opened)?.seq ?? anchor.seq)
-  const end = legacy ? users.find((row) => row.seq > last.seq)?.seq : markers.find((row) => row.seq > last.seq)?.seq
+  // SiCode: `prompt` anchors the range at the prompt instead of the turn that contains it, so a steered
+  // prompt reports its own work.
+  const start = input.prompt || legacy ? anchor.seq : (users.find((row) => row.seq > opened)?.seq ?? anchor.seq)
+  // A prompt slice ends at whichever comes first: the next prompt steered into the turn, or its idle marker.
+  const boundaries = [
+    users.find((row) => row.seq > anchor.seq)?.seq,
+    markers.find((row) => row.seq > anchor.seq)?.seq,
+  ].filter((seq): seq is number => seq !== undefined)
+  const end = input.prompt
+    ? boundaries.length
+      ? Math.min(...boundaries)
+      : undefined
+    : legacy
+      ? users.find((row) => row.seq > last.seq)?.seq
+      : markers.find((row) => row.seq > last.seq)?.seq
   const steps = yield* db
     .select({
       seq: SessionMessageTable.seq,

@@ -11,6 +11,8 @@ import { Agent } from "../agent.js"
 import { Model } from "../model.js"
 import { Provider } from "../provider.js"
 import { Command } from "../command.js"
+import { SessionStore } from "../session/store.js"
+import { CompactionMetrics } from "../compaction-metrics.js"
 import { Config } from "../config.js"
 import { Credential } from "../credential.js"
 import { llmClient } from "../effect/app-node-platform.js"
@@ -86,6 +88,8 @@ import { ReadToolFileSystem } from "../tool/read-filesystem.js"
 import { ReadTool } from "../tool/plugin/read.js"
 // SiCode: reads what compactions kept as project memory.
 import { RecallTool } from "../tool/plugin/recall.js"
+// SiCode: reads the transcript a compaction took away (see tool/plugin/history.ts).
+import { HistoryTool } from "../tool/plugin/history.js"
 import { ShellTool } from "../tool/plugin/shell.js"
 import { SkillTool } from "../tool/plugin/skill.js"
 import { SubagentTool } from "../tool/plugin/subagent.js"
@@ -151,6 +155,8 @@ const services = [
   WebSearch.Service,
   Ripgrep.Service,
   Session.Service,
+  // SiCode: the history tool reads rows from before the last compaction boundary.
+  SessionStore.Service,
   SessionCompaction.Service,
   SessionInstructions.Service,
   SubagentJob.Service,
@@ -207,7 +213,9 @@ export const requirements = LayerNode.group([
   WebSearch.node,
   Ripgrep.node,
   Session.node,
+  SessionStore.node,
   SessionCompaction.node,
+  CompactionMetrics.node,
   SessionInstructions.node,
   SubagentJob.node,
   Shell.node,
@@ -250,6 +258,8 @@ const pre = [
   EditTool.Plugin,
   GlobTool.Plugin,
   GrepTool.Plugin,
+  // SiCode: after every tool that can produce content, so an archived read composes with them.
+  HistoryTool.Plugin,
   OpenCodeTools.Plugin,
   McpResourceTools.Plugin,
   QuestionTool.Plugin,

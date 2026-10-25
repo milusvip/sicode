@@ -39,12 +39,10 @@ import { checksum } from "@opencode/util/encode"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { IconButton } from "@opencode/ui/icon-button"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
-import { AnimatedNumber } from "@opencode/ui/animated-number"
 import { changedFileDiff, patchFileGroups } from "../components/apply-patch-file"
 import { streamedLineChanges } from "./stream-changes"
 import { animate } from "motion"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
-import { toolSpanElapsed } from "../timeline/work-shell"
 import type {
   FileDiffInfo,
   SessionMessageAssistantReasoning,
@@ -368,6 +366,11 @@ function toolTitle(tool: SessionMessageAssistantTool, i18n: UiI18n) {
       return i18n.t("ui.tool.shell")
     case "execute":
       return i18n.t("ui.tool.execute")
+    // SiCode: internal plugin tools otherwise fall to the raw tool name in the chain head.
+    case "recall":
+      return i18n.t("ui.tool.recall")
+    case "todowrite":
+      return i18n.t("ui.tool.todo")
     case "edit":
       return i18n.t("ui.messagePart.title.edit")
     case "write":
@@ -470,7 +473,7 @@ function ExaOutput(props: { output?: string }) {
 export type ContextGroupPart =
   | SessionMessageAssistantTool
   | (SessionMessageAssistantReasoning & { id: string; streaming?: boolean })
-  | { type: "notice" | "shell"; id: string; render: () => JSX.Element; summary?: string }
+  | { type: "notice" | "shell"; id: string; render: () => JSX.Element; summary?: string; outcome?: string }
 
 export function CurrentContextToolGroup(props: {
   parts: ContextGroupPart[]
@@ -487,10 +490,14 @@ export function CurrentContextToolGroup(props: {
   fileOpen?: (path: string) => boolean | undefined
   onFileOpenChange?: (path: string, open: boolean) => void
   patchGroupKey?: (tools: SessionMessageAssistantTool[]) => string
+  /**
+   * SiCode: when the group sits inside a work-shell well the stage heading already folds the
+   * batch. Drop the nested "过程" bar and second well so tools read as flat demo rows.
+   */
+  flat?: boolean
 }) {
   const i18n = useI18n()
   const tools = createMemo(() => props.parts.filter((part) => part.type === "tool"))
-  const [now, setNow] = createSignal(Date.now())
 
   const pending = createMemo(
     () => props.busy || tools().some((tool) => tool.state.status === "streaming" || tool.state.status === "running"),
@@ -499,14 +506,6 @@ export function CurrentContextToolGroup(props: {
   // A finished process that contains a failed tool may not wear the success check: the collapsed
   // chain is the only place that failure shows, and `bun test` failing is a `completed` tool.
   const failed = createMemo(() => tools().some(currentToolFailed))
-
-  createEffect(() => {
-    if (!pending()) return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    onCleanup(() => window.clearInterval(id))
-  })
-
-  const elapsed = createMemo(() => toolSpanElapsed(tools(), pending(), now()))
 
   // Three kinds is a row; six is a paragraph. The head already says how many tools ran, so the
   // tail collapses into a count instead of pushing the duration out of the row.
@@ -534,17 +533,19 @@ export function CurrentContextToolGroup(props: {
     const thoughts = props.parts.filter((part) => part.type === "reasoning").length
 
     if (!names() && !thoughts) {
-      const text = i18n.t("ui.messagePart.context.updates")
-      // SiCode: notices-only groups used to hide Loaded paths until expand; keep them on the trigger.
+      // SiCode: a notices-only group is a status list, not an "update". Labelling it 更新 made
+      // "Shell cancelled" read like an update, so name the group by what it actually holds.
+      const text = i18n.t("ui.messagePart.context.notices")
+      // SiCode: the summary keeps notice targets visible while collapsed. Expanded, the rows
+      // below already name each one, so the trigger drops it instead of repeating itself.
       const summary = props.parts
         .flatMap((part) => (part.type === "notice" && part.summary ? [part.summary] : []))
         .join(", ")
-      const open = summary ? `${text} ${summary}` : text
 
       return {
         text,
-        open,
-        closed: open,
+        open: text,
+        closed: summary ? `${text} ${summary}` : text,
         tools: "",
         count: undefined as number | undefined,
         summary,
@@ -555,20 +556,36 @@ export function CurrentContextToolGroup(props: {
     }
 
     const count = props.parts.filter((part) => part.type === "tool" || part.type === "shell").length || thoughts
-    const before = props.open ? i18n.t("ui.processShell.count.before") : i18n.t("ui.processShell.open.before")
-    const after = i18n.plural("ui.processShell.count.after", count)
-    // Expanded, the rows below already name every tool; repeating them in the header is noise.
-    // Collapsed, that list is the only preview of what ran, so it stays.
-    const tools = props.open ? "" : names() || i18n.plural("ui.messagePart.context.thought", thoughts)
-    const mid = props.open ? "" : i18n.t("ui.processShell.open.mid")
-    // "已完成 N 个工具" belongs on the work-shell head. Process rows always read as 过程.
-    const text = i18n.plural("ui.processShell.open", count, { tools: names() || tools })
+    // SiCode: preview stage head is "title … N 步 ›" — count lives in meta, not mid-sentence.
+    const tools = names() || i18n.plural("ui.messagePart.context.thought", thoughts) || i18n.t("ui.processShell.stage")
+    const text = tools
 
-    return { text, open: text, closed: text, tools, count, summary: "", before, mid, after }
+    return {
+      text,
+      open: text,
+      closed: text,
+      tools,
+      count,
+      summary: "",
+      before: "",
+      mid: "",
+      after: "",
+    }
+  })
+
+  // SiCode: the group mark must report the real outcome. A notices-only group is often a list of
+  // cancelled or failed shells, and wearing the success check there contradicts its own rows.
+  const marker = createMemo(() => {
+    const outcomes = props.parts.flatMap((part) => (part.type === "notice" && part.outcome ? [part.outcome] : []))
+
+    if (failed() || outcomes.includes("error")) return "outline-hexagonal-warning" as const
+    if (outcomes.includes("cancelled")) return "circle-xmark" as const
+
+    return "check" as const
   })
 
   const items = createMemo(() =>
-    (props.open ? props.parts : []).reduce<
+    (props.flat || props.open ? props.parts : []).reduce<
       (SessionMessageAssistantTool[] | Exclude<ContextGroupPart, SessionMessageAssistantTool>)[]
     >((groups, tool) => {
       if (tool.type !== "tool") {
@@ -646,7 +663,8 @@ export function CurrentContextToolGroup(props: {
     <div
       data-component="collapsed-tool-group"
       data-process-shell=""
-      data-open={props.open ? "true" : "false"}
+      data-process-shell-flat={props.flat ? "" : undefined}
+      data-open={props.flat || props.open ? "true" : "false"}
       data-animating={animating() ? "true" : undefined}
       data-pending={pending() ? "true" : "false"}
       data-failed={failed() ? "true" : "false"}
@@ -658,51 +676,41 @@ export function CurrentContextToolGroup(props: {
         hasContent
         allowOpenWhilePending
         rail={false}
-        open={props.open}
+        open={props.flat ? true : props.open}
         onOpenChange={change}
         trigger={() => (
           <div
             data-component="context-tool-group-trigger"
             data-process-shell-trigger=""
-            aria-label={label().open}
+            aria-label={label().closed}
           >
             <span data-slot="process-shell-icon">
               <Show
                 when={pending()}
-                fallback={<Icon name={failed() ? "outline-hexagonal-warning" : "check"} size="small" />}
+                fallback={<Icon name={marker()} size="small" />}
               >
                 <SessionProgressIndicatorV2 width={13} height={13} />
               </Show>
             </span>
             <span data-slot="context-tool-group-title">
               <Show
-                when={label().count !== undefined}
+                when={label().tools}
                 fallback={
                   <>
                     <span data-slot="context-tool-group-prefix">{label().text}</span>
-                    <Show when={label().summary}>
+                    <Show when={props.open ? undefined : label().summary}>
                       {(summary) => <span data-slot="basic-tool-tool-subtitle">{summary()}</span>}
                     </Show>
                   </>
                 }
               >
-                <span data-slot="context-tool-group-usage">
-                  <span data-slot="context-tool-group-prefix">{label().before}</span>
-                </span>
-                <Show when={label().tools}>
-                  {(tools) => <span data-slot="basic-tool-tool-title">{tools()}</span>}
-                </Show>
-                <span data-slot="context-tool-group-usage">
-                  <span data-slot="context-tool-group-prefix">{label().mid}</span>
-                  <span data-slot="context-tool-group-count">
-                    <AnimatedNumber value={label().count!} />
-                  </span>
-                  <span data-slot="context-tool-group-prefix">{label().after}</span>
-                </span>
+                {(tools) => <span data-slot="basic-tool-tool-title">{tools()}</span>}
               </Show>
             </span>
-            <Show when={elapsed()}>
-              {(value) => <span data-slot="process-shell-meta">{value()}</span>}
+            <Show when={label().count}>
+              {(count) => (
+                <span data-slot="process-shell-meta">{i18n.plural("ui.processShell.steps", count())}</span>
+              )}
             </Show>
             <span data-slot="process-shell-chevron" aria-hidden="true">
               <Icon name="chevron-right" size="small" />
@@ -913,7 +921,7 @@ export function CurrentContextToolGroup(props: {
                                     </div>
                                   </div>
                                 </div>
-                                <Show when={toolRowMeta(tool(), trigger().matches, now())}>
+                                <Show when={toolRowMeta(tool(), trigger().matches)}>
                                   {(meta) => <span data-slot="context-tool-group-meta">{meta()}</span>}
                                 </Show>
                               </div>
@@ -1213,16 +1221,19 @@ function contextToolIcon(name: string) {
       return "task" as const
     case "question":
       return "check" as const
+    // SiCode: internal plugin tools must not wear the mcp plug icon.
+    case "recall":
+      return "brain" as const
+    case "todowrite":
+      return "checklist" as const
     default:
       return "mcp" as const
   }
 }
 
-function toolRowMeta(tool: SessionMessageAssistantTool, matches: string | undefined, now = Date.now()) {
-  const pending = tool.state.status === "streaming" || tool.state.status === "running"
-  const elapsed = toolSpanElapsed([tool], pending, now)
-  if (matches) return matches
-  return elapsed
+/** Right-side meta for a chain row: match counts only. Per-row seconds fought the chevron column. */
+function toolRowMeta(_tool: SessionMessageAssistantTool, matches: string | undefined) {
+  return matches
 }
 
 function currentContextToolTrigger(tool: SessionMessageAssistantTool, i18n: ReturnType<typeof useI18n>) {
@@ -1853,6 +1864,37 @@ ToolRegistry.register({
 })
 
 ToolRegistry.register({
+  name: "recall",
+  render(props) {
+    const i18n = useI18n()
+
+    return (
+      <BasicTool
+        {...props}
+        icon="brain"
+        hasContent={!!props.output}
+        trigger={{
+          title: i18n.t("ui.tool.recall"),
+          subtitle: toolInput(props.input).query,
+        }}
+      >
+        <Show when={props.output}>
+          <div
+            data-component="tool-output"
+            data-scrollable
+            tabIndex={0}
+            role="region"
+            aria-label={i18n.t("ui.scrollView.ariaLabel")}
+          >
+            <Markdown text={props.output!} />
+          </div>
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
   name: "glob",
   render(props) {
     const i18n = useI18n()
@@ -2035,6 +2077,21 @@ ToolRegistry.register({
     const href = createMemo(() => sessionLink(childSessionId(), data.sessionHref))
     const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
 
+    // SiCode: a running subagent is a background job too, so its row gets the same stop control as a
+    // shell row. Stopping interrupts the child session; the click must not navigate into it.
+    const [stopping, setStopping] = createSignal(false)
+    const stopSubagent = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const id = childSessionId()
+      const interrupt = data.sessionInterrupt
+      if (!id || !interrupt || stopping()) return
+      setStopping(true)
+      void interrupt(id)
+        .catch(() => undefined)
+        .finally(() => setStopping(false))
+    }
+
     const open = () => {
       const id = childSessionId()
 
@@ -2092,6 +2149,24 @@ ToolRegistry.register({
               <div data-component="task-tool-action">
                 <Icon name="chevron-right" size="normal" />
               </div>
+            </Show>
+            <Show when={running() && childSessionId() !== undefined && data.sessionInterrupt}>
+              <span
+                data-slot="running-stop"
+                role="button"
+                tabIndex={0}
+                title={i18n.t("ui.promptInput.stop")}
+                aria-label={i18n.t("ui.promptInput.stop")}
+                aria-disabled={stopping() ? "true" : undefined}
+                onClick={stopSubagent}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  stopSubagent(event)
+                }}
+              >
+                <Icon name="close" size="small" />
+              </span>
             </Show>
           </div>
         </div>
@@ -2224,6 +2299,22 @@ ToolRegistry.register({
     const sawStreaming = streaming()
     const command = createMemo(() => toolInput(props.input).command ?? metadata().command ?? "")
 
+    // SiCode: a background shell never ends on its own, so a running row carries its own stop
+    // control. `shell.remove` kills the process and publishes shell.exited, which drops the row out
+    // of the running inventory; the click must not toggle the tool's disclosure.
+    const [killing, setKilling] = createSignal(false)
+    const killShell = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const id = metadata().shellID
+      const kill = data.shellKill
+      if (id === undefined || !kill || killing()) return
+      setKilling(true)
+      void kill({ id, location: { directory: data.directory } })
+        .catch(() => undefined)
+        .finally(() => setKilling(false))
+    }
+
     function Output() {
       const [streamed, setStreamed] = createSignal("")
 
@@ -2285,6 +2376,25 @@ ToolRegistry.register({
                 </Show>
               </Show>
             </div>
+            <Show when={pending() && metadata().shellID !== undefined && data.shellKill}>
+              {/* The row itself is a Kobalte trigger <button>, so this control stays a span. */}
+              <span
+                data-slot="running-stop"
+                role="button"
+                tabIndex={0}
+                title={i18n.t("ui.promptInput.stop")}
+                aria-label={i18n.t("ui.promptInput.stop")}
+                aria-disabled={killing() ? "true" : undefined}
+                onClick={killShell}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  killShell(event)
+                }}
+              >
+                <Icon name="close" size="small" />
+              </span>
+            </Show>
           </div>
         )}
       >

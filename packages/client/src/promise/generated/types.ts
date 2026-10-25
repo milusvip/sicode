@@ -3897,16 +3897,25 @@ export type SessionDiffInput = {
   readonly from?: {
     readonly from?: string | undefined
     readonly to?: string | undefined
+    readonly prompt?: boolean | undefined
     readonly context?: number | undefined
   }["from"]
   readonly to?: {
     readonly from?: string | undefined
     readonly to?: string | undefined
+    readonly prompt?: boolean | undefined
     readonly context?: number | undefined
   }["to"]
+  readonly prompt?: {
+    readonly from?: string | undefined
+    readonly to?: string | undefined
+    readonly prompt?: boolean | undefined
+    readonly context?: number | undefined
+  }["prompt"]
   readonly context?: {
     readonly from?: string | undefined
     readonly to?: string | undefined
+    readonly prompt?: boolean | undefined
     readonly context?: number | undefined
   }["context"]
 }

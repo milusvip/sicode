@@ -115,6 +115,20 @@ export namespace TimelineRow {
     toolCount: number
     failedCount: number
     /**
+     * SiCode: tool mix by kind, so the head can say "read 4 files, ran 2 commands" instead of
+     * "6 tools". Optional because a shell created outside the projection (tests, previews) has no
+     * rows to count — the head falls back to the plain count.
+     */
+    counts?: {
+      read: number
+      search: number
+      command: number
+      write: number
+      edit: number
+      agent: number
+      other: number
+    }
+    /**
      * Whether the turn produced any assistant prose. A turn that is stopped mid-run, or one whose
      * model never wrote a closing message, has tools but no text — the head says so instead of
      * leaving a gap that reads like a rendering bug.
@@ -125,6 +139,55 @@ export namespace TimelineRow {
   /** Marks the last member row of a WorkShell so collapse can tuck the span into the head. */
   export class WorkShellEnd extends Data.TaggedClass("WorkShellEnd")<{
     userMessageID: string
+  }> {}
+
+  /**
+   * SiCode: a heading inside a work shell. Mid-turn prose ("我先看一下 common.closeTab…") is the
+   * model's own outline of the next batch of work; promoting it to a heading turns a 26-row wall
+   * into 4 readable stages, each folded to a line until asked for. The row carries the prose it
+   * replaces, so nothing is lost — opening the stage shows the steps, the heading keeps the intent.
+   */
+  export class WorkStage extends Data.TaggedClass("WorkStage")<{
+    userMessageID: string
+    /** Identity within the turn: the prose part this heading stands for. */
+    stageKey: string
+    title: string
+    stepCount: number
+    /**
+     * SiCode: what happened inside the stage. A folded heading is the only thing left of a stage, so
+     * it has to carry its own outcome — otherwise every folded stage claims success by default.
+     */
+    outcome?: "failed" | "running"
+    /** Last stage of the turn opens by default; the rest stay folded so the shell stays scannable. */
+    last: boolean
+  }> {}
+
+  /** Marks the last member row of a WorkStage. */
+  export class WorkStageEnd extends Data.TaggedClass("WorkStageEnd")<{
+    userMessageID: string
+    stageKey: string
+  }> {}
+
+  /**
+   * SiCode: "show the rest" for a turn that ran long.
+   *
+   * A 110-step turn is real (measured on this machine), and neither printing 110 rows nor hiding
+   * them behind one click works: the reader wants the shape of the work, then the tail they just
+   * watched. So a stage keeps its last few steps and folds the rest behind one line, and a shell
+   * with a dozen stages keeps the first and last few and folds the middle the same way.
+   */
+  export class WorkFold extends Data.TaggedClass("WorkFold")<{
+    userMessageID: string
+    /** One stage's early steps, or the shell's middle stages. */
+    kind: "steps" | "stages"
+    /** Identity: the stage whose steps fold, or the turn whose stages fold. */
+    foldKey: string
+    /** Rows this fold hides — the filter drops exactly these, whatever the nesting. */
+    keys: readonly string[]
+    /** Stages swallowed, for the stages variant: rows and stages are not the same number. */
+    stages?: number
+    /** Steps swallowed, for the stages variant. */
+    steps?: number
   }> {}
 
   export type TimelineRow =
@@ -142,6 +205,9 @@ export namespace TimelineRow {
     | Activity
     | WorkShell
     | WorkShellEnd
+    | WorkStage
+    | WorkStageEnd
+    | WorkFold
 
   export const key: (row: TimelineRow) => string = Match.typeTags<TimelineRow>()({
     TurnGap: (row) => `turn-gap:${row.userMessageID}`,
@@ -157,11 +223,14 @@ export namespace TimelineRow {
     Error: (row) => `error:${row.userMessageID}`,
     Retry: (row) => `retry:${row.userMessageID}`,
     CompactionQueued: (row) => `compaction-queued:${row.inboxID}`,
-    TurnDiff: (row) => `turn-diff:${row.messageID}`,
+    TurnDiff: (row) => `turn-diff:${row.userMessageID}`,
     // One live status exists at a time; it keeps its identity when the active turn changes.
     Activity: () => "activity",
     WorkShell: (row) => `work-shell:${row.userMessageID}`,
     WorkShellEnd: (row) => `work-shell-end:${row.userMessageID}`,
+    WorkStage: (row) => `work-stage:${row.userMessageID}:${row.stageKey}`,
+    WorkStageEnd: (row) => `work-stage-end:${row.userMessageID}:${row.stageKey}`,
+    WorkFold: (row) => `work-fold:${row.userMessageID}:${row.kind}:${row.foldKey}`,
   })
 
   export function equals(a: TimelineRow, b: TimelineRow) {
@@ -195,4 +264,14 @@ export type TimelineRowMap = {
     toolCount: number
   }
   WorkShellEnd: { userMessageID: string }
+  WorkStage: { userMessageID: string; stageKey: string; title: string; stepCount: number }
+  WorkStageEnd: { userMessageID: string; stageKey: string }
+  WorkFold: {
+    userMessageID: string
+    kind: "steps" | "stages"
+    foldKey: string
+    keys: readonly string[]
+    stages?: number
+    steps?: number
+  }
 }

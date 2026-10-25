@@ -113,6 +113,11 @@ export function SessionUIProvider(
       sessionID={params.id}
       shellRunning={(id) => !!data.shell.get(id)}
       shellOutput={(input) => serverSDK.api.shell.output(input)}
+      // SiCode: per-shell stop for the transcript rows; the endpoint kills the process and the
+      // shell.exited event removes it from the running inventory.
+      shellKill={(input) => serverSDK.api.shell.remove(input).then(() => undefined)}
+      // SiCode: rows for a running subagent stop it through the child session's interrupt.
+      sessionInterrupt={(sessionID) => serverSDK.api.session.interrupt({ sessionID }).then(() => undefined)}
       turnDiff={{
         get: (input) => turnDiffs()?.get(input),
         load: (input) => turnDiffs()?.load(input, () => serverSDK.api.session.diff(input)),

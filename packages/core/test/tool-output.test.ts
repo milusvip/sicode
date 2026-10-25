@@ -44,11 +44,40 @@ describe("ToolOutput", () => {
           if (typeof outputPath !== "string") return
           expect(yield* fs.readFileString(outputPath)).toBe("one\ntwo\nthree")
           expect(result.content).toEqual([
-            { type: "text", text: "one\ntwo" },
-            { type: "text", text: `[showing lines 1-2 of 3; full output saved to ${outputPath}]` },
+            { type: "text", text: "one" },
+            { type: "text", text: `[showing lines 1-1 and 3-3 of 3; full output saved to ${outputPath}]` },
+            { type: "text", text: "three" },
           ])
         }),
       { maxLines: 2, maxBytes: 1_000 },
+    ),
+  )
+
+  it.live("keeps the tail so a failure at the end survives truncation", () =>
+    withStore(
+      (output) =>
+        Effect.gen(function* () {
+          const body = Array.from({ length: 20 }, (_, index) => `step ${index}`).join("\n")
+          const result = yield* output.truncate({ content: [{ type: "text", text: `${body}\nError: boom` }] })
+          const texts = result.content.flatMap((item) => (item.type === "text" ? [item.text] : []))
+          expect(texts.at(-1)).toBe("step 19\nError: boom")
+          expect(texts.join("\n")).toMatch(/\[showing lines 1-4 and 20-21 of 21;/)
+        }),
+      { maxLines: 6, maxBytes: 1_000 },
+    ),
+  )
+
+  it.live("keeps the last line of a 3001-line output at the default limits", () =>
+    withStore((output) =>
+      Effect.gen(function* () {
+        const text = Array.from({ length: 3_001 }, (_, index) =>
+          index === 3_000 ? "FINAL-TOKEN-9F3A" : `line ${index + 1}`,
+        ).join("\n")
+        const result = yield* output.truncate({ content: [{ type: "text", text }] })
+        const texts = result.content.flatMap((item) => (item.type === "text" ? [item.text] : []))
+        expect(texts.at(-1)?.endsWith("FINAL-TOKEN-9F3A")).toBe(true)
+        expect(texts.join("\n")).toMatch(/\[showing lines 1-1200 and 2202-3001 of 3001;/)
+      }),
     ),
   )
 

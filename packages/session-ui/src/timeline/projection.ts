@@ -24,8 +24,12 @@ export {
   formatElapsed,
   openWorkShellOnly,
   toolSpanElapsed,
+  workFoldDisclosureKey,
+  workShellCardBlocks,
+  workShellCardMembers,
   workShellDefaultOpen,
   workShellDisclosureKey,
+  workStageDisclosureKey,
   WorkShellHead,
 } from "./work-shell"
 export type { WorkShellStatus } from "./work-shell"
@@ -43,7 +47,7 @@ type Entry =
   | { type: "assistant"; message: SessionMessageAssistant }
   | { type: "notice"; message: Notice }
   | { type: "idle"; message: FailedIdle }
-  | { type: "diff"; message: SessionMessageIdle; from: string; files: string[] }
+  | { type: "diff"; message: SessionMessageIdle; files: string[] }
 
 type Content = SessionMessageAssistant["content"][number]
 
@@ -274,14 +278,17 @@ export namespace Timeline {
       entries: Entry[]
       /** Follow-up that arrived while an execution was still open (引导). */
       steer?: boolean
+      /** Paths this prompt's steps recorded, summarized once the turn that contains them ends. */
+      files: Set<string>
     }
 
     const turns: Turn[] = []
     const turnByUserID = new Map<string, Turn>()
     const leading: Notice[] = []
     let current: Turn | undefined
-    // Everything since the last idle marker is one turn, including prompts steered in meanwhile.
-    let execution: { opener: string; turn: Turn; files: Set<string> } | undefined
+    // The prompts since the last idle marker. Each one summarizes its own steps, so a steered prompt
+    // does not report the work of the prompt it interrupted.
+    let execution: Turn[] | undefined
 
     messages.forEach((message) => {
       if (isNotice(message)) {
@@ -293,7 +300,7 @@ export namespace Timeline {
       }
 
       if (message.type === "shell") {
-        const turn: Turn = { id: message.id, time: message.time, shell: message, entries: [] }
+        const turn: Turn = { id: message.id, time: message.time, shell: message, entries: [], files: new Set() }
         turns.push(turn)
         current = turn
 
@@ -305,13 +312,13 @@ export namespace Timeline {
         const pending = pendingInputIDs?.has(message.id) ?? false
         // Delivered into an open execution = 引导. Queued undelivered prompts keep a normal turn gap.
         const steer = !!execution && !pending
-        const turn: Turn = { id: message.id, time: message.time, user: message, entries: [], steer }
+        const turn: Turn = { id: message.id, time: message.time, user: message, entries: [], steer, files: new Set() }
         turns.push(turn)
         turnByUserID.set(message.id, turn)
         current = turn
 
         // Undelivered input has not joined the turn yet.
-        if (!pending) execution = { opener: execution?.opener ?? message.id, turn, files: execution?.files ?? new Set() }
+        if (!pending) (execution ??= []).push(turn)
 
         return
       }
@@ -319,26 +326,25 @@ export namespace Timeline {
       if (message.type === "idle") {
         appendIdle(message)
 
-        // The summary follows the turn's last prompt, after any failure the marker reports.
-        // Sorted like the diff route's git order, so the list keeps its order when the diffs arrive.
-        if (turnDiffs && execution?.files.size)
-          execution.turn.entries.push({
-            type: "diff",
-            message,
-            from: execution.opener,
-            files: [...execution.files].sort(),
-          })
+        // SiCode: each prompt of a steered turn summarizes its own steps; upstream merged them into the
+        // turn's last prompt. A prompt that changed nothing gets no summary. Sorted like the diff route's
+        // git order, so the list keeps its order when the diffs arrive.
+        for (const turn of execution ?? [])
+          if (turnDiffs && turn.files.size)
+            turn.entries.push({ type: "diff", message, files: [...turn.files].sort() })
         execution = undefined
 
         return
       }
 
       if (message.type !== "assistant") return
-      message.snapshot?.files?.forEach((file) => execution?.files.add(file))
+      // A step belongs to the prompt it follows, so its files join that prompt's summary.
+      const record = (turn: Turn) => message.snapshot?.files?.forEach((file) => turn.files.add(file))
       const existing = current?.user ? current : undefined
 
       if (existing?.user) {
         existing.entries.push({ type: "assistant", message })
+        record(existing)
         current = existing
 
         return
@@ -346,11 +352,18 @@ export namespace Timeline {
 
       if (current && !current.user && !current.shell) {
         current.entries.push({ type: "assistant", message })
+        record(current)
 
         return
       }
 
-      const turn: Turn = { id: message.id, time: message.time, entries: [{ type: "assistant", message }] }
+      const turn: Turn = {
+        id: message.id,
+        time: message.time,
+        entries: [{ type: "assistant", message }],
+        files: new Set(),
+      }
+      record(turn)
       turns.push(turn)
       current = turn
     })
@@ -377,7 +390,7 @@ export namespace Timeline {
         return
       }
 
-      const turn: Turn = { id: message.id, time: message.time, entries: [{ type: "idle", message }] }
+      const turn: Turn = { id: message.id, time: message.time, entries: [{ type: "idle", message }], files: new Set() }
       turns.push(turn)
       current = turn
     }
@@ -635,7 +648,7 @@ export namespace Timeline {
             new TimelineRow.TurnDiff({
               userMessageID: turnID,
               messageID: entry.message.id,
-              from: entry.from,
+              from: turnID,
               files: entry.files,
             }),
           )
@@ -650,17 +663,22 @@ export namespace Timeline {
     })
     appendAssistantSegment(assistantSegment)
 
-    return insertWorkShells(rows, {
-      turnID,
-      // Empty chrome before tools only while an assistant message is still open.
-      streaming,
-      // Outer status stays 工作中 for the whole busy turn, even after a process completes.
-      busy: turnBusy,
-      lastAssistant,
-      lastStep,
-      userCreated: userMessage?.time.created,
-      assistantMessages,
-    })
+    return insertWorkFolds(
+      insertWorkStages(
+        insertWorkShells(rows, {
+          turnID,
+          // Empty chrome before tools only while an assistant message is still open.
+          streaming,
+          // Outer status stays 工作中 for the whole busy turn, even after a process completes.
+          busy: turnBusy,
+          lastAssistant,
+          lastStep,
+          userCreated: userMessage?.time.created,
+          assistantMessages,
+        }),
+        assistantMessages,
+      ),
+    )
   }
 
   export function resolveContent(message: SessionMessageInfo | undefined, partID: string): Content | undefined {
@@ -721,6 +739,10 @@ function isNonToolPartID(partID: string) {
 function isProcessGroup(row: TimelineRow.TimelineRow) {
   if (!Predicate.isTagged(row, "AssistantPart")) return false
   if (row.group.type === "read" || row.group.type === "file") return true
+  // SiCode: `separate` placement splits a run into one `part` row per tool, so the group type no
+  // longer says whether this is work. Without this, a trailing tool landed outside the shell and
+  // never reached the step count.
+  if (row.group.type === "part") return !isNonToolPartID(row.group.ref.partID)
   // Tool context keys are `context:…`; grouped notices/shells use `message:…`.
   // Compact detail can put thinking alone in a context group — that is not process work.
   if (row.group.type !== "context" || !row.group.key.startsWith("context:")) return false
@@ -751,6 +773,48 @@ function isWorkShellLead(row: TimelineRow.TimelineRow) {
   return row.group.type === "part" && row.group.key.includes("text:")
 }
 
+/**
+ * SiCode: what the head says instead of "26 tools". A count is not information — the reader wants to
+ * know whether the agent read, ran, or changed something. Buckets match how a person would describe
+ * the work out loud; the order they are reported in is the order below (reading first, changing last).
+ */
+export type WorkCounts = {
+  read: number
+  search: number
+  command: number
+  write: number
+  edit: number
+  agent: number
+  other: number
+}
+
+function toolBucket(name: string): keyof WorkCounts {
+  switch (name) {
+    case "read":
+      return "read"
+    case "grep":
+    case "glob":
+    case "webfetch":
+    case "websearch":
+      return "search"
+    case "shell":
+    case "bash":
+    case "execute":
+      return "command"
+    case "write":
+      return "write"
+    case "edit":
+    case "patch":
+    case "apply_patch":
+      return "edit"
+    case "subagent":
+    case "task":
+      return "agent"
+    default:
+      return "other"
+  }
+}
+
 function countWork(
   rows: TimelineRow.TimelineRow[],
   from: number,
@@ -759,21 +823,29 @@ function countWork(
 ) {
   let tools = 0
   let failed = 0
+  const counts: WorkCounts = { read: 0, search: 0, command: 0, write: 0, edit: 0, agent: 0, other: 0 }
   for (let index = from; index <= to; index++) {
     const row = rows[index]
     if (!Predicate.isTagged(row, "AssistantPart")) continue
-    if (row.group.type === "part") continue
+    // SiCode: a `part` row is a single tool under `separate` placement, prose otherwise.
+    if (row.group.type === "part" && isNonToolPartID(row.group.ref.partID)) continue
     const refs =
-      row.group.type === "context" ? row.group.refs.filter((ref) => !isNonToolPartID(ref.partID)) : row.group.refs
+      row.group.type === "part"
+        ? [row.group.ref]
+        : row.group.type === "context"
+          ? row.group.refs.filter((ref) => !isNonToolPartID(ref.partID))
+          : row.group.refs
     tools += refs.length
     // A failing test or a non-zero exit stays `completed` at the tool level; `currentToolFailed`
     // is what knows the difference, so the head can stop claiming the whole run succeeded.
     for (const ref of refs) {
       const part = parts.get(ref.partID)
-      if (part?.type === "tool" && currentToolFailed(part)) failed += 1
+      if (part?.type !== "tool") continue
+      counts[toolBucket(part.name)] += 1
+      if (currentToolFailed(part)) failed += 1
     }
   }
-  return { tools, failed }
+  return { tools, failed, counts }
 }
 
 function contentByPartID(messages: readonly SessionMessageAssistant[]) {
@@ -887,6 +959,7 @@ function insertWorkShells(
         toolCount: 0,
         failedCount: 0,
         hasReply: false,
+        counts: { read: 0, search: 0, command: 0, write: 0, edit: 0, agent: 0, other: 0 },
       })
       const end = new TimelineRow.WorkShellEnd({ userMessageID: input.turnID })
       return [...rows.slice(0, at), head, end, ...rows.slice(at)]
@@ -926,6 +999,7 @@ function insertWorkShells(
     toolCount: work.tools,
     failedCount: work.failed,
     hasReply: hasAssistantReply(input.assistantMessages),
+    counts: work.counts,
   })
   const end = new TimelineRow.WorkShellEnd({ userMessageID: input.turnID })
 
@@ -936,8 +1010,305 @@ function isFailedIdle(message: SessionMessageInfo): message is FailedIdle {
   return message.type === "idle" && message.outcome === "failed" && !!message.error
 }
 
-function shellFailed(message: SessionMessageShell) {
-  return (
+/** How many tool calls one member row carries. Prose and reasoning rows carry none. */
+function toolRefCount(row: TimelineRow.TimelineRow) {
+  if (!Predicate.isTagged(row, "AssistantPart")) return 0
+  // SiCode: `separate` placement puts one tool per `part` row — that is one step, not prose.
+  if (row.group.type === "part") return isNonToolPartID(row.group.ref.partID) ? 0 : 1
+  const refs =
+    row.group.type === "context" ? row.group.refs.filter((ref) => !isNonToolPartID(ref.partID)) : row.group.refs
+  return refs.length
+}
+
+/** First non-empty line of a prose part, stripped of the markdown that reads as noise in a heading. */
+function stageTitle(text: string) {
+  const line =
+    text
+      .split("\n")
+      .map((value) => value.trim())
+      .find((value) => value.length > 0) ?? ""
+  return line
+    .replace(/^[#>\-*\d.\s]+/, "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .trim()
+    .slice(0, 90)
+}
+
+/**
+ * SiCode: promote the narration inside a work shell to stage headings.
+ *
+ * A turn's own prose between tool calls ("我先看一下 common.closeTab…", "统计真实会话长什么样")
+ * is the model outlining what it is about to do. Left as a paragraph it buries itself among the
+ * rows and splits the well into two disconnected boxes; turned into a heading it gives the run a
+ * scannable skeleton, and each stage folds to one line until asked for.
+ *
+ * Only prose that still has tools after it becomes a heading: a turn that answers and stops keeps
+ * its answer as prose. Demo scheme B shows a stage head even for a one-batch turn, so a single
+ * mid-prose boundary is enough. Tools that ran before the first mid-prose still need a heading —
+ * when the model opened with reasoning instead of text, borrow that first thought as the title.
+ */
+function insertWorkStages(
+  rows: TimelineRow.TimelineRow[],
+  messages: readonly SessionMessageAssistant[],
+): TimelineRow.TimelineRow[] {
+  const head = rows.findIndex((row) => Predicate.isTagged(row, "WorkShell"))
+  const end = rows.findIndex((row) => Predicate.isTagged(row, "WorkShellEnd"))
+  if (head < 0 || end < 0 || end - head < 2) return rows
+
+  const shell = rows[head]
+  if (!Predicate.isTagged(shell, "WorkShell")) return rows
+
+  const parts = contentByPartID(messages)
+  const candidates: { index: number; group: Extract<PartGroup, { type: "part" }>; title: string }[] = []
+
+  for (let index = head + 1; index < end; index++) {
+    const row = rows[index]
+    if (!Predicate.isTagged(row, "AssistantPart")) continue
+    if (row.group.type !== "part") continue
+    if (!/:(?:text):\d+$/.test(row.group.ref.partID)) continue
+    const content = parts.get(row.group.ref.partID)
+    if (content?.type !== "text") continue
+    const title = stageTitle(content.text)
+    if (title.length > 0) candidates.push({ index, group: row.group, title })
+  }
+
+  // Trailing prose is the answer, not a heading: keep only prose with work still ahead of it.
+  const mid = candidates.filter((candidate, position) => {
+    const stop = candidates[position + 1]?.index ?? end
+    for (let index = candidate.index + 1; index < stop; index++) {
+      if (toolRefCount(rows[index]!) > 0) return true
+    }
+    return false
+  })
+  if (mid.length === 0) return rows
+
+  /** A stage heading outlives its rows when folded, so it has to say how they went. */
+  const stageOutcome = (from: number, to: number) => {
+    let running = false
+    for (let index = from; index < to; index++) {
+      const row = rows[index]
+      if (!Predicate.isTagged(row, "AssistantPart")) continue
+      const refs = row.group.type === "part" ? [row.group.ref] : row.group.refs
+      for (const ref of refs) {
+        const content = parts.get(ref.partID)
+        if (content?.type !== "tool") continue
+        if (content.state.status === "error") return "failed" as const
+        if (content.state.status === "running") running = true
+      }
+    }
+    return running ? ("running" as const) : undefined
+  }
+
+  const stepCount = (from: number, to: number) => {
+    let steps = 0
+    for (let index = from; index < to; index++) steps += toolRefCount(rows[index]!)
+    return steps
+  }
+
+  type Plan = { index: number; insert: boolean; stageKey: string; title: string; stop: number }
+  const plans: Plan[] = []
+
+  // Tools before the first mid-prose still belong in a stage; without a text part to promote, the
+  // opening thought is the closest thing the model wrote to a note.
+  const firstMid = mid[0]!
+  let leadTools = false
+  for (let index = head + 1; index < firstMid.index; index++) {
+    if (toolRefCount(rows[index]!) > 0) {
+      leadTools = true
+      break
+    }
+  }
+  if (leadTools) {
+    const title = leadingStageTitle(rows, parts, head + 1, firstMid.index, messages, firstMid.group.ref.partID)
+    if (title) {
+      plans.push({
+        index: head + 1,
+        insert: true,
+        stageKey: `leading:${shell.userMessageID}`,
+        title,
+        stop: firstMid.index,
+      })
+    }
+  }
+
+  mid.forEach((stage, position) => {
+    const stop = mid[position + 1]?.index ?? end
+    plans.push({
+      index: stage.index,
+      insert: false,
+      stageKey: stage.group.key,
+      title: stage.title,
+      stop,
+    })
+  })
+
+  const replaced = new Map<number, TimelineRow.WorkStage>()
+  const inserted = new Map<number, TimelineRow.WorkStage>()
+  const closeBefore = new Map<number, TimelineRow.WorkStageEnd>()
+
+  plans.forEach((plan, position) => {
+    const from = plan.insert ? plan.index : plan.index + 1
+    const stage = new TimelineRow.WorkStage({
+      userMessageID: shell.userMessageID,
+      stageKey: plan.stageKey,
+      title: plan.title,
+      stepCount: stepCount(from, plan.stop),
+      outcome: stageOutcome(from, plan.stop),
+      last: position === plans.length - 1,
+    })
+    if (plan.insert) inserted.set(plan.index, stage)
+    else replaced.set(plan.index, stage)
+    closeBefore.set(
+      plan.stop,
+      new TimelineRow.WorkStageEnd({ userMessageID: shell.userMessageID, stageKey: plan.stageKey }),
+    )
+  })
+
+  const result: TimelineRow.TimelineRow[] = []
+  rows.forEach((row, index) => {
+    const closer = closeBefore.get(index)
+    if (closer) result.push(closer)
+    const lead = inserted.get(index)
+    if (lead) result.push(lead)
+    result.push(replaced.get(index) ?? row)
+  })
+  return result
+}
+
+/**
+ * First non-empty reasoning line ahead of the first mid-prose — the model's unspoken stage note.
+ * Reasoning may be hidden from the timeline (`showReasoning: false`) while still sitting in the
+ * message; fall back to the durable content so a lead batch still gets a heading.
+ */
+function leadingStageTitle(
+  rows: TimelineRow.TimelineRow[],
+  parts: ReadonlyMap<string, SessionMessageAssistant["content"][number]>,
+  from: number,
+  to: number,
+  messages: readonly SessionMessageAssistant[],
+  midPartID: string,
+) {
+  for (let index = from; index < to; index++) {
+    const row = rows[index]
+    if (Predicate.isTagged(row, "Thinking")) {
+      const content = parts.get(row.ref.partID)
+      if (content?.type === "reasoning") {
+        const title = stageTitle(content.text)
+        if (title.length > 0) return title
+      }
+      continue
+    }
+    if (!Predicate.isTagged(row, "AssistantPart")) continue
+    const refs = row.group.type === "part" ? [row.group.ref] : row.group.refs
+    for (const ref of refs) {
+      if (!isReasoningPartID(ref.partID)) continue
+      const content = parts.get(ref.partID)
+      if (content?.type !== "reasoning") continue
+      const title = stageTitle(content.text)
+      if (title.length > 0) return title
+    }
+  }
+
+  for (const message of messages) {
+    for (const entry of Timeline.contentEntries(message)) {
+      if (entry.id === midPartID) return
+      if (entry.content.type !== "reasoning") continue
+      const title = stageTitle(entry.content.text)
+      if (title.length > 0) return title
+    }
+  }
+}
+
+/** Steps a stage shows before folding the rest; the tail is what the reader just watched. */
+const foldStepTail = 4
+
+/** Rows a stage may hold before folding; measured turns put 87% of stages at six or fewer. */
+const foldStepLimit = 6
+
+/** Stages a shell shows before folding the middle: first lead, last lead, rest behind one line. */
+const foldStageLimit = 8
+
+const foldStageLead = 3
+
+/**
+ * SiCode: keep long turns readable.
+ *
+ * The longest turn in the local history runs 110 tools in 11 stages. Printed straight that is a
+ * wall; hidden behind one click it is nothing. Both folds keep the shape — a stage opens on its
+ * tail, a turn on its first and last few stages — and put the rest one line away.
+ *
+ * The fold row carries the identities of the rows it hides so the render filter can drop them
+ * without re-deriving stage boundaries, and so a collapsed stage takes its own fold row with it.
+ */
+function insertWorkFolds(rows: TimelineRow.TimelineRow[]): TimelineRow.TimelineRow[] {
+  const head = rows.findIndex((row) => Predicate.isTagged(row, "WorkShell"))
+  const end = rows.findIndex((row) => Predicate.isTagged(row, "WorkShellEnd"))
+  if (head < 0 || end < 0) return rows
+
+  const shell = rows[head]
+  if (!Predicate.isTagged(shell, "WorkShell")) return rows
+
+  const turn = shell.userMessageID
+  // A stage block is [heading, steps…, WorkStageEnd): contiguity is what lets the fold name rows.
+  const blocks: { start: number; stop: number; stage: TimelineRow.WorkStage }[] = []
+
+  for (let index = head + 1; index < end; index++) {
+    const row = rows[index]
+    if (!Predicate.isTagged(row, "WorkStage")) continue
+    let stop = index + 1
+    while (stop < end && !Predicate.isTagged(rows[stop], "WorkStageEnd")) stop++
+    blocks.push({ start: index, stop: Math.min(stop + 1, end), stage: row })
+  }
+
+  if (blocks.length === 0) return rows
+  const inserts = new Map<number, TimelineRow.WorkFold[]>()
+
+  for (const block of blocks) {
+    const members = rows.slice(block.start + 1, block.stop).filter((row) => !Predicate.isTagged(row, "WorkStageEnd"))
+    if (members.length <= foldStepLimit) continue
+    const hidden = members.slice(0, members.length - foldStepTail)
+    inserts.set(block.start + 1, [
+      new TimelineRow.WorkFold({
+        userMessageID: turn,
+        kind: "steps",
+        foldKey: block.stage.stageKey,
+        keys: hidden.map((row) => TimelineRow.key(row)),
+        // Rows merge consecutive reads, so the label counts tools, not rows.
+        steps: hidden.reduce((count, row) => count + toolRefCount(row), 0),
+      }),
+    ])
+  }
+
+  if (blocks.length > foldStageLimit) {
+    const middle = blocks.slice(foldStageLead, blocks.length - foldStageLead)
+    const keys: string[] = []
+    let steps = 0
+
+    for (const block of middle) {
+      for (let index = block.start; index < block.stop; index++) keys.push(TimelineRow.key(rows[index]))
+      steps += block.stage.stepCount
+    }
+
+    const at = middle[0]!.start
+    inserts.set(at, [
+      ...(inserts.get(at) ?? []),
+      new TimelineRow.WorkFold({ userMessageID: turn, kind: "stages", foldKey: turn, keys, stages: middle.length, steps }),
+    ])
+  }
+
+  if (inserts.size === 0) return rows
+
+  const result: TimelineRow.TimelineRow[] = []
+  rows.forEach((row, index) => {
+    const extra = inserts.get(index)
+    if (extra) result.push(...extra)
+    result.push(row)
+  })
+  return result
+}
+
+function shellFailed(message: SessionMessageShell) {  return (
     message.status === "timeout" || (message.status === "exited" && message.exit !== undefined && message.exit !== 0)
   )
 }

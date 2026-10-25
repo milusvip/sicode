@@ -14,7 +14,7 @@ import path from "path"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { Match } from "@opencode/schema/filesystem"
 import { RelativePath } from "../schema.js"
-import { SCHEMA_VERSION, TrigramIndex } from "#trigram"
+import { SCHEMA_VERSION, TrigramIndex, NOT_INDEXED, type Fingerprint } from "#trigram"
 import { Global } from "@opencode/util/global"
 import { Location } from "../location.js"
 import { Ripgrep } from "../ripgrep.js"
@@ -111,6 +111,13 @@ const normalize = (value: string) => value.replaceAll("\\", "/")
 export const IN_MEMORY_MATCH_MAX_FILES = 120
 
 /**
+ * Candidates stage two reads concurrently. Reads are I/O-bound (open + read per file), so
+ * overlapping them is what turns a per-file latency into a per-set latency; 32 in flight
+ * saturates the page cache without holding a whole candidate set in memory at once.
+ */
+export const READ_CONCURRENCY = 32
+
+/**
  * Stage two, fast path: match a literal against a small set of candidate files in-process,
  * avoiding the ~150ms ripgrep process startup on Windows. Sound only for literal text (no
  * regex metacharacters, no context lines, no count aggregation) — the caller guarantees the
@@ -129,44 +136,57 @@ export const matchLiteralInMemory = (
     const limit = options.limit
     const rows: Ripgrep.GrepRow[] = []
     const matchesPerFile = options.mode === "files" ? 1 : Number.POSITIVE_INFINITY
+    const insensitive = options.caseSensitive === false
 
-    for (const rawPath of paths) {
+    // SiCode: read a window of candidates concurrently, then scan them in the order given.
+    // rg reports paths in argument order, so rows have to be appended serially, but the reads
+    // themselves were the cost: sequential reads plus a full split() of every candidate made
+    // stage two ~0.3ms/file (261ms for 958 candidates, against 8ms for the index that produced
+    // them). Overlapping the reads and skipping the split for files that cannot match (the
+    // trigram stage is a superset, so most of them) is what closes that gap.
+    outer: for (let start = 0; start < paths.length; start += READ_CONCURRENCY) {
       if (rows.length >= limit) break
-      const absolute = path.resolve(cwd, rawPath)
-      let content: string
-      try {
-        content = yield* Effect.promise(() => fsp.readFile(absolute, "utf8"))
-      } catch {
-        continue // unreadable / binary / deleted mid-search: rg would skip it too
-      }
-      if (content.includes("\0")) continue
+      const window = paths.slice(start, start + READ_CONCURRENCY)
+      const contents = yield* Effect.forEach(
+        window,
+        (rawPath) => Effect.promise(() => fsp.readFile(path.resolve(cwd, rawPath), "utf8").catch(() => null)),
+        { concurrency: READ_CONCURRENCY, discard: false },
+      )
 
-      const lines = content.split("\n")
-      let matched = 0
-      for (let i = 0; i < lines.length && matched < matchesPerFile; i++) {
-        const line = lines[i]!
-        const haystack = options.caseSensitive === false ? line.toLowerCase() : line
-        let from = 0
-        let index = haystack.indexOf(needle, from)
-        if (index === -1) continue
-        const submatches: Array<{ text: string; start: number; end: number }> = []
-        while (index !== -1) {
-          submatches.push({ text: line.slice(index, index + pattern.length), start: index, end: index + pattern.length })
-          from = index + pattern.length
-          index = haystack.indexOf(needle, from)
+      for (let position = 0; position < window.length; position++) {
+        if (rows.length >= limit) break outer
+        const rawPath = window[position]!
+        const content = contents[position]
+        if (content === null || content.includes("\0")) continue // unreadable / binary / deleted mid-search: rg skips it too
+        if (!(insensitive ? content.toLowerCase() : content).includes(needle)) continue
+
+        const lines = content.split("\n")
+        let matched = 0
+        for (let i = 0; i < lines.length && matched < matchesPerFile; i++) {
+          const line = lines[i]!
+          const haystack = insensitive ? line.toLowerCase() : line
+          let from = 0
+          let index = haystack.indexOf(needle, from)
+          if (index === -1) continue
+          const submatches: Array<{ text: string; start: number; end: number }> = []
+          while (index !== -1) {
+            submatches.push({ text: line.slice(index, index + pattern.length), start: index, end: index + pattern.length })
+            from = index + pattern.length
+            index = haystack.indexOf(needle, from)
+          }
+          rows.push({
+            kind: "match",
+            match: Match.make({
+              entry: { path: RelativePath.make(normalize(rawPath)), type: "file" },
+              line: i + 1,
+              offset: 0,
+              text: line.length > 2_000 ? line.slice(0, 2_000) + "..." : line,
+              submatches,
+            }),
+          })
+          matched++
+          if (rows.length >= limit) break outer
         }
-        rows.push({
-          kind: "match",
-          match: Match.make({
-            entry: { path: RelativePath.make(normalize(rawPath)), type: "file" },
-            line: i + 1,
-            offset: 0,
-            text: line.length > 2_000 ? line.slice(0, 2_000) + "..." : line,
-            submatches,
-          }),
-        })
-        matched++
-        if (rows.length >= limit) break
       }
     }
     return rows
@@ -220,15 +240,43 @@ const layer = Layer.effect(
         hidden: true,
         limit: Number.MAX_SAFE_INTEGER,
       })
-      const current = new Set(entries.map((entry) => normalize(entry.path)))
+
+      // SiCode: a file edited while no watcher was running keeps its path, so comparing path sets
+      // alone reuses trigrams that no longer match the content — and a prefilter running on stale
+      // trigrams drops files from candidates, which is a wrong answer, not a slow one. Fingerprint
+      // every file instead: stat is ~40ms across 8k files here, against a ~10s rebuild.
+      const stats = yield* Effect.forEach(
+        entries,
+        (entry) =>
+          Effect.promise(async (): Promise<readonly [string, Fingerprint] | null> => {
+            try {
+              const stat = await fsp.stat(path.join(location.directory, entry.path))
+              return [normalize(entry.path), { mtimeMs: Math.floor(stat.mtimeMs), size: stat.size }] as const
+            } catch {
+              return null // vanished between enumeration and stat; treat as absent
+            }
+          }),
+        { concurrency: BUILD_CONCURRENCY, discard: false },
+      )
+      const current = new Map<string, Fingerprint>()
+      for (const item of stats) if (item) current.set(item[0], item[1])
 
       if (
         db.getMeta("root") === location.directory &&
         db.getMeta("version") === String(SCHEMA_VERSION) &&
-        db.size > 0
+        current.size > 0
       ) {
-        const indexed = new Set(db.paths())
-        const same = indexed.size === current.size && [...current].every((p) => indexed.has(p))
+        const stored = db.fingerprints()
+        const same =
+          stored.size === current.size &&
+          [...current].every(([entryPath, now]) => {
+            const before = stored.get(entryPath)
+            if (!before) return false
+            // Enumerated but deliberately not indexed: its bytes can never produce a candidate.
+            if (before.mtimeMs === NOT_INDEXED) return true
+            // 0 means the row predates fingerprints, so there is nothing to compare against.
+            return before.mtimeMs !== 0 && before.mtimeMs === now.mtimeMs && before.size === now.size
+          })
         if (same) return
       }
 
@@ -236,10 +284,12 @@ const layer = Layer.effect(
         concurrency: BUILD_CONCURRENCY,
         discard: false,
       })
-      const files: Array<readonly [path: string, content: string]> = []
+      const files: Array<readonly [path: string, content: string, fingerprint: Fingerprint]> = []
       for (let i = 0; i < entries.length; i++) {
         const content = contents[i]
-        if (content !== null) files.push([entries[i]!.path, content])
+        const fingerprint = current.get(normalize(entries[i]!.path))
+        if (content === null || !fingerprint) continue
+        files.push([entries[i]!.path, content, fingerprint])
       }
       db.replaceAll(files)
       db.setMeta("root", location.directory)
@@ -297,7 +347,9 @@ const layer = Layer.effect(
           }
           const content = yield* read(normalize(relative))
           if (content === null) continue
-          db.upsert(normalize(relative), content)
+          // SiCode: record the fingerprint the stat just produced. Writing 0 here would read as
+          // "unknown" on the next start and force a full rebuild after any edit.
+          db.upsert(normalize(relative), content, { mtimeMs: Math.floor(stats.mtimeMs), size: stats.size })
         }
       }).pipe(Effect.orDie)
 

@@ -4,6 +4,7 @@ import type {
   SessionStatus,
   ShellOutputInput,
   ShellOutputOutput,
+  ShellRemoveInput,
 } from "@opencode/client/promise"
 import { createSimpleContext } from "@opencode/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
@@ -36,14 +37,14 @@ type Data = {
   }
 }
 
-/** Names a finished turn by its Session and the user message that opened it. */
-export type TurnDiffInput = { sessionID: string; from: string }
+/** Names a finished prompt by its Session and the user message that opened it. */
+export type TurnDiffInput = { sessionID: string; from: string; prompt?: boolean }
 
-/** The host's cache of the files each finished turn changed. */
+/** The host's cache of the files each finished prompt changed. */
 export type TurnDiffSource = {
-  /** The turn's diffs, or undefined until they load. */
+  /** The prompt's diffs, or undefined until they load. */
   get: (input: TurnDiffInput) => readonly FileDiffInfo[] | undefined
-  /** Starts loading the turn's diffs unless they are cached or already loading. */
+  /** Starts loading the prompt's diffs unless they are cached or already loading. */
   load: (input: TurnDiffInput) => void
 }
 
@@ -62,6 +63,10 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     sessionID?: string
     shellRunning?: (id: string) => boolean
     shellOutput?: (input: ShellOutputInput) => Promise<ShellOutputOutput>
+    /** SiCode: terminate one running background shell; absent when the host has no shell API. */
+    shellKill?: (input: ShellRemoveInput) => Promise<void>
+    /** SiCode: interrupt one running subagent (its child session); absent when the host has no session API. */
+    sessionInterrupt?: (sessionID: string) => Promise<void>
     turnDiff?: TurnDiffSource
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
@@ -84,6 +89,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       shellRunning: props.shellRunning,
       shellOutput: props.shellOutput,
+      shellKill: props.shellKill,
+      sessionInterrupt: props.sessionInterrupt,
       turnDiff: props.turnDiff,
     }
   },

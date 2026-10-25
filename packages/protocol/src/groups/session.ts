@@ -527,6 +527,11 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           to: Schema.optional(SessionMessage.ID).annotate({
             description: "Later user message whose turn ends the range. Defaults to the turn of `from` alone.",
           }),
+          // SiCode: added so a steered prompt can diff its own slice instead of the whole turn.
+          prompt: BooleanFromString.pipe(Schema.optional).annotate({
+            description:
+              "Diff from this prompt alone instead of from the turn that contains it: the range ends at the next prompt, or at the turn's idle marker when it is the last one. `to` is ignored.",
+          }),
           context: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional).annotate({
             description: "Unchanged lines around each hunk. Omit for full-file patches.",
           }),
@@ -538,7 +543,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
           identifier: "session.diff",
           summary: "Diff session turns",
           description:
-            "Structured per-file diffs of the files a turn changed. A turn runs from the first prompt after the session was last idle until its next idle marker, so prompts steered in while it was busy belong to the same turn; `to` extends the range through a later turn. Compares the range's first recorded snapshot with its last; a step still running in the active session compares against the working copy. Ranges that span a location change are rejected. In sessions without any idle marker, a prompt's turn spans until the next user message.",
+            "Structured per-file diffs of the files a turn changed. A turn runs from the first prompt after the session was last idle until its next idle marker, so prompts steered in while it was busy belong to the same turn; `to` extends the range through a later turn. Set `prompt` to slice the range at `from` instead, which ends at the next prompt so each prompt of a steered turn reports its own work. Compares the range's first recorded snapshot with its last; a step still running in the active session compares against the working copy. Ranges that span a location change are rejected. In sessions without any idle marker, a prompt's turn spans until the next user message.",
         }),
       ),
     )

@@ -3,6 +3,7 @@ import type { PlatformError } from "effect/PlatformError"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "./cross-spawn-spawner.js"
+import { Decode } from "./decode.js"
 import { makeGlobalNode } from "./effect/app-node.js"
 
 export class AppProcessError extends Schema.TaggedError<AppProcessError>()("AppProcessError", {
@@ -63,7 +64,9 @@ export const requireSuccess = (result: RunResult): Effect.Effect<RunResult, AppP
         new AppProcessError({
           command: result.command,
           exitCode: result.exitCode,
-          stderr: result.stderr.toString("utf8"),
+          // SiCode: a failed command's stderr is the only explanation the model gets, so decode it by
+          // content — a Chinese Windows tool answers in the system code page, not UTF-8.
+          stderr: Decode.outputText(result.stderr),
         }),
       )
 
@@ -76,7 +79,8 @@ export const requireExitIn =
           new AppProcessError({
             command: result.command,
             exitCode: result.exitCode,
-            stderr: result.stderr.toString("utf8"),
+            // SiCode: decode by content — a Chinese Windows tool answers in the system code page.
+            stderr: Decode.outputText(result.stderr),
           }),
         )
 

@@ -13,6 +13,7 @@ import { Location } from "../../location.js"
 import { Session } from "../../session.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { ShellSelect } from "../../shell/select.js"
+import { Decode } from "@opencode/util/decode"
 import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"
 
@@ -223,7 +224,13 @@ function evaluateTemplate(
             { combineOutput: true },
           )
           .pipe(
-            Effect.map((result) => (result.output ?? Buffer.concat([result.stdout, result.stderr])).toString("utf8")),
+            // SiCode: interpolated commands hit the same code-page problem as the shell tool; decode by
+            // content instead of assuming UTF-8.
+            Effect.map((result) =>
+              Decode.outputText(
+                result.output ?? Buffer.concat([result.stdout, result.stderr]),
+              ),
+            ),
             Effect.mapError(
               (error) => new Error(`Shell interpolation failed for ${JSON.stringify(source)}: ${error.message}`),
             ),

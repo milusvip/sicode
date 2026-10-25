@@ -63,7 +63,7 @@ describe("Session.diff", () => {
         const bus = yield* Bus.Service
         const locations = yield* LocationServiceMap.Service
         const created = yield* sessions.create({ location: { directory: AbsolutePath.make(directory) } })
-        const diff = (input?: { from?: SessionMessage.ID; to?: SessionMessage.ID }) =>
+        const diff = (input?: { from?: SessionMessage.ID; to?: SessionMessage.ID; prompt?: boolean }) =>
           sessions
             .diff({ sessionID: created.id, context: 0, ...input })
             .pipe(Effect.map((files) => files.map(summarize)))
@@ -139,6 +139,9 @@ describe("Session.diff", () => {
           ]
           expect(yield* diff()).toEqual(busy)
           expect(yield* diff({ from: steer })).toEqual(busy)
+          // `prompt` slices the range at the prompt, so each one reports only the steps that followed it.
+          expect(yield* diff({ from: third, prompt: true })).toEqual([["third.txt", "added", 1, 0]])
+          expect(yield* diff({ from: steer, prompt: true })).toEqual([["fourth.txt", "added", 1, 0]])
           expect(yield* diff({ from: second })).toEqual([
             ["first.txt", "modified", 1, 1],
             ["manual.txt", "modified", 1, 1],

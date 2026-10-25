@@ -60,7 +60,7 @@ export const Plugin = {
           name,
           options: { codemode: false, permission: "edit" },
           description:
-            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.",
+            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, confirm nothing already does the same job: search for it with `grep` or `glob` first, and extend what exists. A near-duplicate file is the most expensive mistake this tool makes possible.",
           input: Input,
           output: Output,
           execute: (input, context) =>

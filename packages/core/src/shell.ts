@@ -22,6 +22,7 @@ import { SessionSchema } from "./session/schema.js"
 import { Config } from "./config.js"
 import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
+import { Decode } from "@opencode/util/decode"
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
@@ -228,7 +229,9 @@ const layer = () =>
             }),
         )
         return {
-          output: buffer.subarray(0, bytesRead).toString("utf8"),
+          // SiCode: the child writes bytes on its own code page, so decoding them as text keeps a Chinese
+          // Windows error message readable instead of turning it into replacement characters.
+          output: Decode.outputText(buffer.subarray(0, bytesRead)),
           cursor: start + bytesRead,
           size: command.size,
           truncated: false,

@@ -852,7 +852,7 @@ export const dict = {
   "settings.timeline.description.custom": "使用您為每個活動類別選擇的位置和詳細資料。",
   "settings.timeline.custom": "自定義",
   "settings.timeline.row.turnDiffs.title": "變更的檔案",
-  "settings.timeline.row.turnDiffs.description": "在每輪結束時列出該輪變更的檔案",
+  "settings.timeline.row.turnDiffs.description": "在每條提問結束時列出它變更的檔案",
   "settings.timeline.advanced": "進階",
   "settings.timeline.advanced.description": "為每個活動類別設定位置和詳細資訊。",
   "settings.timeline.category.shell": "Shell",

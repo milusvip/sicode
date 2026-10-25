@@ -201,11 +201,13 @@ const decodeTimeout = Schema.decodeUnknownOption(HttpTimeout)
 export const DEFAULT_TIMEOUT_MS = 300_000
 
 /**
- * Applied to `chunkTimeout` when provider settings leave it unset or invalid. Some providers, such as DeepSeek, have
- * specifically asked clients to allow at least 15 minutes, because their models can stream nothing for minutes while
- * they reason.
+ * Applied to `chunkTimeout` when provider settings leave it unset or invalid.
+ *
+ * SiCode: 30s instead of upstream's 900s; see the matching note in `@opencode/ai`'s schema/options. The short window
+ * is what turns "hung forever" into "retried in 30 seconds", and the retry policy makes a false positive cheap.
+ * Providers whose models reason without streaming set `chunkTimeout` explicitly.
  */
-export const DEFAULT_CHUNK_TIMEOUT_MS = 900_000
+export const DEFAULT_CHUNK_TIMEOUT_MS = 30_000
 
 /** One timeout setting without a default; invalid values are dropped. */
 export function timeout(value: unknown) {

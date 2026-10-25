@@ -1,9 +1,10 @@
 // SiCode: tests for the FTS5 trigram candidate index.
 import { describe, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
 import { mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { TrigramIndex, TRIGRAM_MIN } from "../src/filesystem/trigram.bun.ts"
+import { NOT_INDEXED, TrigramIndex, TRIGRAM_MIN } from "../src/filesystem/trigram.bun.ts"
 
 const FIXTURE: Array<[string, string]> = [
   ["src/alpha.ts", "export function waitForScan(timeout: number) {\n  return timeout\n}\n"],
@@ -62,12 +63,56 @@ describe("TrigramIndex", () => {
     index.close()
   })
 
-  test("binary content is skipped", () => {
+  test("binary content is recorded but not indexed", () => {
     const index = TrigramIndex.open({ file: ":memory:" })
-    index.replaceAll([["blob.bin", "waitForScan\0binarypadding"]])
-    expect(index.size).toBe(0)
-    expect(index.candidates("waitForScan")).toEqual([])
+    index.replaceAll([
+      ["src/alpha.ts", "waitForScan\n"],
+      ["blob.bin", "waitForScan\0binarypadding"],
+    ])
+    // Every enumerated file gets a row, so the stored path set can still match what ripgrep
+    // lists — otherwise a repo with one PNG could never reuse its index.
+    expect(index.size).toBe(2)
+    // ...but none of the binary's bytes can produce a candidate.
+    expect(index.indexed).toBe(1)
+    expect(index.candidates("waitForScan")).toEqual(["src/alpha.ts"])
+    expect(index.fingerprints().get("blob.bin")?.mtimeMs).toBe(NOT_INDEXED)
     index.close()
+  })
+
+  test("fingerprints round-trip so a later run can prove the content is unchanged", () => {
+    const index = TrigramIndex.open({ file: ":memory:" })
+    index.replaceAll([["src/alpha.ts", "waitForScan\n", { mtimeMs: 1_700_000_000_123.7, size: 12 }]])
+    // Floored to whole milliseconds: a float in an INTEGER column would never compare equal.
+    expect(index.fingerprints().get("src/alpha.ts")).toEqual({ mtimeMs: 1_700_000_000_123, size: 12 })
+
+    index.upsert("src/alpha.ts", "waitForScan\n", { mtimeMs: 1_700_000_009_000, size: 13 })
+    expect(index.fingerprints().get("src/alpha.ts")).toEqual({ mtimeMs: 1_700_000_009_000, size: 13 })
+    index.close()
+  })
+
+  test("an index written before fingerprints existed upgrades in place and reads as unknown", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sicode-trigram-legacy-"))
+    const file = join(dir, "legacy.db")
+    const legacy = new Database(file)
+    legacy.exec("CREATE TABLE m(id INTEGER PRIMARY KEY, p TEXT NOT NULL UNIQUE)")
+    legacy.exec("INSERT INTO m(id, p) VALUES (1, 'src/alpha.ts')")
+    legacy.close()
+
+    // Opening must migrate rather than fail on an INSERT built for the new column list.
+    const index = TrigramIndex.open({ file })
+    expect(index.size).toBe(1)
+    // 0 = "cannot vouch for this content", which makes the caller rebuild once.
+    expect(index.fingerprints().get("src/alpha.ts")).toEqual({ mtimeMs: 0, size: 0 })
+    index.close()
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(dir, { recursive: true, force: true })
+        break
+      } catch {
+        if (attempt >= 5) break
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+      }
+    }
   })
 
   test("paths are normalized to forward slashes", () => {

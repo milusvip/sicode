@@ -8,8 +8,10 @@ interface Input {
   readonly retry: boolean
 }
 
-/** Bound provider-requested delays so a hostile or buggy retry-after cannot stall a call for hours. */
-const RETRY_AFTER_MAX = Duration.toMillis("15 minutes")
+// SiCode: a provider-requested delay used to be honoured up to 15 minutes, which froze a session for longer than any
+// hang it was meant to avoid and gave the user nothing to look at. Cap it at a minute; anything longer is better
+// surfaced as a failure the timeline can show than as silence.
+const RETRY_AFTER_MAX = Duration.toMillis("1 minute")
 
 const retryAfter = (input: Input) => {
   if (input.cause.reason._tag === "RateLimit" || input.cause.reason._tag === "ProviderInternal")
@@ -29,7 +31,12 @@ const schedule = Schedule.max([
   Schedule.jittered,
   Schedule.setInputType<Input>(),
   Schedule.modifyDelay(({ input, duration: delay }) => {
+    // SiCode: a timeout attempt already spent its whole window (30s by default) waiting for a frame, so backing off
+    // another 2s/4s/10s buys nothing — it just stretches the silence the user is staring at. Resend at once and let
+    // the attempt budget, not the schedule, decide when to give up.
+    const timedOut = input.cause.reason._tag === "Transport" && input.cause.reason.code === "Timeout"
     const minimum = retryAfter(input)
+    if (timedOut) return Effect.succeed(minimum === undefined ? Duration.zero : Duration.millis(minimum))
     const duration = minimum === undefined ? delay : Duration.max(delay, Duration.millis(minimum))
     return Effect.succeed(Duration.millis(Math.ceil(Duration.toMillis(duration))))
   }),

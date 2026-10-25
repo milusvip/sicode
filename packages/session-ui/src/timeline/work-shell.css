@@ -1,29 +1,32 @@
-/* SiCode: font sizes/weights follow theme tokens for CJK legibility on Windows; do not hardcode px here. */
+/* SiCode: preview scheme B — solid layer-02 head (42px feel), phase · detail, steps + duration. */
 
 [data-component="work-shell-head"] {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 30px;
-  padding: 6px 8px 6px 4px;
-  border: 1px solid color-mix(in srgb, var(--border-weak-base, rgba(255, 255, 255, 0.075)) 55%, transparent);
-  border-radius: 8px;
-  /* Demo .work-head fill: the panel layer over the page. Use the v2 layer token — the legacy
-     `--background-stronger` only exists on `:root` + the OS media query, so it stays dark when
-     the OS prefers dark but the app is forced to light. */
-  background: color-mix(in srgb, var(--v2-background-bg-layer-02, var(--background-stronger)) 70%, transparent);
+  min-height: 42px;
+  padding: 12px 18px;
+  border: 1px solid color-mix(in srgb, var(--v2-border-border-base, rgba(255, 255, 255, 0.1)) 70%, transparent);
+  border-radius: var(--radius-xl, 10px);
+  /* Demo #3a3a3a — layer-03 under [data-color-scheme=dark]; layer-02 there is the card body. */
+  background: var(--work-shell-head-bg, var(--v2-background-bg-layer-03, #3a3a3a));
   color: inherit;
   font: inherit;
   text-align: start;
   cursor: pointer;
 }
 
-/* The head is a real control, so it needs a focus ring of its own: without one it fell back to the
-   browser's 0.57px auto outline while every row below it showed nothing at all. */
 [data-component="work-shell-head"]:focus-visible {
   outline: 1px solid var(--v2-border-border-focus);
   outline-offset: 2px;
+}
+
+/* Open head reads as the top of the turn card: square the bottom edge so the body can sit flush. */
+[data-component="work-shell-head"][data-open="true"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
 }
 
 /* While working, pin the overview bar above scrolling process rows (non-virtual / nested parents).
@@ -35,11 +38,9 @@
   top: var(--sticky-accordion-top, 0px);
   z-index: 22;
   backdrop-filter: blur(8px);
-  background: color-mix(in srgb, var(--v2-background-bg-base, var(--background-base)) 88%, transparent);
+  background: color-mix(in srgb, var(--work-shell-head-bg, var(--v2-background-bg-layer-03, #3a3a3a)) 92%, transparent);
 }
 
-/* Floating pin owns the bar; keep in-list space but hide the duplicate. Scoped to the row that is
-   actually pinned — matching on status hid every finished turn's head at once. */
 [data-work-shell-pinned="true"] [data-component="work-shell-head"] {
   visibility: hidden;
 }
@@ -47,8 +48,6 @@
 [data-slot="work-shell-pin"] {
   padding-bottom: 8px;
   background: var(--v2-background-bg-base, var(--background-base));
-  /* The host remounts this on every turn change, so scrolling from one turn into the next fades the
-     bar in instead of cutting to a different label. */
   animation: work-shell-pin-in 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -72,12 +71,14 @@
 [data-slot="work-shell-pin"] [data-component="work-shell-head"] {
   position: static;
   backdrop-filter: blur(8px);
-  background: color-mix(in srgb, var(--v2-background-bg-base, var(--background-base)) 88%, transparent);
+  background: color-mix(in srgb, var(--work-shell-head-bg, var(--v2-background-bg-layer-03, #3a3a3a)) 92%, transparent);
   box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--v2-background-bg-base, #000) 55%, transparent);
+  border-radius: var(--radius-xl, 10px);
 }
 
 [data-component="work-shell-head"]:hover {
-  background: var(--v2-background-bg-layer-02, var(--background-stronger));
+  /* Preview #464646 — lighten the solid head without jumping to a new layer token. */
+  background: color-mix(in srgb, var(--work-shell-head-bg, var(--v2-background-bg-layer-03, #3a3a3a)) 82%, white);
 }
 
 [data-component="work-shell-head"][data-status="running"] {
@@ -91,15 +92,16 @@
 }
 
 [data-component="work-shell-head"] [data-slot="work-shell-icon"] {
-  flex: 0 0 19px;
-  height: 18px;
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
   display: grid;
   place-items: center;
   color: var(--v2-text-text-faint, var(--text-weak));
 }
 
 [data-component="work-shell-head"][data-status="running"] [data-slot="work-shell-icon"] {
-  color: var(--v2-text-text-base, var(--text-strong));
+  color: var(--v2-state-fg-info, var(--v2-text-text-base, var(--text-strong)));
 }
 
 [data-component="work-shell-head"][data-status="done"] [data-slot="work-shell-icon"] {
@@ -113,63 +115,389 @@
 }
 
 [data-component="work-shell-head"][data-status="interrupted"] [data-slot="work-shell-icon"] {
-  color: var(--v2-text-text-muted, var(--text-weak));
+  color: var(--v2-state-fg-warning, var(--v2-text-text-muted, var(--text-weak)));
 }
 
 [data-component="work-shell-head"] [data-slot="work-shell-title"] {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12.5px;
-  line-height: var(--line-height-compact, 20px);
-  /* `faint` on this head's own 70% layer fill measured 3.78:1 — under AA for 12.5px text, and this
-     label is the only signal a collapsed shell carries. `muted` lands at 6.7:1. */
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-phase"] {
+  flex: 0 0 auto;
+  color: var(--v2-text-text-muted, var(--text-weak));
+}
+
+[data-component="work-shell-head"][data-status="running"] [data-slot="work-shell-phase"] {
+  color: var(--v2-state-fg-info, #a2bcff);
+}
+
+[data-component="work-shell-head"][data-status="done"] [data-slot="work-shell-phase"] {
+  color: var(--v2-state-fg-success, var(--icon-success-base, #6bd586));
+}
+
+[data-component="work-shell-head"][data-status="error"] [data-slot="work-shell-phase"],
+[data-component="work-shell-head"][data-status="failed"] [data-slot="work-shell-phase"],
+[data-component="work-shell-head"][data-status="disconnected"] [data-slot="work-shell-phase"] {
+  color: var(--v2-state-fg-danger, var(--text-critical-base, #f17471));
+}
+
+[data-component="work-shell-head"][data-status="interrupted"] [data-slot="work-shell-phase"] {
+  color: var(--v2-state-fg-warning, #e3b341);
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-detail"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--v2-text-text-base, var(--text-strong));
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-detail"]::before {
+  content: "·";
+  color: var(--v2-text-text-faint, var(--text-weak));
+  margin-inline-end: 8px;
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-note"] {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  line-height: 1;
+  color: var(--v2-text-text-muted, var(--text-weak));
+  white-space: nowrap;
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-steps"],
+[data-component="work-shell-head"] [data-slot="work-shell-meta"] {
+  flex: 0 0 auto;
+  font-family: var(--v2-font-family-sans);
+  font-size: 12.5px;
+  font-weight: var(--font-weight-regular);
+  line-height: 1;
+  letter-spacing: -0.04px;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-text-faint, var(--text-weak));
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-meta"] {
+  margin-inline-start: 0;
+}
+
+[data-component="work-shell-head"] [data-slot="work-shell-chevron"] {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  color: var(--v2-text-text-faint, var(--text-weak));
+  opacity: 0.75;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-component="work-shell-head"][data-open="true"] [data-slot="work-shell-chevron"] {
+  transform: rotate(90deg);
+}
+
+/* ── Demo scheme B card: one DOM panel (head + body-in + wells), not virtual-row slices ───────────
+   Colors match compare-process-shell-v2.html exactly: head #3a3a3a, card #2e2e2e, well #222.
+   Icon column x=18: head pad 18; body 6 + well 4 + row 8 = 18; stage head pad 12 + body 6 = 18. */
+
+[data-timeline-row="WorkShell"],
+[data-slot="work-shell-pin"],
+[data-work-shell-card] {
+  --work-shell-head-bg: #3a3a3a;
+  --work-shell-body-bg: #2e2e2e;
+  --work-shell-well-bg: #222222;
+  --work-shell-well-border: #ffffff0a;
+  --work-shell-card-edge: color-mix(in srgb, var(--v2-border-border-base, rgba(255, 255, 255, 0.1)) 70%, transparent);
+  --work-shell-row-hover: #ffffff0f;
+}
+
+/* Collapsed head keeps the transcript gutter. */
+[data-work-shell-head-slot] {
+  width: calc(100% - 32px);
+  margin-inline: 16px;
+}
+
+@media (min-width: 768px) {
+  [data-work-shell-head-slot] {
+    width: calc(100% - 48px);
+    margin-inline: 24px;
+  }
+}
+
+/* Open card — mirrors demo `.v-b .card` / `.body-in` / `.well-in`. */
+[data-work-shell-card] {
+  width: calc(100% - 32px);
+  max-width: calc(100% - 32px);
+  margin-inline: 16px;
+  background: var(--work-shell-body-bg);
+  border: 1px solid var(--work-shell-card-edge);
+  border-radius: var(--radius-xl, 10px);
+  overflow: hidden;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  [data-work-shell-card] {
+    width: calc(100% - 48px);
+    max-width: calc(100% - 48px);
+    margin-inline: 24px;
+  }
+}
+
+[data-work-shell-card] > [data-component="work-shell-head"] {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 0;
+  background: var(--work-shell-head-bg);
+}
+
+[data-work-shell-card] > [data-component="work-shell-head"]:hover {
+  background: #464646;
+}
+
+/* In-card head must stay solid #3a3a3a — sticky translucency is for the floating pin only. */
+[data-work-shell-card]
+  > [data-component="work-shell-head"][data-status="running"][data-open="true"],
+[data-work-shell-card]
+  > [data-component="work-shell-head"][data-status="disconnected"][data-open="true"] {
+  position: static;
+  backdrop-filter: none;
+  background: var(--work-shell-head-bg);
+}
+
+[data-work-shell-body] {
+  background: var(--work-shell-body-bg);
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-work-shell-body-in] {
+  padding: 4px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* Long shell args / reasoning used to force the body to 2k+px and clip the well off-card. */
+[data-work-shell-card] [data-work-shell-stage],
+[data-work-shell-card] [data-work-shell-well],
+[data-work-shell-card] [data-work-shell-step],
+[data-work-shell-card] [data-work-shell-step] > *,
+[data-work-shell-card] [data-component="collapsed-tool-group"],
+[data-work-shell-card] [data-component="collapsible"],
+[data-work-shell-card] [data-slot="collapsible-content"],
+[data-work-shell-card] [data-component="context-tool-group-list"],
+[data-work-shell-card] [data-slot="context-tool-group-item"],
+[data-work-shell-card] [data-component="tool-trigger"],
+[data-work-shell-card] [data-slot="basic-tool-tool-trigger-content"],
+[data-work-shell-card] [data-slot="basic-tool-tool-info"],
+[data-work-shell-card] [data-slot="basic-tool-tool-info-main"],
+[data-work-shell-card] [data-slot="session-turn-assistant-content"],
+[data-work-shell-card] [data-slot="session-turn-thinking-row"] {
+  min-width: 0 !important;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+[data-work-shell-card] [data-work-shell-well] {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+[data-work-shell-card] [data-slot="basic-tool-tool-arg"],
+[data-work-shell-card] [data-slot="basic-tool-tool-subtitle"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-work-shell-stage] + [data-work-shell-stage],
+[data-work-shell-stage] + [data-work-shell-well],
+[data-work-shell-well] + [data-work-shell-stage] {
+  margin-top: 2px;
+}
+
+/* Recessed well under an open stage (or a stage-less tool run). */
+[data-work-shell-card] [data-work-shell-well] {
+  background: var(--work-shell-well-bg);
+  border: 1px solid var(--work-shell-well-border);
+  border-radius: 8px;
+  padding: 4px;
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-work-shell-card] [data-work-shell-well] [data-slot="basic-tool-tool-indicator"],
+[data-work-shell-card] [data-work-shell-well] [data-slot="process-shell-icon"] {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+}
+
+[data-work-shell-card] [data-work-shell-well] [data-component="tool-trigger"],
+[data-work-shell-card]
+  [data-work-shell-well]
+  [data-component="collapsible"]
+  > [data-slot="collapsible-trigger"],
+[data-work-shell-card] [data-work-shell-well] [data-slot="session-turn-thinking-row"] {
+  padding: 8px;
+  border-radius: 6px;
+}
+
+[data-work-shell-card] [data-work-shell-well] [data-slot="session-turn-assistant-content"] > *:hover,
+[data-work-shell-card] [data-work-shell-well] [data-slot="session-turn-thinking-row"]:hover,
+[data-work-shell-card] [data-work-shell-well] [data-component="tool-trigger"]:hover {
+  background: var(--work-shell-row-hover);
+}
+
+/* Nested steps drop the transcript gutter — the card / well own padding. */
+[data-work-shell-card] [data-work-shell-step] > [data-slot="session-turn-message-container"],
+[data-work-shell-card] [data-work-shell-step] [data-slot="session-turn-message-container"] {
+  padding-inline: 0 !important;
+}
+
+/* Demo tool rows omit per-tool seconds; only running/waiting cues stay in the right column. */
+[data-work-shell-card] [data-slot="basic-tool-tool-action"],
+[data-work-shell-card] [data-slot="chain-tool-meta"] {
+  display: none;
+}
+
+/* ── Stage heading inside the well ───────────────────────────────────────────────────────────────
+   SiCode: the prose a model writes between tool batches becomes a heading. It reads as a quieter
+   line than a tool row until opened — folded stages are the reader's index, the open one is the work
+   they are currently looking at. A folded stage keeps its shape, only its members disappear. */
+
+[data-component="work-stage-head"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  /* 6px of card body + 12px here puts the stage glyph on the same column as the head's (x=18). */
+  padding: 8px 8px 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+[data-component="work-stage-head"]:hover {
+  background: var(--work-shell-row-hover, color-mix(in srgb, white 6%, transparent));
+}
+
+[data-component="work-stage-head"]:focus-visible {
+  outline: 1px solid var(--v2-border-border-focus);
+  outline-offset: -1px;
+}
+
+[data-component="work-stage-head"] [data-slot="work-stage-icon"] {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  color: var(--v2-text-text-faint, var(--text-weak));
+}
+
+/* Folded stages are the only thing left of their steps: colour says how they went. */
+[data-component="work-stage-head"][data-outcome="failed"] [data-slot="work-stage-icon"] {
+  color: var(--v2-state-fg-danger, var(--icon-critical-base, #f17471));
+}
+
+[data-component="work-stage-head"][data-outcome="running"] [data-slot="work-stage-icon"] {
+  color: var(--v2-state-fg-info, #a2bcff);
+}
+
+[data-component="work-stage-head"][data-outcome="failed"] [data-slot="work-stage-title"] {
+  color: var(--v2-state-fg-danger, var(--text-critical-base, #f17471));
+}
+
+[data-component="work-stage-head"] [data-slot="work-stage-title"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
   color: var(--v2-text-text-muted, var(--text-weak));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-[data-component="work-shell-head"][data-status="running"] [data-slot="work-shell-title"] {
+/* Opening a stage promotes its heading: the line you are reading is the one you are in. */
+[data-component="work-stage-head"][data-open="true"] [data-slot="work-stage-title"] {
   color: var(--v2-text-text-base, var(--text-strong));
 }
 
-[data-component="work-shell-head"][data-status="error"] [data-slot="work-shell-title"],
-[data-component="work-shell-head"][data-status="failed"] [data-slot="work-shell-title"],
-[data-component="work-shell-head"][data-status="disconnected"] [data-slot="work-shell-title"] {
-  color: color-mix(in srgb, var(--v2-state-fg-danger, var(--text-critical-base, #e5756a)) 85%, var(--v2-text-text-base, #e9e7e4));
+[data-component="work-stage-head"][data-open="true"] [data-slot="work-stage-icon"] {
+  color: var(--v2-state-fg-success, var(--icon-success-base, #6bd586));
 }
 
-/* A settled turn that produced no prose says so here: without it the head reads as a broken
-   transcript ("已完成 44 个工具" and then nothing). */
-[data-component="work-shell-head"] [data-slot="work-shell-note"] {
+[data-component="work-stage-head"] [data-slot="work-stage-steps"] {
   flex: 0 0 auto;
   font-size: 12.5px;
-  line-height: var(--line-height-compact, 20px);
-  color: var(--v2-text-text-muted, var(--text-weak));
-  white-space: nowrap;
-}
-
-[data-component="work-shell-head"] [data-slot="work-shell-meta"] {
-  flex: 0 0 auto;
-  margin-inline-start: auto;
-  font-family: var(--v2-font-family-sans);
-  font-size: 12.5px;
-  font-weight: var(--font-weight-regular);
-  line-height: var(--line-height-compact, 16px);
-  letter-spacing: -0.04px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: var(--v2-text-text-muted, var(--text-weak));
+  color: var(--v2-text-text-faint, var(--text-weak));
 }
 
-[data-component="work-shell-head"] [data-slot="work-shell-chevron"] {
-  flex: 0 0 12px;
+[data-component="work-stage-head"] [data-slot="work-stage-chevron"] {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 15px;
   display: grid;
   place-items: center;
   color: var(--v2-text-text-faint, var(--text-weak));
   opacity: 0.75;
-  transition: transform 200ms ease;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-[data-component="work-shell-head"][data-open="true"] [data-slot="work-shell-chevron"] {
+[data-component="work-stage-head"][data-open="true"] [data-slot="work-stage-chevron"],
+[data-component="work-stage-head"][data-open="true"] [data-slot="work-stage-chevron"] svg {
   transform: rotate(90deg);
+}
+
+/* SiCode: demo "前面 N 步 · 点开" — quiet chip on the card body, not inside the well. */
+[data-component="work-fold-head"] {
+  display: inline-flex;
+  align-items: center;
+  margin: 3px 0 4px 8px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--v2-border-border-base, rgba(255, 255, 255, 0.08)) 100%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, white 3%, transparent);
+  color: var(--v2-text-text-faint, var(--text-weak));
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+[data-component="work-fold-head"]:hover {
+  color: var(--v2-text-text-base, var(--text-strong));
+  background: color-mix(in srgb, white 6%, transparent);
+}
+
+[data-component="work-fold-head"][data-open="true"] {
+  color: var(--v2-text-text-muted, var(--text-weak));
 }

@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiCode 上下文能力对照与改造实施 · vs Cursor 3.24.18</title>
+<style>
+  :root {
+    --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "微软雅黑", sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "Cascadia Mono", ui-monospace, monospace;
+
+    --bg: #131316;
+    --panel: #191a1f;
+    --panel-2: #1f2026;
+    --line: #2a2b33;
+    --line-strong: #3f404b;
+    --fg: #e7e7ec;
+    --fg-mid: #9c9ca8;
+    --fg-dim: #71717d;
+    --accent: #6c8cff;
+    --add: #6fbf73;
+    --warn: #d9a441;
+    --del: #e07272;
+    --r: 6px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 32px 96px; }
+
+  .eyebrow { margin: 0 0 10px; font-size: 11px; letter-spacing: .1em; color: var(--fg-dim); text-transform: uppercase; }
+  h1 { margin: 0 0 12px; font-size: 24px; font-weight: 700; letter-spacing: -.015em; }
+  .lede { margin: 0; color: var(--fg-mid); max-width: 660px; font-size: 13.5px; }
+  .lede b { color: var(--fg); font-weight: 600; }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 18px;
+    margin: 20px 0 0; padding: 0; list-style: none;
+    font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  }
+  .meta li { display: flex; align-items: center; gap: 6px; }
+  .meta b { color: var(--fg-mid); font-weight: 500; }
+
+  /* ---- 结论条 ---- */
+  .verdict {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    margin: 30px 0 0; background: var(--line);
+    border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+  }
+  .verdict > div { background: var(--panel); padding: 16px 18px; }
+  .verdict .n { font-family: var(--mono); font-size: 22px; font-weight: 600; line-height: 1.1; }
+  .verdict .k { margin-top: 6px; font-size: 11.5px; color: var(--fg-mid); }
+  .verdict .s { margin-top: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
+  .n-add { color: var(--add); }
+  .n-warn { color: var(--warn); }
+  .n-dim { color: var(--fg-dim); }
+
+  /* ---- 通用块 ---- */
+  h2 {
+    margin: 52px 0 6px; font-size: 15px; font-weight: 650; letter-spacing: -.005em;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 .tag {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    color: var(--fg-dim); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 6px; letter-spacing: .04em;
+  }
+  .sub { margin: 0 0 18px; color: var(--fg-mid); font-size: 12.5px; max-width: 720px; }
+
+  /* ---- 表格 ---- */
+  .tbl-wrap { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th {
+    text-align: left; padding: 9px 14px; background: var(--panel-2);
+    font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: .05em; color: var(--fg-dim); text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--fg-mid); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { color: var(--fg); font-weight: 500; width: 22%; }
+  tbody tr:hover td { background: #1c1d22; }
+  code, .mono { font-family: var(--mono); font-size: 11.5px; }
+  code { color: #b9c4ff; background: #22242c; padding: 1px 5px; border-radius: 3px; }
+
+  .pill {
+    display: inline-block; font-family: var(--mono); font-size: 10px;
+    padding: 2px 7px; border-radius: 3px; white-space: nowrap; letter-spacing: .02em;
+  }
+  .p-add { color: var(--add); background: rgba(111,191,115,.11); border: 1px solid rgba(111,191,115,.28); }
+  .p-warn { color: var(--warn); background: rgba(217,164,65,.11); border: 1px solid rgba(217,164,65,.28); }
+  .p-del { color: var(--del); background: rgba(224,114,114,.11); border: 1px solid rgba(224,114,114,.28); }
+  .p-dim { color: var(--fg-dim); background: #1e1f25; border: 1px solid var(--line); }
+
+  /* ---- 实测对比 ---- */
+  .bench { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); padding: 20px 22px; }
+  .bench-group + .bench-group { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .bg-title {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+    color: var(--fg-dim); margin-bottom: 13px;
+  }
+  .bench-row { display: grid; grid-template-columns: 112px 1fr 84px; align-items: center; gap: 14px; margin-bottom: 7px; }
+  .bench-row:last-child { margin-bottom: 0; }
+  .bench-label { font-family: var(--mono); font-size: 11px; color: var(--fg-mid); }
+  .bench-track { height: 14px; background: #1e1f25; border-radius: 3px; overflow: hidden; }
+  .bench-fill { height: 100%; border-radius: 3px; }
+  .stat-row {
+    display: grid; grid-template-columns: 112px 1fr auto auto; gap: 14px;
+    align-items: center; padding: 8px 0; font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-n { font-family: var(--mono); font-size: 12px; text-align: right; min-width: 68px; }
+  .stat-n.c { color: #8fa5ff; }
+  .stat-n.s { color: var(--add); }
+  .f-cursor { background: linear-gradient(90deg, #4a6bd6, #6c8cff); }
+  .f-sicode { background: linear-gradient(90deg, #3f8f52, #6fbf73); }
+  .bench-val { font-family: var(--mono); font-size: 11px; text-align: right; color: var(--fg); }
+  .bench-note {
+    margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line);
+    font-size: 11.5px; color: var(--fg-dim);
+  }
+  .bench-note b { color: var(--fg-mid); font-weight: 500; }
+  .legend { display: flex; gap: 16px; margin-bottom: 16px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+  /* ---- 代码事实 ---- */
+  .facts { display: grid; gap: 12px; }
+  .fact { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); overflow: hidden; }
+  .fact-h {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 9px 14px; background: var(--panel-2); border-bottom: 1px solid var(--line);
+  }
+  .fact-h .p { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  .fact-h .w { font-size: 11.5px; color: var(--fg-mid); }
+  pre {
+    margin: 0; padding: 13px 16px; overflow-x: auto;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.65;
+    color: #cdd3e0; background: #16171b;
+  }
+  pre .kw { color: #b9c4ff; }
+  pre .str { color: #9dd3a8; }
+  pre .cm { color: #5f6170; font-style: italic; }
+  pre .hl { display: block; margin: 0 -16px; padding: 0 16px; background: rgba(108,140,255,.10); border-left: 2px solid var(--accent); }
+
+  /* ---- 任务卡 ---- */
+  .tasks { display: grid; gap: 14px; }
+  .task { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); padding: 18px 20px; }
+  .task.lead { border-color: rgba(217,164,65,.34); }
+  .task-h { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .task-id {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .05em;
+    padding: 2px 7px; border-radius: 3px; color: var(--fg); background: #2b2d36;
+  }
+  .task.lead .task-id { background: rgba(217,164,65,.16); color: var(--warn); }
+  .task-t { font-size: 13.5px; font-weight: 600; }
+  .task-d { margin: 8px 0 0; color: var(--fg-mid); font-size: 12.5px; }
+  .task-d + .task-d { margin-top: 6px; }
+  .task-meta {
+    display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px;
+    padding-top: 12px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  }
+  .task-meta b { color: var(--fg-mid); font-weight: 500; }
+  .risk { margin: 10px 0 0; padding: 9px 12px; border-radius: 4px; font-size: 11.5px;
+    background: rgba(217,164,65,.07); border: 1px solid rgba(217,164,65,.22); color: #c9ad74; }
+  .risk b { color: var(--warn); font-weight: 600; }
+
+  /* ---- 完成态 ---- */
+  .task.done { border-color: rgba(111,191,115,.30); }
+  .task.done .task-id { background: rgba(111,191,115,.16); color: var(--add); }
+  .task.todo { border-color: rgba(217,164,65,.30); }
+  .task.todo .task-id { background: rgba(217,164,65,.14); color: var(--warn); }
+  .proof { margin: 10px 0 0; padding: 10px 12px; border-radius: 4px; font-size: 11.5px;
+    background: rgba(111,191,115,.06); border: 1px solid rgba(111,191,115,.22); color: #93c79a; }
+  .proof b { color: var(--add); font-weight: 600; }
+  .proof code { background: rgba(111,191,115,.10); color: #a8d3ae; }
+  .proof .ln { display: block; font-family: var(--mono); font-size: 11px; color: #c3e0c7; word-break: break-all; }
+
+  /* ---- 不做项 ---- */
+  .no { border: 1px solid var(--line); border-left: 2px solid var(--line-strong); border-radius: var(--r);
+    background: var(--panel); padding: 16px 20px; }
+  .no-h { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; color: var(--fg-mid); }
+  .no p { margin: 8px 0 0; font-size: 12.5px; color: var(--fg-dim); }
+  .no p b { color: var(--fg-mid); font-weight: 500; }
+
+  /* ---- 顺序 ---- */
+  .flow { display: flex; align-items: stretch; gap: 0; margin-top: 6px; }
+  .step {
+    flex: 1; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line);
+  }
+  .step:first-child { border-radius: var(--r) 0 0 var(--r); }
+  .step:last-child { border-radius: 0 var(--r) var(--r) 0; }
+  .step + .step { border-left: none; }
+  .step .s-id { font-family: var(--mono); font-size: 10px; color: var(--fg-dim); letter-spacing: .06em; }
+  .step .s-t { margin-top: 4px; font-size: 12.5px; font-weight: 600; }
+  .step .s-d { margin-top: 4px; font-size: 11.5px; color: var(--fg-dim); }
+
+  footer {
+    margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+    display: flex; flex-wrap: wrap; gap: 6px 20px;
+  }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 32px 18px 64px; }
+    .verdict { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .step + .step { border-left: 1px solid var(--line); border-top: none; }
+    .step:first-child { border-radius: var(--r) var(--r) 0 0; }
+    .step:last-child { border-radius: 0 0 var(--r) var(--r); }
+    .bench-row { grid-template-columns: 100px 1fr 62px; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">改造实施记录 · 2026-10-25</p>
+  <h1>SiCode 上下文能力对照与改造实施</h1>
+  <p class="lede">
+    对着 Cursor 3.24.18 的逆向资料逐项核对，再按 <code>UPSTREAM.md</code> 的纪律落地之后：
+    <b>四个缺口补了三个</b> —— 历史回溯已真机通过，tool-output 保尾部与 shell 中文乱码做完字节级验证；
+    第四个（precompute 压缩）<b>开关没动，但量化能力补上了</b>：压缩阻塞多久、后台摘要被用上还是丢弃，现在都有数。
+    语义索引确认不是缺口；另外查出并修掉一个<b>规划外</b>的索引复用判据 —— 它会让 grep 静默漏结果。
+  </p>
+
+  <ul class="meta">
+    <li><b>对照样本</b> Cursor 3.24.18</li>
+    <li><b>SiCode</b> main-sicode</li>
+    <li><b>落地</b> 2026-10-25</li>
+    <li><b>状态</b> 4 已修 / 1 待数据 / 2 不做</li>
+  </ul>
+
+  <div class="verdict">
+    <div>
+      <div class="n n-add">4</div>
+      <div class="k">已修，全部有测试</div>
+      <div class="s">历史回溯 · 保尾部 · 中文解码 · 索引复用</div>
+    </div>
+    <div>
+      <div class="n n-warn">1</div>
+      <div class="k">量化就绪，开关未动</div>
+      <div class="s">precompute 用上/丢弃已可测</div>
+    </div>
+    <div>
+      <div class="n n-dim">2</div>
+      <div class="k">核定后不该做</div>
+      <div class="s">语义索引 · 检索结果自动注入</div>
+    </div>
+  </div>
+
+  <!-- ============ 对照 ============ -->
+  <h2>机制对照<span class="tag">7 项</span></h2>
+  <p class="sub">
+    三条各自独立的管道容易被混成一条。Cursor 的语义检索在云端，本地只有 trigram 倒排 ——
+    这一点直接决定「语义索引」该不该列为目标。最后一行的编码问题不在原规划里，是落地过程中撞见的。
+  </p>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>机制</th>
+          <th>Cursor 3.24.18</th>
+          <th>SiCode 现状</th>
+          <th>判断</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>工具输出落盘</td>
+          <td>长输出写文件，回填「首 K + 尾 K + 路径 + 行数」，模型 <code>tail</code> 再 <code>read</code></td>
+          <td>已改成 head 60% / tail 40%，marker 写两段区间；<b>但只影响 MCP 与未自设标记的插件结果</b></td>
+          <td><span class="pill p-add">已补，作用面缩小</span></td>
+        </tr>
+        <tr>
+          <td>后台压缩编排</td>
+          <td><code>summarization-orchestrator.js</code> 834 行，三种模式，逐字节前缀校验，9 个遥测指标</td>
+          <td><code>Compaction.Precomputed</code>：<code>keepID</code> / <code>tailLimit</code> / <code>failures</code> / 后台 fiber，<b>本轮补上埋点</b></td>
+          <td><span class="pill p-warn">已有 · 可量化</span></td>
+        </tr>
+        <tr>
+          <td>历史回溯</td>
+          <td>压缩前全文写 <code>history/&lt;n&gt;.jsonl</code>，摘要带路径，可用 grep 恢复原文</td>
+          <td>新增 <code>tool/plugin/history.ts</code>：按最后一次 compaction 划界，检索压缩前原文；<code>session/</code> 零改动</td>
+          <td><span class="pill p-add">已补，真机通过</span></td>
+        </tr>
+        <tr>
+          <td>语义索引</td>
+          <td>云端 C 管道（topK=25，带 score）；<b>本地也只有 trigram</b></td>
+          <td>无</td>
+          <td><span class="pill p-dim">Cursor 本地也没有</span></td>
+        </tr>
+        <tr>
+          <td>结果相关性排序</td>
+          <td>Crepe 无 score，doc_id 升序，明确不按相关度排</td>
+          <td>trigram 候选集 + ripgrep 复核，同样不排序</td>
+          <td><span class="pill p-add">同等</span></td>
+        </tr>
+        <tr>
+          <td>检索结果自动注入</td>
+          <td>明确不做：「不把整库检索结果当隐式上下文自动塞进 prompt」</td>
+          <td><code>project-map</code> 每请求注入 repo map + notes 标题索引</td>
+          <td><span class="pill p-add">SiCode 更激进</span></td>
+        </tr>
+        <tr>
+          <td>shell 输出编码 <span class="pill p-dim">新增</span></td>
+          <td>不适用（macOS 默认 UTF-8，不存在这个码页）</td>
+          <td>原来一律 <code>toString("utf8")</code>；现按内容判断，PS 侧再钉 UTF-8</td>
+          <td><span class="pill p-add">已补，字节验证</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ 实测 ============ -->
+  <h2>索引实测对比<span class="tag">同仓同量级</span></h2>
+  <p class="sub">
+    逆向资料里的 Crepe 测样本就是 SiCode worktree（8019 文件），SiCode 自己的 trigram 索引测的是 8232 文件，
+    量级几乎一致，可以直接对读。横条按「相对全库 ripgrep 的加速倍数」画。
+  </p>
+
+  <div class="bench">
+    <div class="legend">
+      <span><i class="dot" style="background:#6c8cff"></i>Cursor Crepe</span>
+      <span><i class="dot" style="background:#6fbf73"></i>SiCode trigram</span>
+    </div>
+
+    <div class="bench-group">
+      <div class="bg-title">查询加速 · 相对全库 ripgrep · 越大越好</div>
+      <div class="bench-row">
+        <div class="bench-label">Cursor Crepe</div>
+        <div class="bench-track"><div class="bench-fill f-cursor" style="width:100%"></div></div>
+        <div class="bench-val">~70×</div>
+      </div>
+      <div class="bench-row">
+        <div class="bench-label">SiCode trigram</div>
+        <div class="bench-track"><div class="bench-fill f-sicode" style="width:86%"></div></div>
+        <div class="bench-val">40–80×</div>
+      </div>
+    </div>
+
+    <div class="bench-group">
+      <div class="bg-title">一次性成本 · 越小越好</div>
+      <div class="stat-row">
+        <span class="bench-label">全量建索引</span>
+        <span style="color:var(--fg-dim);font-size:11.5px">8032 文件 · 空 cache</span>
+        <span class="stat-n c">6.85 s</span>
+        <span class="stat-n s">10 s</span>
+      </div>
+      <div class="stat-row">
+        <span class="bench-label">盘上占用</span>
+        <span style="color:var(--fg-dim);font-size:11.5px">index + postings</span>
+        <span class="stat-n c">87 MB</span>
+        <span class="stat-n s">15 MB</span>
+      </div>
+    </div>
+
+    <p class="bench-note">
+      <b>读法：</b>查询加速同一档；建索引慢 3 秒（一次性，后台摊销）；盘上占用只有 Cursor 的 <b>1/6</b>。
+      速度维度 SiCode 没有落后，重做是浪费 —— 但 2026-10-25 发现这张图量不到的一个洞：<b>索引复用的判据</b>，
+      它既让 10s「一次性」变成每次启动，也会让 grep 静默漏结果。已修，见下方任务卡 <span class="mono">E2</span>。
+    </p>
+  </div>
+
+  <!-- ============ 代码事实 ============ -->
+  <h2>四个改变判断的代码事实<span class="tag">file:line</span></h2>
+  <p class="sub">
+    中间两条是落地过程中才撞见的，它们直接推翻了「保尾部能修 shell 报错栈」这个说法 ——
+    真正被截断的从来不是 shell 的结果。
+  </p>
+
+  <div class="facts">
+
+    <div class="fact">
+      <div class="fact-h">
+        <span class="p">packages/core/src/session/history.ts:120</span>
+        <span class="w">原文没删，只是不再被读</span>
+      </div>
+      <pre><span class="cm">// 只从最近一次成功的 compaction 往后读</span>
+<span class="hl">compaction ? gte(SessionMessageTable.seq, compaction.seq) : undefined,</span></pre>
+    </div>
+
+    <div class="fact">
+      <div class="fact-h">
+        <span class="p">packages/core/src/tool-output.ts:164</span>
+        <span class="w">自带标记的结果直接原样返回</span>
+      </div>
+      <pre><span class="cm">// 内置工具都设了 truncated，只有 MCP 与插件结果会往下走到截断</span>
+<span class="hl"><span class="kw">if</span> (result.metadata?.truncated !== <span class="kw">undefined</span>) <span class="kw">return</span> result</span></pre>
+    </div>
+
+    <div class="fact">
+      <div class="fact-h">
+        <span class="p">packages/core/src/shell.ts:256</span>
+        <span class="w">shell 结果本来就是尾部</span>
+      </div>
+      <pre><span class="cm">// 先从文件末尾按字节分页，再只留最后若干行，marker 已写好</span>
+<span class="kw">const</span> text = lines.length &gt; maxLines ? <span class="hl">lines.slice(-maxLines)</span>.join(<span class="str">"\n"</span>) : page.output</pre>
+    </div>
+
+    <div class="fact">
+      <div class="fact-h">
+        <span class="p">packages/core/src/config/plugin/compaction.ts:16</span>
+        <span class="w">后台压缩需要显式打开</span>
+      </div>
+      <pre>editor.configure({ precompute: Config.latest(loaded.entries, <span class="str">"experimental"</span>)?.precompute_compaction === <span class="kw">true</span> })</pre>
+    </div>
+
+  </div>
+
+  <!-- ============ 任务 ============ -->
+  <h2>执行结果<span class="tag">3 已补 / 1 未做</span></h2>
+  <p class="sub">
+    三项都按「新增文件 + 单点注册」的纪律落地，<code>session/</code> 主循环零改动。
+    每张卡下面都留了一条当时踩到的坑 —— 它们比结论本身更有用。
+  </p>
+
+  <div class="tasks">
+
+    <div class="task done">
+      <div class="task-h">
+        <span class="task-id">P1</span>
+        <span class="task-t">tool-output 补保尾部</span>
+        <span class="pill p-add">已完成</span>
+      </div>
+      <p class="task-d">
+        <code>TAIL_SHARE = 0.4</code>：head 先取 60% 行预算 + 全量字节预算，tail 再取剩余且不回头吃 head。
+        marker 写明两段区间 —— 默认限额下 3001 行的输出变成
+        <code>[showing lines 1-1200 and 2202-3001 of 3001; full output saved to …]</code>。
+      </p>
+      <p class="task-d">
+        含 <code>file</code> part（图片）的结果走 <code>boundedHead</code> 只留头部：那类结果的文字只是图注，
+        保住「文字—图片」顺序比保住尾部重要。
+      </p>
+      <div class="risk">
+        <b>落地后才发现的修正：</b>作用面比规划时小。内置的 shell / read / grep / glob 都自己写了
+        <code>metadata.truncated</code>，而 <code>truncate()</code> 见到这个键就原样返回 ——
+        所以这次改动实际只覆盖 <b>MCP 工具</b>和没自设标记的插件结果。
+      </div>
+      <div class="task-meta">
+        <span><b>改动</b> tool-output.ts + 1 个新用例</span>
+        <span><b>验证</b> 默认限额 3001 行，末行保住</span>
+        <span><b>纪律</b> 3 处 // SiCode: 注释</span>
+      </div>
+    </div>
+
+    <div class="task done">
+      <div class="task-h">
+        <span class="task-id">P0</span>
+        <span class="task-t">压缩后的历史回溯</span>
+        <span class="pill p-add">已完成 · 真机通过</span>
+      </div>
+      <p class="task-d">
+        新增 <code>tool/plugin/history.ts</code>：读 <code>SessionStore.messages()</code> 全量，
+        以<b>最后一条</b> completed 的 compaction 划界，之前的消息转文本后按关键词命中，无 query 则返回最近几段；
+        单段超 1500 字符保头 + 尾。注册在 <code>plugin/internal.ts</code> 三处（插件表 + <code>SessionStore.Service</code> + <code>.node</code>）。
+      </p>
+      <p class="task-d">
+        原文一直在 SQLite 里，所以<b>不需要像 Cursor 那样导出 jsonl</b>，也不必碰 <code>session/</code> 主循环。
+        和现有 <code>recall</code> 互补：recall 搜摘要抽出的 200 条 fact，这个搜原文。
+      </p>
+      <div class="proof">
+        <b>真机实测：</b>埋三个标记 → <code>/compact</code> → 要求必须查压缩前记录。模型主动调用 <code>history</code>，返回
+        <span class="ln">2 of 2 archived exchanges, from before the last compaction</span>
+        <span class="ln">metadata = { matches: 2, archived: 2, compactions: 1, truncated: false }</span>
+        三个标记全部命中，未凭摘要作答。
+      </div>
+      <div class="risk">
+        <b>踩到的坑：</b>边界必须取<b>最后</b>一条 compaction，不是第一条。SiCode 的摘要是全量覆盖而非增量，
+        取第一条会把中间段漏在归档外 —— 单测里我先写错了预期，实际行为才是对的。
+      </div>
+      <div class="task-meta">
+        <span><b>改动</b> 1 新增文件 + 3 行注册</span>
+        <span><b>不碰</b> session/ 任何文件</span>
+        <span><b>验证</b> 9 个单测 + 1 次真机会话</span>
+      </div>
+    </div>
+
+    <div class="task todo">
+      <div class="task-h">
+        <span class="task-id">P2</span>
+        <span class="task-t">precompute 量化</span>
+        <span class="pill p-warn">埋点已完成 · 开关仍关</span>
+      </div>
+      <p class="task-d">
+        默认值<b>没有改</b>。原因不是缺骨架 —— <code>Precomputed</code> 的三态编排早就在，
+        缺的是数字：后台摘要<b>即使没被用上也会扣费</b>，而记账只在成功换入时发生，
+        原本连「白算了多少」都看不见。
+      </p>
+      <p class="task-d">
+        现在补了两层。新增 <code>compaction-metrics.ts</code> 监听 <code>Compaction.Started</code> →
+        <code>Ended</code> 配对算出压缩真正阻塞了多久（<code>Ended</code> 的 schema 里没有 duration，配对是不改内核的唯一算法）；
+        <code>session/compaction.ts</code> 在 precompute 的三条路径各写一条
+        <code>started</code>（带窗口占比）/ <code>used</code>（带 <code>savedMs</code> 与 <code>leadMs</code>）/
+        <code>discarded</code>（带原因：overflow、stale-tail、superseded…）。
+      </p>
+      <p class="task-d">
+        跑 <code>bun script/compaction-stats.ts</code> 出报告：p50 / p90 等待、used 与 discarded 的拆分、浪费率，
+        末尾直接给判据 —— <b>浪费 &gt; 50% 保持关</b>，25–50% 记作 marginal，&lt; 25% 且累计省下 ≥ 30s 才判值得开。
+      </p>
+      <div class="task-meta">
+        <span><b>新增</b> compaction-metrics.ts · compaction-stats.ts</span>
+        <span><b>不碰</b> Precomputed 骨架与压缩逻辑</span>
+        <span><b>下一步</b> 重启后跑一次压缩，看数字</span>
+      </div>
+    </div>
+
+    <div class="task done">
+      <div class="task-h">
+        <span class="task-id">E1</span>
+        <span class="task-t">shell 输出中文乱码</span>
+        <span class="pill p-add">已完成 · 字节验证</span>
+      </div>
+      <p class="task-d">
+        <b>原规划里没有这项</b>，是落地过程中撞见的：报错回传的中文全是 <code>�</code>。
+        根因是本机宿主 <code>[Console]::OutputEncoding</code> 为 <b>gb2312 / codepage 936</b>，
+        而 <code>output()</code> 一律 <code>toString("utf8")</code> —— 每个中文字符都变成替换字符，
+        恰好是解释命令为什么失败的那一行。
+      </p>
+      <p class="task-d">
+        两层修：<b>根因层</b>在 PowerShell 参数前钉 <code>[Console]::OutputEncoding = UTF8</code>（带 <code>try/catch</code>，
+        无控制台宿主下不能连带整个命令失败）；<b>兜底层</b>新增 <code>util/src/decode.ts</code> 的
+        <code>Decode.outputText()</code>，严格 UTF-8 优先，win32 才退 GBK。
+      </p>
+      <div class="proof">
+        <b>真实 CP936 字节，同一个输入：</b>
+        <span class="ln">修复前 toString("utf8") → "�޷��� Null �������������"</span>
+        <span class="ln">修复后 Decode.outputText → "无法对 Null 数组进行索引。"</span>
+        修前那串和真机会话里看到的逐字符一致，修后完整还原。
+      </div>
+      <div class="risk">
+        <b>关键细节：</b>判断编码前要先剔掉尾部不完整的多字节序列。否则分片读取把字符切成两半时，
+        合法 UTF-8 会被判成「不是 UTF-8」而整段走 GBK —— 修一个乱码，造出另一个。
+      </div>
+      <div class="task-meta">
+        <span><b>改动</b> 1 新增文件 + 3 处落点</span>
+        <span><b>落点</b> shell.ts · 命令插值 · process 错误消息</span>
+        <span><b>验证</b> 3 个单测 + 真实字节对比</span>
+      </div>
+    </div>
+
+    <div class="task done">
+      <div class="task-h">
+        <span class="task-id">E2</span>
+        <span class="task-t">trigram 索引复用判据</span>
+        <span class="pill p-add">已完成 · 修掉静默错答</span>
+      </div>
+      <p class="task-d">
+        <b>也是规划外发现的</b>，起因只是回答「索引对比为啥不做」。索引的存储结构没问题，
+        但「下次启动还能不能复用这份索引」的判据只比<b>路径集合</b>，于是有两个洞，而且互相掩盖：
+      </p>
+      <p class="task-d">
+        <b>洞一：复用从来没生效过。</b>二进制文件被 <code>replaceAll</code> 跳过、不写行，
+        而 <code>current</code> 来自 <code>rg --files</code> 会把它们列出来 ⇒ 两边集合大小永远不相等 ⇒
+        每次启动都在后台做一次全量重建。本仓有 <b>269 个 <code>.png</code></b>，足以触发，
+        所以那「10 秒一次性」其实每次都付，只是看不见。
+      </p>
+      <p class="task-d">
+        <b>洞二：路径不变、内容变了，就复用旧 trigram。</b>（SiCode 关闭期间的外部编辑，或只改内容不加文件的
+        <code>git pull</code>）预筛会把这个文件从候选里丢掉，grep 报 <b>0 条命中</b> ——
+        这是错误答案，不是慢。洞一正好把它藏住了：既然从不复用，也就从不读到过期的 trigram。
+      </p>
+      <div class="proof">
+        <b>服务层探针（真实工具链，不是模拟）：</b>
+        <span class="ln">文件里确有 tokenZZZ → {"matches":0,"prefiltered":true} · "No matches found"</span>
+        <span class="ln">修后同一条用例 → matches:1，且旧 token 正确变成 0</span>
+        两条新测试都做了基线：<b>旧代码上都会失败</b>，才算真的抓住。
+      </div>
+      <div class="risk">
+        <b>不能靠「候选为空就退回全量 rg」兜底：</b>那会把每次未命中的成本从 0 变成 3.5–4.4 秒全扫，
+        把预筛的收益整个打掉。只能修索引本身的时效性。
+      </div>
+      <div class="task-meta">
+        <span><b>改动</b> m 表加 mtime/size + 旧库 ALTER 迁移</span>
+        <span><b>代价</b> 启动多 27ms stat（8101 文件）</span>
+        <span><b>验证</b> 3 新单测 + 2 服务层回归</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ 不做 ============ -->
+  <h2>明确不做的三项<span class="tag">含理由</span></h2>
+
+  <div class="tasks">
+    <div class="no">
+      <div class="no-h"><span class="pill p-dim">不做</span> 语义索引 / embedding</div>
+      <p>
+        Cursor 的语义检索在<b>云端</b>，本地同样只有 trigram 倒排。SiCode 是本地优先、用户自带 key，
+        没有云端 embedding 管道可挂；要做得引入「用户自配 embedding provider」，成本和不确定性都高。
+        想提升「相关文件进上下文」，P0 的历史回溯 + 现有 FTS5 的 bm25 排序，性价比明显更高。
+        <b>落地 P0 之后这条更站得住</b>：原文已经能被检索回来，缺口不在「语义」这一层。
+      </p>
+    </div>
+
+    <div class="no">
+      <div class="no-h"><span class="pill p-dim">不是缺口</span> 检索结果自动注入</div>
+      <p>
+        Cursor 逆向明确写了「不把整库检索结果当隐式上下文自动塞进 prompt」，靠工具描述教模型自己选。
+        SiCode 的 <code>project-map</code> 反而每次请求都注入 repo map 和 notes 标题索引 ——
+        <b>这一项 SiCode 走在前面</b>，不需要对齐，要考虑的是注入体积是否该收。
+      </p>
+    </div>
+
+    <div class="no">
+      <div class="no-h"><span class="pill p-dim">不做</span> 重做索引层（速度）</div>
+      <p>
+        上面对照用的样本就是本仓：查询加速同为 40–80× 一档，建索引慢 3 秒（一次性），
+        但盘上占用 <b>15MB vs 87MB，只有 Cursor 的 1/6</b>。速度维度没有落后，重写是纯浪费。
+      </p>
+      <p>
+        <b>但「不重写」不等于「不动」。</b>复用判据那两个洞（任务卡 E2）是在索引层就地修的，
+        没有换存储格式，也没有引入新依赖 —— 该抄 Cursor 的是它按 commit 分目录的<b>失效策略</b>，
+        不是它那 6.85 秒。
+      </p>
+    </div>
+  </div>
+
+  <!-- ============ 顺序 ============ -->
+  <h2>下一步<span class="tag">还差一步验证</span></h2>
+  <div class="flow">
+    <div class="step">
+      <div class="s-id">STEP 1</div>
+      <div class="s-t">重启验 E1</div>
+      <div class="s-d">双击 dev.bat，再发两条命令</div>
+    </div>
+    <div class="step">
+      <div class="s-id">STEP 2</div>
+      <div class="s-t">跑 compaction-stats</div>
+      <div class="s-d">浪费率决定开关留不留</div>
+    </div>
+    <div class="step">
+      <div class="s-id">STEP 3</div>
+      <div class="s-t">可选：shell 也补 head</div>
+      <div class="s-d">目前只留尾部，前面全丢</div>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top:14px">
+    E1 的两条验证命令：<code>$null[0]</code> 验根因层（PowerShell 前置），
+    <code>cmd /c echo 测试中文</code> 验兜底层（<code>cmd</code> 不走前置，只能靠 GBK 回退）。
+    <b>这两条没跑过之前，E1 只能算「代码层闭环」。</b>
+  </p>
+
+  <footer>
+    <span>样本 Cursor 3.24.18 / 切包 2026-10-17</span>
+    <span>逆向资料 38 篇 @ D:\软件丨工具\cursor逆向专区</span>
+    <span>落地 2026-10-25 · E2 改 3 源文件 + 2 测试文件</span>
+    <span>测试 trigram 11 · tool-search 26 · tool-output 10 · history 9 · decode 3</span>
+  </footer>
+
+</div>
+</body>
+</html>

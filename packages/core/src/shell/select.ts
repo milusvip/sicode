@@ -161,10 +161,15 @@ function info(file: string, options?: Options, bin?: string): Item {
   }
 }
 
+// SiCode: PowerShell answers in the system code page by default, so its own messages (a parameter-binding
+// error's cause, a warning) reach us already mis-decoded. Pin the console encoding to UTF-8 — the same
+// encoding native commands emit — and swallow a failure so a host without a console still runs the command.
+const PS_PRELUDE = "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}; "
+
 export function args(file: string, command: string) {
   const n = name(file)
   if (n === "cmd") return ["/c", command]
-  if (ps(file)) return ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]
+  if (ps(file)) return ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", PS_PRELUDE + command]
   return ["-c", command]
 }
 

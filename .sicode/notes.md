@@ -191,6 +191,29 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **`chevron-up` 这个图标原本不存在**：`Icon` 对未知名字回退成 `plus`，所以第一次做出来的「收起」是个加号（用户两次反馈「图标不对」「上下反了」）。已在 `ui/src/icons/icon/additional-icons.ts` 补一条（chevron-down 的 y 镜像），名字表从 `additionalIcons` 的 key 自动推导，不用改 catalog。
 - **折叠动画**：`<Show when={open}>` 换成常驻的 `[data-slot="accordion-fold"]` + `grid-template-rows: 0fr ↔ 1fr`（开 180ms `cubic-bezier(.22,1,.36,1)` / 关 140ms `cubic-bezier(.4,0,1,1)`，和过程壳同一对曲线）。`display:none` 无法过渡，所以内容必须常驻；`visibility` 在关闭时延迟 140ms 变 hidden，把折叠子树移出 tab 序和 a11y 树。实测帧序列 0→140→220→274→306→324→333→340。
 - **代价**：内容常驻后，`deferContent === false` 的卡片（回合末尾文件卡）收起时 diff 仍渲染。链条内是 `deferContent: true`，由 `visible()` 控制，不受影响。
+- 每轮变更摘要（设置 `settings.general.showTurnDiffs`，默认 false，上游 81d57087a4）：客户端在 `session-ui/src/timeline/projection.ts:337` 用每个 step 的 `snapshot.files` 并集预填，`projection.ts:324` 在 idle 消息上挂 diff 行，`from` = 该轮第一个 prompt（引导并入同一轮，行的 `userMessageID` 是最后那条 steer）
+- 摘要的实际算法在 `core/src/session/diff.ts:107-140`：以上一个 idle 标记定位轮次起点，取第一个 step 的 start 快照与最后一个 step 的 end 快照做**整棵工作区**树 diff；路由 `server/src/handlers/session.ts:496`；客户端只传 `from`（`session-ui/src/timeline/session-timeline-row.tsx:779`）
+- 所以「该轮更改的文件」= 区间内工作区差异，不是 agent 写过的文件：用户手动改/其他会话改都会算进来；同一轮里改完又改回的文件预填列表有、加载后消失；gitignore 文件被过滤（`core/src/snapshot.ts:166-175`），>2MB 未跟踪文件不捕获（`snapshot.ts:134`）
+- 摘要缓存 `app/src/session/timeline/turn-diffs.ts:12`，key = `${sessionID}/${from}`，每 tab 加载一次且永不失效（一轮结束后快照区间不变，所以缓存本身没问题）
+- shutdown 中断的那一轮不写 idle（`core/src/session/message-updater.ts:149-150`）→ 它没有摘要，改动会被下一轮的区间吞掉
+- 已修（2026-10-25）：每轮变更摘要改成「路径以本轮 step 并集为准、服务端 diff 只补增删数」，改动在 `session-ui/src/timeline/session-timeline-row.tsx:778-798` 的 `changed()`（对 `props.row.files` 做交集）；顺带让加载前后行序一致（原来加载后按 git 顺序重排）
+- 实测证据（会话 `ses_e90f7175cffeIL5AKba585f4GC`，DB `~/.local/share/opencode/opencode-local.db`，快照仓 `~/.local/share/opencode/snapshot/a7b03e49.../f52794f6...`）：轮「就是主页会话的选择…」区间差异 3 个但 step 并集只有 `view.tsx`，多出的 `.tmp-gap.db-shm`、`packages/core/gap-bench.tmp.ts` 是别处的写入；轮「UI UX重新设计下…」多出 `packages/core/src/filesystem/trigram-search.ts`，是同一时间窗口里另一个会话改的
+- 会话数据取证手法：`session_message` 按 seq 排序取 user/assistant/idle，assistant 的 `data.snapshot.{start,end,files}`；用 `git --git-dir=<快照目录> diff --name-only <start> <end>` 复现服务端区间差异（快照目录是裸仓库布局，没有 .git 后缀）
+- 2026-10-25 收尾：#1、#2 都按「一条 prompt 一个摘要」重做。`session.diff` 新增 query `prompt`（`protocol/src/groups/session.ts:527`，`core/src/session/diff.ts:92-108`）：带它时 `start = anchor.seq`、`end = min(下一条 prompt, 本轮 idle)`，不带时行为与上游一致（review 面板走无 `from` 的默认路径，不受影响）
+- 客户端：`session-ui/src/timeline/projection.ts` 的 `Turn` 增加 `files: Set<string>`，每步的文件归到它**跟随的那条 prompt**（`record()`），idle 时给本轮每条 prompt 各发一个 diff 行，位置在该 prompt 自己那组的末尾；行类型去掉 `from`（= `userMessageID`），key 从 `turn-diff:${messageID}` 改为 `turn-diff:${userMessageID}`（两条 prompt 共用一个 idle，旧 key 会撞）
+- 摘要行不再预填 step 并集：`session-timeline-row.tsx` 的 `paths()` 只取加载后的 `changed()`，`Show` 以它为准 —— 消除「先列后撤」（写了又删的临时文件、外来改动都不会先冒出来）。`pendingFiles` 参数已删
+- 缓存 `turn-diffs.ts` 的 key 追加 `:prompt` 后缀，避免同一条 message 的两种范围共用一个槽
+- 验证：`packages/{client,protocol,core,server,session-ui,app}` typecheck 全过；session-ui `bun test src` 275 过；core `test/session-diff.test.ts` 过（新增 prompt 切片断言，注意本机跑它要先 `PATH=~/.cache/opencode/bin:$PATH`，否则会去下载 rg 触发网络禁止）；app `turn-diffs.test.ts` 过；`bun run lint` 0 error
+- 内部工具适配缺口（2026-10-25 修）：core 注册的 recall（项目记忆）和 todowrite 在 UI 无任何分支——过程头 `names()` 落 default 显示英文原名、`contextToolIcon` 落 default 显示 mcp 插头图标、链上行走 GenericTool「调用了 recall」。todowrite 更甚：`ToolDisplay` 直接 return null，链上出空行但 `countWork` 照计「N 个工具」。
+- 修法：`toolTitle` 加 recall/todowrite 分支（`ui.tool.recall`=记忆检索/Recall/記憶檢索、`ui.tool.todo`=待办/Todo/待辦）；`contextToolIcon` 加 recall→brain、todowrite→checklist；注册 recall 渲染器（brain 图标 + query 副标题 + Markdown 输出）。
+- 分布数据：最近 25 个会话 recall 出现 5 次、todowrite 0 次（experimental.todo 未开）；其余工具名全部有映射。
+- 验证：`?doc=recall` 夹具（`.preview-shell/fixtures.ts`），展开链上「brain 图标 Recall + query 副标题」与 Shell 行对齐；session-ui 275 测试过，ui/session-ui tsc 干净。
+- 过程壳视觉重做（2026-10-25，纯 CSS，message-part.css）：链行从裸文本改为安静芯片（bg-layer-02 48% 填充、radius 7、margin-inline -5/-8 拉到壳边缘）——与 edit 卡片同一负 margin 技巧，但 flex 父级下负 margin 不参与拉伸，必须显式 `width: calc(100% + 13px)`（`auto` 在 row-flex 里走内容 sizing，`100%` 解析后忽略负 margin，两个坑都实测过）。图标底座原 bg-base（遮竖轨用）改 transparent，否则在芯片上出现深色方块。头部条：30px 高、radius 8、常驻发丝 inset 边框（hover 才 rim 是旧观感）。排版层级：链标题 12.5/500/muted、副标题与参数 12px/faint、时长类 meta 11.5px + tabular。动效：展开 220ms cubic-bezier(0.16,1,0.3,1) 带 translateY(-6px) 滑入、收起 150ms、chevron 220ms 同曲线。链行间距 gap 1px→3px，edit 卡片间 margin-top 4→3 同步。竖向导轨仍不恢复：芯片自带边界后更不需要。measure 脚本验证头部与芯片 rect 完全一致（185.7–801.7）。
+- 过程壳视觉重做（2026-10-25 晚）：纯 CSS 链行芯片化 + 头部条加边框 + 字号层级 + 动效缓出，全部验证过——但用户看了实物反馈「还不如之前的」，已整体 git checkout 回退（备份在 .preview-shell/message-part.css.ux-redo.bak）。原来链行裸文字的形态才是用户要的素净感；过程壳样式未获确认前不要再主动重设计，先出截图/小样让用户选。
+- 过程壳设计方向（2026-10-25 晚，两轮被否）：第一轮做减法（去填充条、12.5→12/13、加 1px 导轨）被判「还不如之前的」；第二轮做「轨迹线 + 语义摘要」被判「更难看」。用户明确要求「美化/换样式，不是减法」→ 方向应为加：保留并强化容器（底色 + 1px 描边 + radius 10）、字号提到 14/13/12、标题用 text-base。
+- 三个候选方案落在 `.preview-shell/compare-process-shell-v2.html`：A 整块卡片（#2e2e2e 卡 + 40px 头 + 1px 分隔线，链条 161px/5 步）、B 实心头 + #222 内嵌井（头 42px #3a3a3a，井半径 8，链条 175px）、C 每步一张 36px 小卡（链条 214px）。
+- 现状实测（预览壳 ?doc=recall，1024 窗口）：列宽 680；气泡 #242424 / radius 10 / padding 8×12 / 15px-22.5；过程条 min-height 26 + padding 3+3 = 32px、radius 6、底色 layer-01；答案与过程条间距 32。
+- 硬约束：Windows 上 font-weight 460/500 都落到 400，层级只能靠字号与颜色——之前几次改样式的「一片灰」都源于此。
 
 ## 默认 UI 字体
 
@@ -232,6 +255,9 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **不注入 notes.md 全文**：它已 27.8KB ≈ 8.7K token，每轮 0.65s × 55 轮 = 36s，和省下的探索时间基本打平，还会稀释注意力。
 - AGENTS.md 同步改了两条：Repo map / Investigation notes 从「去读」改成「已经在上下文里，别再读」，并新增 `## Delegating exploration`（不知道在哪就先派 explore，两次 grep 没收敛就派，已知文件/小改不要派）。
 - 验证：`test/project-map.test.ts` 4 例全过；optimize/verbosity/plugin 36 例、session-runner 270 例全过；`tsc -b --force` 0 错误。
+- **`tool/plugin/history.ts`（SiCode 自研，2026-10-25）**：压缩后回溯压缩前的原文。读 `SessionStore.messages()` 全量（不限 seq），`boundaryOf` 取**最后一条 status=completed 的 compaction** 的索引作为边界，之前的消息经 `SessionRecentText.messageToText` 转文本后做关键词匹配（query 按空白/逗号/分号切词，任一命中即算命中），不给 query 返回最近 limit 段；单段超 1500 字符保留头+尾。返回 marker 形如 `N of M archived exchanges, from before the last compaction`。注册点 `plugin/internal.ts` 三处：插件表、`SessionStore.Service`、`SessionStore.node`；`session/` 内核零改动。边界必须是**最后**一条 compaction 而不是第一条——SiCode 的摘要是全量覆盖而非增量，取第一条会漏掉中间段（测试里踩过：期望 `[middle]`，实际 `[old, middle]` 且实际行为才对）。
+- **`tool-output.ts` 截断策略（2026-10-25 改）**：`TAIL_SHARE = 0.4`，head 先取 60% 行预算 + 全量字节预算，tail 再取剩余行/字节预算且不回头吃 head；marker 形如 `[showing lines 1-1200 and 2202-3001 of 3001; full output saved to …]`。含 `file` part（图片）的结果走 `boundedHead`，只留头部以保住图文原顺序。默认限额 `MAX_LINES=2000` / `MAX_BYTES=50KiB`。
+- 验证纪律：这类截断改动**不要用「让模型跑大输出」的 E2E 去证**——模型会在 shell 里用变量/管道自己过滤，`metadata.truncated=false`，截断层根本没跑（2026-10-25 实际踩到）。要用服务层确定性测试：`test/tool-output.test.ts` 里直接调 `ToolOutput.Service.truncate`，默认限额 + 3001 行样本。
 
 ## 工具执行并行
 
@@ -401,6 +427,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - ??? trigram ????????????2026-10-24??bun:sqlite` FTS5 `tokenize=trigram`?????8482 ??? / 71MB ????????? **28.8s**?????? **248MB**?????? 3.5x?????????????**<1ms**??toModelContent`/`DEFAULT_SEARCH_LIMIT`/`waitForScan` ??0ms?????? `rg -F -l` ??? **3.5??.4s**????????rg **???????*??0/10??/4??/2??/6??9/19???????Cursor Crepe??? **6.85s**??*87MB**?????~15ms ????FTS5 ???????????? 4x?????? 2.8x??- FTS5 trigram ???**?????????**??function` ??? 3186 ??? vs rg ????????3107????? `case_sensitive=1`????????????????????????"????????????????????????? rg"??- ?????????????? Cursor ???"??????????????10 ??grep ??? P50 **4.0K** ?????90 **21K**?????94K??*15% ??15k**??ursor ?????????????????????????**18%** ???????????????????????79% ?????*?????limit**??0/50/60 ?????? 21% ?????100???????????????????????????????????- ????????rigram ???????????? **2.6s/???**??% ?????? ? 3.6s?????? 379??60s ??????????????*???????????**???????????????????????????????????????"????????????????????????
 - Phase 1??utput_mode ??? + offset ??? + 15k ??????????????????2026-10-25 ????? ?????????
 - ??? A??ODO/FIXME ????????????????mode=count ??? 79 ???????????KB???????????????????????12 ??grep + ??17 ?????????????????? D????- ??? B??????????????files_with_matches ??? 180 ?????? 15k ?????????????????? 50 ????? offset ??????????????content ???????????????????- ??? C?????????????????files_with_matches ??4 ???????content ????????? 8 ??????????????- ??? 33 pass??ool-search + ripgrep???tsc ????????- ????????????????????P0/P1/Phase 1 + ??? UI ??????Phase 2 trigram ???????????????????
+- **索引复用判据（2026-10-25 修）**：`trigram-search.ts` 原来的 reuse 只比路径集合（`indexed.size === current.size`），`m` 表也只有 `id/p`。这条判据有两个洞，而且互相掩盖：
+  - 洞一（更早就存在）：二进制文件被 `replaceAll` 的 `continue` 跳过、不写行，而 `current` 来自 `rg --files`（`hidden:true`）会把它们列出来 ⇒ 集合大小永远不相等 ⇒ **复用从来没生效过**，每次启动都在后台做一次全量重建（约 10s，用户看不见）。本仓 269 个 `.png` 就足以触发。实测旁证：缓存 `m` 表 11432 行 vs 当前 `rg --files --hidden` 8970 个，两边方向都不一致。
+  - 洞二：路径不变、内容变了（SiCode 关闭期间的外部编辑，或只改内容不加文件的 `git pull`）⇒ 复用旧 trigram ⇒ 预筛把该文件从候选里丢掉 ⇒ grep 报 0 条命中，**静默错答**。放大点：`tool/plugin/grep.ts:312` 的 `else if (chunks)` 对 `[]` 是 truthy，空候选既不进 rg 也不走内存匹配。服务层探针实测：文件里确有 `tokenZZZ`，结果 `{"matches":0,"prefiltered":true}` + `No matches found`。
+- **修法**：`m` 加 `t`（mtime，floor 到整毫秒）与 `s`（size）；`NOT_INDEXED = -1` 表示「已枚举但没索引」（二进制/不可读），只比存在性；`SCHEMA_VERSION` 1→2，`open()` 里用 `ALTER TABLE ADD COLUMN` 就地迁移，旧行 `t=0` 语义为「无法担保内容」→ 触发一次重建（不要用删库，旧索引仍有内容）。`build()` 先 `fsp.stat` 全部文件（并发 `BUILD_CONCURRENCY`；本仓 8101 文件实测：串行 44ms / 并发 27ms，相对 10s 重建可忽略），reuse 条件 = root + version + 集合相等 + 逐个指纹相等。`flushDirty` 必须把已 stat 到的指纹传给 `upsert`，否则一次编辑就把指纹写成 0、下次启动又重建。`TrigramIndex.indexed` 是新加的真「已索引文件数」（`size` 现在是「已知文件数，含二进制」）。
+- **验证纪律**：这类判据改动，回归测试必须能在旧代码上失败才算数。两条都做过基线对照：`reindexes when a file's content changed since the last run`（旧代码 `matches:0`）、`reuses the index when nothing changed, even with a binary file present`（旧代码 `built_at` 会变）。后者用缓存库里的 `meta.built_at` 断言「没有重建」，因为服务层没有别的可观测点；`built_at` 只由 `replaceAll` 写。
+- **不能用来兜底的方案**：「候选为空就退回全量 rg」。那会把每次未命中的成本从 0 变成 3.5–4.4s 全扫，把预筛的主要收益打掉。只能修索引时效性本身。
 
 ## 侧边栏文件树
 
@@ -471,6 +503,13 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 生效条件卡得很死（`search.ts:195-207`）：`location.workspaceID` 有值 → 必须 ripgrep（远程沙箱，fff 只索引本地目录）；`options.fff === false` 或未指定且 `process.platform === "win32"` 或 `!Fff.available()` → ripgrep；非 VCS 或 home 目录 → ripgrep。⇒ **本机（Windows）开发时 fff 一次都没跑过**，任何基于本机的对比都要显式打开。
 - 类型面在 `packages/core/src/filesystem/fff.ts`（只声明了 `Picker` 的三种搜索），`GrepOptions` / `GrepResult` 等类型没有进这层适配，接 grep 需要在 `fff.ts` 补接口、三套后端（`.bun.ts` / `.node.ts` / `.workerd.ts`）里 `.workerd.ts` 仍需保持 unavailable 降级。
 - 与已量化痛点的对应关系：`classifyDefinitions` 对"grep 命中排第 1 仅 35%"；`pageSize` + `nextCursor` 对 24% 截断；`multiGrep` 一次搜多个同义词对 45% 的多轮试探；内容索引预热对"一次给出代码块"。⇒ 这条路不需要自建切块索引（那套是 19,941 块 / 10.4s 的既有成本），也不涉及 embedding。
+- **修正上面「Cursor = 语义索引 + 自动注入，两件事缺一不可」（2026-10-25，Cursor 3.24.18 逆向，`D:/软件丨工具/cursor逆向专区`）**：原来把 Cursor 想成一条管道，实际是**三条并行** —— A `Crepe` 本地 trigram 倒排（`.git/cursor/crepe/<commit>/`，`CRP2` 的 `index.bin` + `postings.bin`，**文件级 posting**，命中后仍要回读文件做行级正则）；B Merkle / codebase snapshot（增量与同步）；C 语义检索（向量 + rerank，`topK` 默认 25、结果带 `score`，**在云端 / managed local client**）。⇒ **Cursor 本地也没有 embedding**，「语义索引」不是它本地能力的一部分。
+- 自动注入同样不成立：`Cursor-本地检索与索引全链路.md` §4 结论原文是「暴露成工具，不靠把 grep 结果灌进系统提示」「不把整库检索结果当隐式上下文自动塞进 prompt」；Grep / Glob / Read / SemanticSearch 四工具分立，靠工具描述教模型自己选。Cursor 只注入**用户手动选的 `selectedContext` + rules/skills 索引**，不注入检索结果。⇒ SiCode 的 `config/plugin/project-map.ts`（每请求 push repo map + notes 标题索引）反而比 Cursor 激进，这一项不用对齐。
+- 索引层实测对照（归档里 Crepe 的测样本就是本仓 SiCode worktree，可直接对读）：Crepe 8019 文件 / 全量建 6.85s / 产物 87MB（index 44.7 + postings 42.7）/ 稀有符号查询 ~15ms，约为全库 rg 的 1/70；SiCode `filesystem/trigram-search.ts` 8232 文件 / 建 10s / 盘上 15MB / 查询 5–85ms。**查询同档、盘上小 6 倍**，索引层没有落后，不需要重做，差距不在这一层。
+- `script/trigram-bench.ts` 是把"查询加速"变成可复现数字的唯一入口：10 条查询，两侧都不设行数上限（谁也别占早退便宜），`outputPaths` 把 rg 在 Windows 上打的 `.\a\b` 归一成 `a/b` 再比，`missing > 0` 就是错。（原来 .sicode/context-plan.html 写的「40–80×」是窄查询那一档，不是中位数。）
+- 实测本仓（8646 文件枚举 / 8272 入索引，全库 rg sweep 稳定 1.7s）：中位 21.75×，p10 6.4×，p90 56.7×，最慢 2.5×（`export const`，2714 候选），最快 230×（3 候选）。加速倍数由候选面决定，跟索引本身无关。
+- 瓶颈一直在 stage2 不在索引：`compaction` 那条 269ms 里 stage1 只有 8ms、stage2 261ms。`packages/core/src/filesystem/trigram-search.ts` 的 `matchLiteralInMemory` 原本逐文件串行 `readFile` + 无条件 `split("\n")`，~0.3ms/文件。
+- 改造成 `READ_CONCURRENCY = 32` 窗口并发读 + `includes` 门禁（不命中就不 split），行序仍按 paths 原序拼，rg 的输出顺序不变。
 
 ## 字体与排版
 
@@ -485,3 +524,50 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 - 过程壳展开动画现由 data-animating 门控（tool-renderer.tsx change() 设置，240ms 自清除；message-part.css 选择器同步）：只在用户点击折叠/展开时播放，会话打开/失败回合默认展开/流式自动展开均不播。
 - 会话打开文字跳动根因（2026-10-25）：virtualizer.tsx 冷挂载 visibility:hidden 保护仅限 pinned 会话，非 pinned（滚动停在中间）冷首开裸奔——行高先按 60px 估算渲染、ResizeObserver 实测后逐行纠正，可见区文字整体下移。修复：coldMount(=!cache) 广义门控 reveal，拆 coldRevealPending（reveal）/coldPending（pinned bottom-settle）。已 tsc 通过。
+- 指令更新通知（packages/session-ui/src/timeline/session-timeline-row.tsx `notice()`）：system 消息 metadata.notice=="instructions" + instructionSources 由 message-updater.ts:151 从 session.instructions.updated 事件生成；InstructionState.prepare 在 runner/llm.ts:224 每个 step 边界重读指令源，core/git-status 快照一变就发事件，所以通知总贴在刚结束的助手回复下面（时间线=事件日志，按时间点追加）。
+- SiCode 改动：`notice()` 过滤 `core/*` 前缀的源（git-status/date/environment 是给模型的内部上下文，不是给用户看的），全 core 的 delta 返回 undefined 不渲染通知卡片；混合源只显示用户级（AGENTS.md 等）；同时覆盖旧格式 description "Instructions updated: " 前缀分支。模型侧上下文更新不受影响（system 消息仍进时间线与请求）。
+- 勿改回：return undefined 时 grouped 路径会建空 part 但 `Show when={content()}` 渲染为空，与 model-switched 先例一致；不能让它落到 `message.description ?? message.text` 兜底，否则会把裸文本 "Instructions updated: core/git-status" 打出来。
+
+## shell 输出编码
+
+- **中文 Windows 下 shell 输出乱码的根因（2026-10-25）**：宿主默认 `[Console]::OutputEncoding` 是 **gb2312 / codepage 936**（本机实测），ps 家族与原生控制台程序都按这个代码页写 stdout/stderr；而 `shell.ts` 的 `output()` 原来用 `buffer.subarray(...).toString("utf8")`，于是每个中文字符都变成 U+FFFD —— 恰好是解释命令为什么失败的那一行。例：`$($null.Count)` 的报错原文「无法对 Null 数组进行索引。」被存成 `�޷��� Null �������������`。
+- **修法一（根因）**：`shell/select.ts` 的 `args()` 给 ps 家族加前置 `try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}; `（`PS_PRELUDE`）。它同时修正两个方向：ps 自己写出的错误消息、以及 ps 解码原生程序输出时用的代码页。带 `try/catch` 是因为无控制台宿主下赋值可能抛错，不能让它连带整个命令失败。
+- **修法二（兜底）**：新增 `packages/util/src/decode.ts` 的 `Decode.outputText(bytes)`：先按 UTF-8 严格解码，失败且平台是 win32 时退到 `TextDecoder("gbk")`。关键细节是 `completeEnd()` 先剔掉尾部不完整的多字节序列再判断 —— 否则分片读取把字符切成两半时，合法 UTF-8 会被误判成 GBK，反而整段变乱码。放在 util 而不是 core，是因为 `util/src/process.ts` 的 `requireSuccess`/`requireExitIn` 也要用（`stderr.toString("utf8")` 是同一个 bug），而 util 不能依赖 core。
+- **修法二落点**：`core/src/shell.ts` 的 `output()`（shell 工具结果与增量读取共用这一处）、`core/src/config/plugin/command.ts`（`!command` 插值，原来也是 `toString("utf8")`）、`util/src/process.ts` 两处错误消息。
+- **顺带修正一个此前记错的结论**：shell 工具**本来就保留尾部** —— `Shell.result` 自己按 `maxBytes` 从文件末尾分页、再 `lines.slice(-maxLines)`，并写好 `[showing lines N-M of T; full output saved to …]`，metadata 也带 `truncated`。而 `ToolOutput.truncate` 见到 `metadata.truncated !== undefined` 会直接原样返回（`tool-output.ts` 开头第一段逻辑）。所以：**shell / read / grep / glob 都走各自的截断，`ToolOutput` 的 head+tail 只作用于 MCP 工具（`tool/mcp.ts`）和没自己写 `truncated` 的插件结果**。之前把「补尾部」说成修 shell 报错栈是错的。
+
+## 压缩遥测
+
+- **为什么默认关（代码依据，2026-10-25）**：`schema/src/config/experimental.ts` 的 `precompute_compaction` 描述原文就写了「Background summaries that are never used still cost tokens」，同目录 `portable_shell_scanner` / `todo` 也都是默认 false，experimental 这一档的约定就是显式 opt-in。更硬的一条是记账：`session/compaction.ts` 的 `held.usage.forEach(addSpent)` 只在 `usePrecomputed` 成功换入时执行，所以**被丢弃/失败/会话结束的后台摘要不进会话成本、也不发 `UsageRecorded`** —— provider 照扣费，界面上看不见。默认关本质是不让用户在一笔无法反查的账上花钱。
+- **兑现路径很窄**：`usePrecomputed` 的 `usable` 要求 `trigger.reason !== "overflow"`，即 provider 报上下文超限后的恢复性压缩**永远不用** held 摘要；native compaction 也不用。触发还要过 `estimateContext >= ceiling × PRECOMPUTE_RATIO(0.85)` 且实测 prompt ≥ `PRECOMPUTE_MIN_TOKENS(64k)`。`tailLimit = min(max(keep*2, 30000), budget*0.25)`，默认 keep=15000 → 恒为 30000；而 85%→100% 的余量是 `0.15 × 窗口`，所以**窗口 > ~200k 时可能在到点前又聊超 30k，held 过期重算**（日志里记作 `superseded`）。
+- **遥测落点（新增，零侵入）**：`core/src/compaction-metrics.ts` 只监听 Bus 的 `Compaction.Started` → `Ended`/`Failed`，用 `sessionID` 配对算耗时，不需要改 `session/` 主循环；注册在 `plugin/internal.ts` 的 node 列表（依赖 `Bus.node`，已在列表中）。因为 `Compaction.Ended` 的 schema 本身没有 duration 字段，配对是唯一不用改内核的算法。没有 Started 配对的 Ended 直接丢弃（重启后恢复的压缩，算出来是假的）。
+- **precompute 生命周期三条**（`session/compaction.ts`，新增 `Precomputed.startedAt` + `Effect.timed` 包 `summarize`）：`state=started` 带 `windowRatio`/`tailTokens`/`tailLimit`；`state=used` 带 `savedMs`（摘要自身生成耗时 = 真省下的等待）与 `leadMs`（提前多久准备好）；`state=discarded` 带 `reason`，取值 `precompute-off` / `overflow` / `native` / `stale-session` / `stale-tail` / `superseded` / `failed`。fiber 的返回类型因此从 `Result` 变成 `{ result, durationMs }`，`usePrecomputed` 里 `exit.value` 相应改成 `exit.value.result`。
+- **日志格式与解析契约**：`util/src/observability/logging.ts` 的 formatter 会把 `Effect.logInfo("msg", {obj})` 的**第二个参数 flatten 成平铺字段**，标量不加引号（正则 `/^[^\s="\\]+$/` 才免引号）。实际落盘形如 `message=compaction.timing outcome=completed reason=auto durationMs=41200`。`script/compaction-stats.ts` 就是按这个形状解析的；改任何一侧都要同步另一侧。Effect v4 里替换 logger 的 API 是 `Logger.layer([logger], { mergeWithExisting: false })`，`Logger.replace` 不存在（踩过）。
+- **判据（脚本自动给）**：`waste = discarded / (used + discarded)`，>50% 保持关；25–50% 记作 marginal；<25% 且累计 `savedMs ≥ 30s` 才判 justified。`unsettled = started - used - discarded` 代表会话结束或仍在跑、从未结算的那部分，是这套统计的固有盲区（进程退出即丢 held）。
+- **和 Cursor 的结构差异**：Cursor 的 9 个指标里有 `persisted`，说明它的后台摘要算完会落盘复用（`BackgroundAndPersistIfCompleted`）；SiCode 的 held 只在内存 `Map`（`compaction.ts` 的 `precomputed`），进程退出即丢，**所以它的浪费率天然更高**。这既解释了默认关，也说明「开关默认值」不该照抄 —— Cursor 的成本在自己账上，SiCode 的在用户 key 上。
+- **路径更正**：本文件（含「项目记忆」区域）里出现的 `packages/plugin/internal.ts` 都应读作 `packages/core/src/plugin/internal.ts` —— 插件表、node 列表、`SessionStore.Service` 注册全在 core 包内，仓库里没有前者这个路径；`bun script/notes.ts verify` 会把它报成 missing。
+
+## 提示词
+
+- 系统提示词按 provider 分发，不是一份：`packages/core/src/plugin/optimize.ts:19-67` 按 model id 选文件 —— `muse` 走 `system-prompt/meta.txt`（唯一有 Verification / Parallelism 两节的），`claude` 走 `anthropic.txt`（10 行，这两节都没有），gpt / kimi / trinity / deepseek 各自一套。想加一条"对所有模型生效"的纪律，只有三个落点：工具描述、`session/compaction.ts` 的 `SUMMARY_RULES`（与 provider 无关）、项目注入（AGENTS.md）。
+- `packages/core/src/tool/plugin/write.ts:62`：工具描述末尾加了"建文件前先 `grep`/`glob` 确认没有同类实现，有就扩它"。理由是该描述是模型调用前唯一会读的约束，而原文只说"覆盖或新建"，等于默认鼓励新建。
+- `packages/core/src/session/compaction.ts:195-202` 的 `SUMMARY_RULES`：Completed 项必须写产物路径，或标 "not on disk"。压缩后的 agent 把摘要当事实读，"已完成"不带路径就会跳过核对直接交付。
+
+## 上游同步
+
+- 2026-10-26 复查：base `76fd05ff45` → `upstream/dev` = `450e7b9241`（10-25 09:21 -0700），区间 **160 提交**（34 feat / 66 fix / 23 docs / 19 chore / 10 refactor / 3 perf / 3 ci / 1 test）。上游已发到 v2.1.4（我们 desktop 版本号还是 2.1.3）。
+- 合并预演命令：`git merge-tree --write-tree --name-only main-sicode upstream/dev`。结果：**19 个 content 冲突 + 24 个 modify/delete + 1 个反向 patch 冲突**。24 个 modify/delete 里 22 个是我们主动删的 `README.*.md`（上游又改了），合并时保留删除即可；`.opencode/skills/opencode-dev/SKILL.md`、`desktop/resources/linux/opencode-desktop.desktop` 同理（我们品牌化成 sicode-desktop）。
+- 真冲突清单（要人工看）：`core/src/filesystem/fff.ts`、`core/src/filesystem/search.ts`（和「代码检索 / 语义索引」的 trigram 改动正面相撞）、`core/src/mcp/client.ts`、`core/src/plugin/internal.ts`、`core/src/session/history.ts`、`core/src/tool/plugin/read.ts`、`protocol/src/api.ts`、`session-ui/src/context/data.tsx`、`session-ui/src/message/message-content.tsx`、`session-ui/src/message/attachment-card.css`、`app/src/shell/routes/session-ui-provider.tsx`、`gui-extensions/src/file/i18n/en.ts`、`desktop/electron-builder.config.test.ts`，外加 `bun.lock` / `nix/hashes.json` / 三个 `package.json`。
+- 数据层破坏性变更：新增 migration `core/src/database/migration/20261025123711_blob.ts` + `core/src/session/blob.ts`，消息里的附件从内联 base64 改成 `media:<hash>` 内容寻址块表；`history.ts` / `inbox.ts` / `projector.ts` / `runner/llm.ts` 一起改。合并后必须跑迁移，老会话附件才读得出来。
+- 配置键改名：`experimental.precompute_compaction` → `experimental.background_compaction`，**没有旧键别名**（`config/normalize.ts:479`、`config/plugin/compaction.ts:16`）。「压缩遥测」那套代码/文档里提到旧键名的地方要跟着改，否则配置静默失效。
+- 依赖变更：`session-ui` 删掉 mermaid 改 `pele@1.7.0`，`markdown-mermaid.ts` 整个重写（`detectType` + `renderAsync`，字号/字体从 CSS 变量取）。`bunfig.toml` 的 minimumReleaseAgeExcludes 里 mermaid 换 pele。
+- i18n 增量很小，只 ~10 条键：`session.elicitation.selectPlaceholder`、`ui.messagePart.compaction.done`、`ui.message.copyOutput`、debug 的 `heap.*` 6 条，另有 `command.model.variant.cycle` 文案从 "thinking effort" 改成 "model variant"、`tree.changes.*` 语序改成「N files changed」。
+- 顺带治了本机 3084 竞态：`1564686791` 新增 `packages/cli/src/services/port-owner.ts`（能报出端口被谁占）+ service 的 `XDG_STATE_HOME` 不再泄漏进工具 shell；`b6cbbd7646` 服务关停加了 10s 上限。
+
+## process-shell-card
+
+- Open WorkShell is one virtual row: filterCollapsedWorkShellRows always packs members; workShellCardMembers + workShellCardBlocks build demo blocks (stage/well/fold).
+- Render lives in session-timeline-row WorkShell case: data-work-shell-card > head > body-in > stages/wells; WorkShellCardNesting strips per-row Frame chrome.
+- Closing answer + outcomes stay outside the card (demo .answer after .card); trailingProseIndexes drives both filter and cardMembers.
+- Colors hard-coded in work-shell.css: head #3a3a3a, body #2e2e2e, well #222; icon column x=18 via head pad 18 / body 6+well 4+row 8.
+- Sticky pin uses workShellPinSize=48 (overview bar), not the composite card height ? packing broke sticky when head.size was the full card.

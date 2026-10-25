@@ -53,13 +53,11 @@ describe("shell", () => {
     expect(ShellSelect.args("/usr/bin/fish", "echo hi")).toEqual(["-c", "echo hi"])
     expect(ShellSelect.args("/bin/zsh", "echo hi")).toEqual(["-c", "echo hi"])
     expect(ShellSelect.args("/bin/bash", "echo hi")).toEqual(["-c", "echo hi"])
-    expect(ShellSelect.args("pwsh", "Write-Output hi")).toEqual([
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "Write-Output hi",
-    ])
+    const powershell = ShellSelect.args("pwsh", "Write-Output hi")
+    expect(powershell.slice(0, 4)).toEqual(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
+    // SiCode: PowerShell prepends a console-encoding prelude so Chinese messages survive the pipe.
+    expect(powershell[4]?.startsWith("try {")).toBe(true)
+    expect(powershell[4]?.endsWith("Write-Output hi")).toBe(true)
   })
 
   if (process.platform !== "win32") {

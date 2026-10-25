@@ -18,7 +18,7 @@ import type { StreamOptions } from "@opencode/ai/route"
 import type { SessionCompactionResult } from "@opencode/plugin/effect/session"
 import type { SessionError } from "@opencode/schema/session-error"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Context, Effect, Exit, Fiber, Layer, Result, Scope, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Exit, Fiber, Layer, Result, Scope, Stream } from "effect"
 import { Agent } from "../agent.js"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
@@ -112,7 +112,10 @@ type Precomputed = {
   /** Background summaries that failed since the last compaction, this one included once it has. */
   readonly failures: number
   readonly usage: SessionUsage.Recorded[]
-  readonly fiber: Fiber.Fiber<Result, Failure>
+  // SiCode: when the background call started and how long it took, so `compaction-stats` can report
+  // the wait a precomputed summary actually saved.
+  readonly startedAt: number
+  readonly fiber: Fiber.Fiber<{ readonly result: Result; readonly durationMs: number }, Failure>
 }
 
 const NOTHING_TO_COMPACT: Failure = { error: { type: "compaction.unavailable", message: "Nothing to compact yet" } }
@@ -195,6 +198,7 @@ const SUMMARY_RULES = `Rules:
 - Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers.
 - Carry forward only user questions or requests that remain unanswered or require further action. Do not repeat ones that newer history has answered or resolved. Preserve exact wording when carrying one forward.
 - Preserve consequential workflow state, including whether changes are uncommitted, committed, pushed, under review, or merged.
+- In Work State, a completed goal names the paths it produced, or is marked "not on disk". Complete means the artifact exists, not that it was planned, described, or assumed finished.
 - Do not mention the summary process or that context was compacted.`
 
 export const buildPrompt = (update: boolean, legacy = false) => {
@@ -352,6 +356,8 @@ export const layer = Layer.effect(
         // Summarizing up to the same response again would repeat the same request.
         if (index >= 0 && (existing.keepID === anchor.id || failures >= PRECOMPUTE_MAX_FAILURES)) return
         yield* Fiber.interrupt(existing.fiber)
+        // SiCode: the held summary fell too far behind and is being written again — one wasted call.
+        yield* Effect.logInfo("compaction.precompute", { state: "discarded", reason: "superseded" })
         precomputed.delete(sessionID)
       }
       // After a model switch nothing is cached for the new model yet; wait until its first response has written it.
@@ -359,10 +365,16 @@ export const layer = Layer.effect(
 
       const model = yield* selectModel(context, settings.buffer, false)
       const usage: SessionUsage.Recorded[] = []
+      const startedAt = yield* Clock.currentTimeMillis
       const fiber = yield* summarize({ reason: "auto", context: model.context }, model.cap, settings.keep, {
         messages: context.messages.slice(0, anchorIndex),
         usage: (recorded) => usage.push(recorded),
-      }).pipe(Effect.forkIn(scope))
+      }).pipe(
+        // SiCode: the time this call takes is exactly what a precomputed summary saves when it is used.
+        Effect.timed,
+        Effect.map(([elapsed, result]) => ({ result, durationMs: Duration.toMillis(elapsed) })),
+        Effect.forkIn(scope),
+      )
       precomputed.set(sessionID, {
         firstID: context.messages[0]?.id,
         keepID: anchor.id,
@@ -371,7 +383,15 @@ export const layer = Layer.effect(
         tailLimit: tailLimit(settings.keep, model.cap),
         failures,
         usage,
+        startedAt,
         fiber,
+      })
+      // SiCode: how close to the threshold this started, and how much tail the summary has to cover.
+      yield* Effect.logInfo("compaction.precompute", {
+        state: "started",
+        windowRatio: Math.round((estimateContext(context) / ceiling) * 1000) / 1000,
+        tailTokens: tailTokens(context, anchorIndex),
+        tailLimit: tailLimit(settings.keep, model.cap),
       })
     })
 
@@ -388,22 +408,37 @@ export const layer = Layer.effect(
     ): Effect.fn.Return<Result | undefined> {
       const context = trigger.context
       const index = heldIndex(held, context)
-      const usable =
-        settings.precompute &&
-        trigger.reason !== "overflow" &&
-        context.model.compaction?.type !== "native" &&
-        index >= 0 &&
-        tailTokens(context, index) <= tailLimit(settings.keep, budget)
-      if (!usable) {
+      // SiCode: a held summary that goes unused costs the same tokens as one that is used, so the log
+      // has to name which condition threw it away. `compaction-stats` reports that share.
+      const discarded = (() => {
+        if (!settings.precompute) return "precompute-off"
+        if (trigger.reason === "overflow") return "overflow"
+        if (context.model.compaction?.type === "native") return "native"
+        if (index < 0) return "stale-session"
+        if (tailTokens(context, index) > tailLimit(settings.keep, budget)) return "stale-tail"
+        return undefined
+      })()
+      if (discarded !== undefined) {
         yield* Fiber.interrupt(held.fiber)
+        yield* Effect.logInfo("compaction.precompute", { state: "discarded", reason: discarded })
         return undefined
       }
 
       const exit = yield* Fiber.await(held.fiber).pipe(Effect.onInterrupt(() => Fiber.interrupt(held.fiber)))
-      if (Exit.isFailure(exit)) return undefined
+      if (Exit.isFailure(exit)) {
+        yield* Effect.logInfo("compaction.precompute", { state: "discarded", reason: "failed" })
+        return undefined
+      }
       // Background calls were billed as they finished; the compaction's message still shows what it cost.
       held.usage.forEach((usage) => addSpent(context.session.id, usage))
-      return { ...exit.value, metadata: { keepID: held.keepID, ...exit.value.metadata } }
+      // SiCode: the summary was written before compaction asked for it, so its generation time is the
+      // wait this saved; `leadMs` is how early it was ready.
+      yield* Effect.logInfo("compaction.precompute", {
+        state: "used",
+        savedMs: exit.value.durationMs,
+        leadMs: (yield* Clock.currentTimeMillis) - held.startedAt,
+      })
+      return { ...exit.value.result, metadata: { keepID: held.keepID, ...exit.value.result.metadata } }
     })
 
     const due = (context: SessionContext.Loaded, ceiling: number) => {

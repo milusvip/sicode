@@ -268,6 +268,11 @@ test("compaction prompt requires the checkpoint headings in order", () => {
   ])
 })
 
+test("compaction prompt asks completed goals to name their artifacts", () => {
+  // A checkpoint that says "done" without a path is what makes the next agent skip re-verifying.
+  expect(SessionCompaction.buildPrompt(false)).toContain('is marked "not on disk"')
+})
+
 test("compaction update prompt rewrites legacy checkpoints only when asked", () => {
   const rewrite = "The existing checkpoint was written with an earlier format"
   expect(SessionCompaction.buildPrompt(true, true)).toContain(rewrite)

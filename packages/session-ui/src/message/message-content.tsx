@@ -27,7 +27,6 @@ import { Button } from "@opencode/ui/button"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { BasicTool } from "../components/basic-tool"
 import { reasoningHeading } from "../timeline/projection"
-import { formatElapsed } from "../timeline/work-shell"
 import { Card } from "@opencode/ui/card"
 import type {
   PromptAgentAttachment,
@@ -715,8 +714,8 @@ export function AssistantReasoningContent(props: {
     const time = props.content.time
 
     if (time?.completed === undefined) return undefined
-
-    if (props.chain) return formatElapsed(time.completed - time.created)
+    // SiCode: chain rows no longer show per-step seconds (chevron column alignment).
+    if (props.chain) return undefined
 
     const total = Math.max(0, Math.round((time.completed - time.created) / 1000))
     const numfmt = new Intl.NumberFormat(i18n.locale())
@@ -790,9 +789,7 @@ export function AssistantReasoningContent(props: {
                 </Show>
               </Show>
             </div>
-            <Show when={props.chain && !props.streaming && duration()}>
-              {(value) => <span data-slot="chain-tool-meta">{value()}</span>}
-            </Show>
+            {/* SiCode: chain rows omit per-step seconds — they misaligned next to expandable chevrons. */}
           </div>
         }
       >

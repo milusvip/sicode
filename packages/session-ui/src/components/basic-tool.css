@@ -472,3 +472,35 @@
     }
   }
 }
+
+/* SiCode: stop control for a running background job (shell rows, subagent rows). The host row is a
+   Kobalte trigger <button> or an <a>, so the control is a span with role=button: it must not nest an
+   interactive element and must not inherit the row's own text metrics. */
+[data-slot="running-stop"] {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--v2-text-text-faint);
+  opacity: 0.6;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+[data-slot="running-stop"]:hover,
+[data-slot="running-stop"]:focus-visible {
+  opacity: 1;
+  color: var(--v2-state-fg-danger, #e5756a);
+  background: color-mix(in oklch, currentColor 14%, transparent);
+  outline: none;
+}
+
+[data-slot="running-stop"][aria-disabled="true"] {
+  opacity: 0.3;
+  pointer-events: none;
+}

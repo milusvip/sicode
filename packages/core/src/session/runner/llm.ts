@@ -12,6 +12,7 @@ import { SessionContext } from "../context.js"
 import { SessionEvent } from "../event.js"
 import { SessionInbox } from "../inbox.js"
 import { SessionHistory } from "../history.js"
+import { PromptPrefix } from "../prompt-prefix.js"
 import { SessionModelRequest } from "../model-request.js"
 import { SessionModelTransport } from "../model-transport.js"
 import { SessionMessage } from "../message.js"
@@ -273,6 +274,15 @@ const layer = Layer.effect(
           initial: loaded.initial,
           messages: loaded.messages,
         })
+        // SiCode: Cursor measures prefix rebuilds (`agent.prompt_prefix.rebuilt`) because a rebuilt prefix is a
+        // cache miss and a cache miss is latency plus cost. Recording it per step turns "the agent got slower" into
+        // a number that can be traced back to whatever changed the request's stable head.
+        yield* PromptPrefix.observe({
+          sessionID,
+          model: loaded.model.ref,
+          tools: loaded.tools.definitions,
+          system: transcript.system,
+        })
         const prepared = yield* context.request.primary({
           session: loaded.session,
           agent: loaded.agent.id,
@@ -317,6 +327,8 @@ const layer = Layer.effect(
         })
         const completed = yield* SessionStep.Outcome.$match(outcome, {
           Completed: Effect.fnUntraced(function* (outcome) {
+            // SiCode: a completion after a retry is the success half of the retry telemetry pair.
+            yield* retry.succeed()
             // The Session is about to go idle, which leaves the background summary time to finish.
             if (!outcome.needsContinuation)
               yield* compaction.precompute(

@@ -49,6 +49,101 @@ const cleanup = Effect.fn("ToolOutput.cleanup")(function* (fs: FSUtil.Interface,
   )
 })
 
+/** Share of the line budget the tail reserves, so a long head cannot consume the lines that carry the outcome. */
+export const TAIL_SHARE = 0.4
+
+/** The first `lineCap` lines that fit `byteCap`, counting the newline between kept lines. */
+const takeHead = (lines: ReadonlyArray<string>, lineCap: number, byteCap: number) => {
+  const kept: string[] = []
+  let bytes = 0
+  for (const line of lines) {
+    if (kept.length >= lineCap) break
+    const size = Buffer.byteLength(line, "utf-8") + (kept.length > 0 ? 1 : 0)
+    if (bytes + size > byteCap) break
+    kept.push(line)
+    bytes += size
+  }
+  return kept
+}
+
+/** The last lines that fit `byteCap` without reaching back into the head, newest end first chosen last. */
+const takeTail = (lines: ReadonlyArray<string>, headLines: number, lineCap: number, byteCap: number) => {
+  const kept: string[] = []
+  let bytes = 0
+  for (let index = lines.length - 1; index >= headLines; index--) {
+    if (kept.length >= lineCap) break
+    const line = lines[index]
+    if (line === undefined) break
+    const size = Buffer.byteLength(line, "utf-8") + (kept.length > 0 ? 1 : 0)
+    if (bytes + size > byteCap) break
+    kept.unshift(line)
+    bytes += size
+  }
+  return kept
+}
+
+const bytesOf = (lines: ReadonlyArray<string>) =>
+  lines.reduce((total, line, index) => total + Buffer.byteLength(line, "utf-8") + (index > 0 ? 1 : 0), 0)
+
+/** Names the ranges kept and what the file holds, so the model knows both what it lost and where to look. */
+const markerOf = (headLines: number, tailLines: number, total: number, file: string) => {
+  const spans: string[] = []
+  if (headLines > 0) spans.push(`1-${headLines}`)
+  const start = total - tailLines + 1
+  if (tailLines > 0 && start > headLines) spans.push(`${start}-${total}`)
+  const shown = spans.length === 0 ? "0 lines" : `lines ${spans.join(" and ")}`
+  return `[showing ${shown} of ${total}; full output saved to ${file}]`
+}
+
+/**
+ * Keeps both ends of a text-only result. The tail is reserved first so that a long head cannot
+ * consume it: when the byte budget is tight the head still goes first, which keeps the old shape.
+ */
+const boundedEnds = (lines: ReadonlyArray<string>, limits: Limits, file: string): Tool.Content[] => {
+  const tailTarget = Math.max(1, Math.floor(limits.maxLines * TAIL_SHARE))
+  const head = takeHead(lines, Math.max(0, limits.maxLines - tailTarget), limits.maxBytes)
+  const tail = takeTail(lines, head.length, limits.maxLines - head.length, limits.maxBytes - bytesOf(head))
+  const bounded: Tool.Content[] = []
+  if (head.length > 0) bounded.push({ type: "text", text: head.join("\n") })
+  bounded.push({ type: "text", text: markerOf(head.length, tail.length, lines.length, file) })
+  if (tail.length > 0) bounded.push({ type: "text", text: tail.join("\n") })
+  return bounded
+}
+
+/** Keeps the head only, but leaves every file part where it was so the surrounding text still reads. */
+const boundedHead = (
+  content: ReadonlyArray<Tool.Content>,
+  lines: ReadonlyArray<string>,
+  limits: Limits,
+  file: string,
+): Tool.Content[] => {
+  const kept = takeHead(lines, limits.maxLines, limits.maxBytes)
+  const marker = markerOf(kept.length, 0, lines.length, file)
+  const bounded: Tool.Content[] = []
+  let remaining = kept.join("\n").length
+  let seenText = false
+  let marked = false
+  for (const item of content) {
+    if (item.type === "file") {
+      bounded.push(item)
+      continue
+    }
+    if (seenText && remaining > 0) remaining--
+    seenText = true
+    if (remaining >= item.text.length) {
+      bounded.push(item)
+      remaining -= item.text.length
+      continue
+    }
+    if (remaining > 0) bounded.push({ ...item, text: item.text.slice(0, remaining) })
+    if (!marked) bounded.push({ type: "text", text: marker })
+    remaining = 0
+    marked = true
+  }
+  if (!marked) bounded.push({ type: "text", text: marker })
+  return bounded
+}
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -77,48 +172,22 @@ const layer = Layer.effect(
       if (lines.length <= limits.maxLines && totalBytes <= limits.maxBytes)
         return { ...result, metadata: { ...result.metadata, truncated: false } }
 
-      const kept: string[] = []
-      let bytes = 0
-      for (const line of lines.slice(0, limits.maxLines)) {
-        const size = Buffer.byteLength(line, "utf-8") + (kept.length > 0 ? 1 : 0)
-        if (bytes + size > limits.maxBytes) break
-        kept.push(line)
-        bytes += size
-      }
       const file = path.join(directory, fileName())
       yield* fs.ensureDir(directory).pipe(Effect.orDie)
       yield* fs.writeFileString(file, text).pipe(Effect.orDie)
-      const shown = kept.length > 0 ? `lines 1-${kept.length}` : "0 lines"
-      const marker = `[showing ${shown} of ${lines.length}; full output saved to ${file}]`
-      const bounded: Tool.Content[] = []
-      let remaining = kept.join("\n").length
-      let seenText = false
-      let marked = false
-      for (const item of content) {
-        if (item.type === "file") {
-          bounded.push(item)
-          continue
-        }
-        if (seenText && remaining > 0) remaining--
-        seenText = true
-        if (remaining >= item.text.length) {
-          bounded.push(item)
-          remaining -= item.text.length
-          continue
-        }
-        if (remaining > 0) bounded.push({ ...item, text: item.text.slice(0, remaining) })
-        if (!marked) bounded.push({ type: "text", text: marker })
-        remaining = 0
-        marked = true
-      }
-      if (!marked) bounded.push({ type: "text", text: marker })
+      // SiCode: a long output's answer is nearly always in its last lines — a stack trace's cause, a
+      // test run's tally — so a head-only preview hides exactly what the model needs. Keep both ends.
+      // A file part (an image) keeps the head-only path: the text around it is a caption whose order
+      // matters more than its tail.
+      const bounded = content.some((item) => item.type === "file")
+        ? boundedHead(content, lines, limits, file)
+        : boundedEnds(lines, limits, file)
       return {
         ...result,
         content: bounded,
         metadata: { ...result.metadata, truncated: true, outputPath: file },
       }
     })
-
     const save = Effect.fnUntraced(function* (bytes: Uint8Array, extension: string) {
       const file = path.join(directory, fileName() + extension)
       yield* fs.writeWithDirs(file, bytes).pipe(Effect.orDie)
