@@ -111,13 +111,6 @@ const normalize = (value: string) => value.replaceAll("\\", "/")
 export const IN_MEMORY_MATCH_MAX_FILES = 120
 
 /**
- * Candidates stage two reads concurrently. Reads are I/O-bound (open + read per file), so
- * overlapping them is what turns a per-file latency into a per-set latency; 32 in flight
- * saturates the page cache without holding a whole candidate set in memory at once.
- */
-export const READ_CONCURRENCY = 32
-
-/**
  * Stage two, fast path: match a literal against a small set of candidate files in-process,
  * avoiding the ~150ms ripgrep process startup on Windows. Sound only for literal text (no
  * regex metacharacters, no context lines, no count aggregation) — the caller guarantees the
@@ -136,57 +129,44 @@ export const matchLiteralInMemory = (
     const limit = options.limit
     const rows: Ripgrep.GrepRow[] = []
     const matchesPerFile = options.mode === "files" ? 1 : Number.POSITIVE_INFINITY
-    const insensitive = options.caseSensitive === false
 
-    // SiCode: read a window of candidates concurrently, then scan them in the order given.
-    // rg reports paths in argument order, so rows have to be appended serially, but the reads
-    // themselves were the cost: sequential reads plus a full split() of every candidate made
-    // stage two ~0.3ms/file (261ms for 958 candidates, against 8ms for the index that produced
-    // them). Overlapping the reads and skipping the split for files that cannot match (the
-    // trigram stage is a superset, so most of them) is what closes that gap.
-    outer: for (let start = 0; start < paths.length; start += READ_CONCURRENCY) {
+    for (const rawPath of paths) {
       if (rows.length >= limit) break
-      const window = paths.slice(start, start + READ_CONCURRENCY)
-      const contents = yield* Effect.forEach(
-        window,
-        (rawPath) => Effect.promise(() => fsp.readFile(path.resolve(cwd, rawPath), "utf8").catch(() => null)),
-        { concurrency: READ_CONCURRENCY, discard: false },
-      )
+      const absolute = path.resolve(cwd, rawPath)
+      let content: string
+      try {
+        content = yield* Effect.promise(() => fsp.readFile(absolute, "utf8"))
+      } catch {
+        continue // unreadable / binary / deleted mid-search: rg would skip it too
+      }
+      if (content.includes("\0")) continue
 
-      for (let position = 0; position < window.length; position++) {
-        if (rows.length >= limit) break outer
-        const rawPath = window[position]!
-        const content = contents[position]
-        if (content === null || content.includes("\0")) continue // unreadable / binary / deleted mid-search: rg skips it too
-        if (!(insensitive ? content.toLowerCase() : content).includes(needle)) continue
-
-        const lines = content.split("\n")
-        let matched = 0
-        for (let i = 0; i < lines.length && matched < matchesPerFile; i++) {
-          const line = lines[i]!
-          const haystack = insensitive ? line.toLowerCase() : line
-          let from = 0
-          let index = haystack.indexOf(needle, from)
-          if (index === -1) continue
-          const submatches: Array<{ text: string; start: number; end: number }> = []
-          while (index !== -1) {
-            submatches.push({ text: line.slice(index, index + pattern.length), start: index, end: index + pattern.length })
-            from = index + pattern.length
-            index = haystack.indexOf(needle, from)
-          }
-          rows.push({
-            kind: "match",
-            match: Match.make({
-              entry: { path: RelativePath.make(normalize(rawPath)), type: "file" },
-              line: i + 1,
-              offset: 0,
-              text: line.length > 2_000 ? line.slice(0, 2_000) + "..." : line,
-              submatches,
-            }),
-          })
-          matched++
-          if (rows.length >= limit) break outer
+      const lines = content.split("\n")
+      let matched = 0
+      for (let i = 0; i < lines.length && matched < matchesPerFile; i++) {
+        const line = lines[i]!
+        const haystack = options.caseSensitive === false ? line.toLowerCase() : line
+        let from = 0
+        let index = haystack.indexOf(needle, from)
+        if (index === -1) continue
+        const submatches: Array<{ text: string; start: number; end: number }> = []
+        while (index !== -1) {
+          submatches.push({ text: line.slice(index, index + pattern.length), start: index, end: index + pattern.length })
+          from = index + pattern.length
+          index = haystack.indexOf(needle, from)
         }
+        rows.push({
+          kind: "match",
+          match: Match.make({
+            entry: { path: RelativePath.make(normalize(rawPath)), type: "file" },
+            line: i + 1,
+            offset: 0,
+            text: line.length > 2_000 ? line.slice(0, 2_000) + "..." : line,
+            submatches,
+          }),
+        })
+        matched++
+        if (rows.length >= limit) break
       }
     }
     return rows

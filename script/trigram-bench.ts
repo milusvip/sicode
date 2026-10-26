@@ -47,7 +47,11 @@ const now = () => performance.now()
  */
 const RG = await (async () => {
   if (process.env.RG_PATH) return process.env.RG_PATH
-  const cached = path.join(os.homedir(), ".cache", "opencode", "bin", "rg.exe")
+  // The app resolves ripgrep from its own cache rather than $PATH. os.homedir() can disagree
+  // with the shell under Git Bash on Windows, so read the cache path from the environment
+  // first and fall back to the home directory only when it is unset.
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? os.homedir()
+  const cached = path.join(home, ".cache", "opencode", "bin", "rg.exe")
   try {
     await fsp.access(cached)
     return cached
