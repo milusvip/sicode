@@ -387,7 +387,7 @@ export namespace Timeline {
         ?.id ?? turns.at(-1)?.id
 
     const visibleNotice = (message: Notice) =>
-      !isInstructionUpdateNotice(message) &&
+      !isHiddenProcessNotice(message) &&
       (!detail || detail.notices.placement !== "hidden" || timelineNoticeRequired(message))
 
     const visibleTurns = detail
@@ -643,8 +643,8 @@ export namespace Timeline {
 
           return
         case "notice":
-          // SiCode: suppress instruction-update notices here too — this path builds rows inside a turn.
-          if (isInstructionUpdateNotice(entry.message)) return
+          // SiCode: suppress process notices (instruction updates, restarts) here too — this path builds rows inside a turn.
+          if (isHiddenProcessNotice(entry.message)) return
           if (detail?.notices.placement === "hidden" && !timelineNoticeRequired(entry.message)) return
           appendAssistantSegment(assistantSegment)
           assistantSegment = []
@@ -939,14 +939,24 @@ function isFailedIdle(message: SessionMessageInfo): message is FailedIdle {
   return message.type === "idle" && message.outcome === "failed" && !!message.error
 }
 
-// SiCode: instruction-update notices ("指令已更新 core/git-status …") fire whenever volatile
-// instruction sources change mid-run — the git-status snapshot changes as the agent works and the
-// codemode catalog churns while tools connect. The system message still reaches the model; only
-// the timeline row (standalone or inside a grouped context fold) is suppressed.
-function isInstructionUpdateNotice(message: SessionMessageInfo): boolean {
-  if (message.type !== "system") return false
+// SiCode: process notices are model-facing plumbing, not user-facing events. Instruction-update
+// notices ("指令已更新 core/git-status …") fire whenever volatile instruction sources change
+// mid-run — the git-status snapshot changes as the agent works and the codemode catalog churns
+// while tools connect — and restart notices ("重启后继续", "Continuing after restart") fire once
+// per resumed turn after a server restart, stacking into an ugly "更新 重启后继续, 重启后继续"
+// fold after repeated dev restarts. The messages still reach the model; only the timeline row
+// (standalone or inside a grouped context fold) is suppressed.
+function isHiddenProcessNotice(message: SessionMessageInfo): boolean {
+  if (message.type === "system")
+    return (
+      message.metadata?.notice === "instructions" ||
+      message.description?.startsWith("Instructions updated: ") === true
+    )
 
-  return message.metadata?.notice === "instructions" || message.description?.startsWith("Instructions updated: ") === true
+  if (message.type === "synthetic")
+    return message.metadata?.notice === "restart" || message.description === "Continuing after restart"
+
+  return false
 }
 
 function shellFailed(message: SessionMessageShell) {

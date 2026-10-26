@@ -208,7 +208,8 @@ describe("current session timeline rows", () => {
       "notice:msg_background",
       "notice:msg_model",
       "assistant-part:part:part:msg_assistant_2:msg_assistant_2:text:0",
-      "notice:msg_restart",
+      // SiCode: the restart notice (msg_restart) is suppressed like instruction-update notices —
+      // process plumbing aimed at the model, not a user-facing timeline row.
       "notice:msg_skill",
       "notice:msg_compaction",
     ])

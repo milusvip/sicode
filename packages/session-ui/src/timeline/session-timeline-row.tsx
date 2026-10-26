@@ -490,10 +490,13 @@ export function createSessionTimelineRowRenderer(input: {
 
     if (message.type !== "synthetic") return undefined
 
-    if (message.metadata?.notice === "restart") return { label: i18n.t("ui.sessionTimeline.notice.restart") }
+    // SiCode: restart notices ("重启后继续") are model-facing plumbing — the resumed turn's
+    // context note — and read as pure noise here: two dev restarts stack an
+    // "更新 重启后继续, 重启后继续" fold. projection.ts drops their rows; this is the
+    // row-renderer backstop, same as the instruction-update filter in the system branch above.
+    if (message.metadata?.notice === "restart" || message.description === "Continuing after restart")
+      return undefined
 
-    if (message.description === "Continuing after restart")
-      return { label: i18n.t("ui.sessionTimeline.notice.restart") }
     const source = message.metadata?.source
 
     if (source === "subagent" || source === "shell") {

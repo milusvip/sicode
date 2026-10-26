@@ -266,7 +266,9 @@ const AgentActivityNotices = {
   render: () => (
     <CurrentSessionTimelineStory
       title="Agent activity and Session notices"
-      description="Agent changes, delegated work, restarted Sessions, and loaded skills appear in their original order."
+      // SiCode: the restart-notice fixture message is gone — restart notices are suppressed in
+      // the SiCode timeline, same as instruction-update notices.
+      description="Agent changes, delegated work, and loaded skills appear in their original order."
       document={{
         sessionID: CURRENT_SESSION_ID,
         status: { type: "idle" },
@@ -282,13 +284,6 @@ const AgentActivityNotices = {
             description: "Search code",
             metadata: { source: "subagent", agent: "explore", state: "completed" },
             time: { created: STORY_TIME + 3 },
-          },
-          {
-            id: "msg_notice_restart",
-            type: "synthetic",
-            text: "continue",
-            description: "Continuing after restart",
-            time: { created: STORY_TIME + 4 },
           },
           {
             id: "msg_notice_skill",
