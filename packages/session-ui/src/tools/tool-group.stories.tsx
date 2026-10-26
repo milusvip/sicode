@@ -337,3 +337,53 @@ export const PatchFollowUps = {
     )
   },
 }
+
+/** A file long enough to hit the 340px body cap, so the chain row's `收起` bar is on screen. */
+export const PatchLongDiff = {
+  render: () => {
+    const [open, setOpen] = createSignal(true)
+    const before = Array.from({ length: 48 }, (_, index) => `export const value${index} = ${index}`).join("\n")
+    const after = Array.from({ length: 48 }, (_, index) => `export const value${index} = ${index + 1}`).join("\n")
+
+    const parts = [
+      storyTool(
+        "long_patch",
+        "patch",
+        "completed",
+        {},
+        {
+          metadata: {
+            files: [
+              {
+                file: "src/long.ts",
+                status: "modified",
+                additions: 48,
+                deletions: 48,
+                patch: createTwoFilesPatch("src/long.ts", "src/long.ts", before, after, "", "", {
+                  context: Infinity,
+                }),
+              },
+              {
+                file: "src/short.ts",
+                status: "added",
+                additions: 1,
+                deletions: 0,
+                patch: createTwoFilesPatch("src/short.ts", "src/short.ts", "", "export const added = true\n", "", "", {
+                  context: Infinity,
+                }),
+              },
+            ],
+          },
+        },
+      ),
+    ]
+
+    return (
+      <section class="mx-auto flex w-full max-w-[860px] flex-col gap-4 p-6">
+        <CurrentSessionProviders document={storyDocument(parts)}>
+          <CurrentContextToolGroup parts={parts} busy={false} open={open()} onOpenChange={setOpen} />
+        </CurrentSessionProviders>
+      </section>
+    )
+  },
+}

@@ -40,7 +40,7 @@ import { Tooltip } from "@opencode/ui/tooltip"
 import { IconButton } from "@opencode/ui/icon-button"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { AnimatedNumber } from "@opencode/ui/animated-number"
-import { changedFileDiff, patchFileGroups } from "../components/apply-patch-file"
+import { changedFileDiff, patchFileGroups, type ApplyPatchFileGroup } from "../components/apply-patch-file"
 import { streamedLineChanges } from "./stream-changes"
 import { animate } from "motion"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
@@ -1146,32 +1146,124 @@ export function CurrentFileToolGroup(props: {
     props.tools.some((tool) => tool.state.status === "streaming" || tool.state.status === "running"),
   )
 
-  const render = ToolRegistry.render("patch") ?? GenericTool
+  // SiCode: one chain row per changed file (glyph, action, path, ±stat, chevron-right) instead of
+  // stacking file cards. Inside the process fold the card chrome read as an alien block, and its
+  // -5px/-8px pull overshot the shell's rounded border. `patchFileGroups` is the same normalizer the
+  // card used, so the diff bodies and the chained-edit merge stay identical.
+  const i18n = useI18n()
+  const fileComponent = useFileComponent()
+  const groups = createMemo(() => patchFileGroups(metadata().files))
 
-  const tool = createMemo(() => {
-    const name = props.tools[0]?.name
+  // Same controlled/uncontrolled split the card used: the host owns each file's open state when it
+  // passes `fileOpen`, otherwise the row keeps it locally.
+  const [expanded, setExpanded] = createSignal<string[]>([])
 
-    return name === "edit" || name === "write" ? name : "patch"
+  const open = createMemo(() => {
+    if (!props.fileOpen) return expanded()
+
+    return groups().flatMap((file) => (props.fileOpen?.(file.path) === true ? [file.path] : []))
   })
+
+  const change = (next: string[]) => {
+    if (!props.onFileOpenChange) {
+      setExpanded(next)
+
+      return
+    }
+
+    groups().forEach((file) => props.onFileOpenChange?.(file.path, next.includes(file.path)))
+  }
 
   return (
     <div
-      data-component="tool-part-wrapper"
+      data-component="chain-file-group"
       data-timeline-part-id={props.tools.length === 1 ? props.tools[0]?.id : undefined}
       data-timeline-part-ids={props.tools.length > 1 ? props.tools.map((tool) => tool.id).join(",") : undefined}
     >
-      <Dynamic
-        component={render}
-        tool={tool()}
-        input={{}}
-        metadata={metadata()}
-        status={pending() ? "running" : "completed"}
-        fileOpen={props.fileOpen}
-        onFileOpenChange={props.onFileOpenChange}
-        deferContent
-        virtualizeDiff={false}
-        onContentRendered={props.onSizeChange}
-      />
+      {/* `FileAccordionGroup` (not a bare column) so the rows keep their keyboard arrow-key
+          navigation and the `accordion`/`item`/`trigger` slots get their base geometry. */}
+      <FileAccordionGroup>
+        <Index each={groups()}>
+          {(file) => {
+            const active = createMemo(() => open().includes(file().path))
+
+            return (
+              <FileAccordionItem
+                open={active()}
+                onOpenChange={(next) =>
+                  change(next ? [...open(), file().path] : open().filter((path) => path !== file().path))
+                }
+                type={file().type}
+                collapse={i18n.t("ui.patch.collapse")}
+                header={<ChainFileRow file={file()} pending={pending()} />}
+              >
+                <Show when={active()}>
+                  <div data-component="apply-patch-file-diff">
+                    <For each={file().views}>
+                      {(view) => (
+                        <Dynamic
+                          component={fileComponent}
+                          mode="diff"
+                          virtualize={false}
+                          fileDiff={view.fileDiff}
+                          hunkSeparators={view.fileDiff.isPartial ? "simple" : "line-info-basic"}
+                          onRendered={props.onSizeChange}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </FileAccordionItem>
+            )
+          }}
+        </Index>
+      </FileAccordionGroup>
+    </div>
+  )
+}
+
+/** The row's leading verb, keyed by the file's kind so the JSX has no ternary ladder. */
+const FILE_ACTION = {
+  add: "ui.patch.action.created",
+  update: "ui.patch.action.updated",
+  delete: "ui.patch.action.deleted",
+} as const satisfies Record<ApplyPatchFileGroup["type"], string>
+
+/** SiCode: the chain-language file row — same slot vocabulary as the shell and reasoning rows. */
+function ChainFileRow(props: { file: ApplyPatchFileGroup; pending: boolean }) {
+  const i18n = useI18n()
+  const action = () => FILE_ACTION[props.file.type]
+
+  return (
+    <div data-component="tool-trigger" data-slot="chain-file-row">
+      <div data-slot="basic-tool-tool-trigger-content">
+        <span data-slot="basic-tool-tool-indicator">
+          <Show when={props.pending} fallback={<Icon name="code-lines" size="small" />}>
+            <span data-slot="basic-tool-tool-spinner">
+              <SessionProgressIndicatorV2 width={13} height={13} />
+            </span>
+          </Show>
+        </span>
+        <div data-slot="basic-tool-tool-info">
+          <div data-slot="basic-tool-tool-info-structured">
+            <div data-slot="basic-tool-tool-info-main">
+              <span data-slot="basic-tool-tool-title">{i18n.t(action())}</span>
+              <span data-slot="basic-tool-tool-subtitle" class="tool-path">
+                {`${displayDirectory(props.file.path)}${getFilename(props.file.path)}`}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span data-slot="chain-tool-meta">
+        <DiffChanges
+          appearance="compact"
+          changes={{ additions: props.file.additions, deletions: props.file.deletions }}
+        />
+      </span>
+      <span data-slot="chain-file-arrow">
+        <Icon name="chevron-right" size="small" />
+      </span>
     </div>
   )
 }
@@ -1423,13 +1515,29 @@ function FileAccordionItem(props: {
     const node = body()
     if (!props.open || !props.collapse || !node) return
 
-    const sync = () => {
-      // While the fold is animating, the body is only as tall as the frame it is growing through, so
-      // every card would read as overflowing. Measure once the transition has settled.
-      const fold = node.closest('[data-slot="accordion-fold"]')
-      if (fold?.getAnimations().some((animation) => animation.playState === "running")) return
+    const fold = node.closest<HTMLElement>('[data-slot="accordion-fold"]')
+
+    const measure = () => {
+      // The pending re-measure below can land after the row closed or unmounted; a body clipped to
+      // zero height always looks like an overflow, so refuse to answer in that state.
+      if (!node.isConnected || !props.open) return
 
       setOverflowing(node.scrollHeight > node.clientHeight + 1)
+    }
+
+    const sync = () => {
+      // While the fold is animating, the body is only as tall as the frame it is growing through, so
+      // every card would read as overflowing. Wait for the transition to land — and measure then,
+      // because the resize that would have called us again has already fired by the time it settles.
+      const running = fold?.getAnimations().filter((animation) => animation.playState === "running") ?? []
+
+      if (running.length === 0) {
+        measure()
+
+        return
+      }
+
+      void Promise.all(running.map((animation) => animation.finished.catch(() => undefined))).then(measure)
     }
 
     // The diff renders after the fold opens and keeps growing while a tool streams, so the answer

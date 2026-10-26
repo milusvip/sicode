@@ -1878,36 +1878,217 @@
   background: transparent;
 }
 
-/* SiCode: a file row inside the process chain is a chain row, not a card. The card rules pull the
-   item out by -5px/-8px and re-add that as trigger padding so its chrome reaches the end-of-turn
-   file list's edges; in the chain that pull overshoots the shell's rounded border (measured: card
-   145..958 against shell 144..956 and chain rows 150..951), which pinned the diff stat and the
-   chevron onto the border. Keep the item on the chain's content box, flat, with no compensating
-   padding, so the file icon shares the icon column of the shell and reasoning rows. */
-[data-component="collapsed-tool-group"][data-process-shell] {
-  [data-slot="context-tool-group-item"] [data-component="apply-patch-tool"] [data-slot="accordion-item"],
-  [data-slot="context-tool-group-item"] [data-component="edit-tool"] [data-slot="accordion-item"],
-  [data-slot="context-tool-group-item"] [data-component="write-tool"] [data-slot="accordion-item"] {
-    width: auto;
+/* SiCode: a changed file is a chain row, not a card. The end-of-turn file list (`ToolRegistry`'s
+   `patch`) keeps the card chrome — item border + radius, pulled out by -5px/-8px with the same
+   amounts added back as trigger padding so the diff reaches the card edge. Inside the process chain
+   that pull overshot the shell's rounded border (measured: card 145..958 against shell 144..956 and
+   chain rows 150..951), which pinned the diff stat and the chevron onto the border.
+   `CurrentFileToolGroup` therefore renders one `accordion` item per file with a `chain-file-row`
+   header, and the item stays flat: the row wears the same 28px box, 19px icon column and hover fill
+   as a read or bash row.
+   The block is not scoped to the process shell because the same group is also projected straight
+   into an assistant turn's content (a file-only part list has no shell around it), and it has to
+   read the same in both places — hence the var fallbacks: `--ind-col`, `--row-min` and
+   `--chain-row-hover` are defined by the chain list, not here. */
+[data-component="chain-file-group"] {
+  display: block;
+  min-width: 0;
+
+  /* `accordion.css` glues neighbouring items together with `margin-top: -1px` and paints them as a
+     single boxed list; chained rows are separate rows with the chain list's 1px gap, so undo the
+     merge and drop the box. The extra `[data-component="accordion"]` in the selector is what lifts
+     these rules over `accordion.css`'s own item/trigger defaults. */
+  [data-component="accordion"] [data-slot="accordion-item"] {
+    width: 100%;
     margin-inline: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
+    overflow: visible;
+
+    & + [data-slot="accordion-item"] {
+      margin-top: 1px;
+    }
+
+    &[data-expanded] [data-slot="accordion-header"] {
+      border-bottom: 0;
+    }
+
+    /* The expanded body is the diff, not a card: no inner box, no layer fill, edges flush with the
+       rows it belongs to. `accordion.css` adds a border and a `layer-01` fill to every expanded
+       content, which read as a second box. */
+    &[data-expanded] [data-slot="accordion-content"],
+    [data-slot="accordion-content"] {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
   }
 
-  [data-slot="context-tool-group-item"]
-    [data-component="apply-patch-tool"]
-    [data-slot="accordion-header"]
-    [data-slot="accordion-trigger"],
-  [data-slot="context-tool-group-item"]
-    [data-component="edit-tool"]
-    [data-slot="accordion-header"]
-    [data-slot="accordion-trigger"],
-  [data-slot="context-tool-group-item"]
-    [data-component="write-tool"]
+  /* The trigger is the row. `accordion.css` ships a 32px bar with 8px/12px padding, a hairline, a
+     `bg-base` fill and an 8px top radius on the first item; a chain row is a 28px transparent line
+     with one 6px radius that only fills on hover. The `[data-slot="accordion-item"]` step in the
+     selector is what outweighs those `:first-child` / `:last-child` radius rules. */
+  [data-component="accordion"]
+    [data-slot="accordion-item"]
     [data-slot="accordion-header"]
     [data-slot="accordion-trigger"] {
-    padding-inline: 0;
+    height: auto;
+    min-height: var(--row-min, 28px);
+    padding: 3px 3px 3px 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: clip;
+    color: var(--v2-text-text-base);
+    /* `!important` because the `apply-patch` scope pins every trigger in the end-of-turn list to
+       `bg-base`, and the row has to stay transparent to sit on the chain. */
+    background: transparent !important;
+    transition: background-color 120ms ease;
+  }
+
+  [data-component="accordion"]
+    [data-slot="accordion-item"]
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"]:hover {
+    background: var(
+        --chain-row-hover,
+        color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.045)) 100%, transparent)
+      )
+      !important;
+  }
+
+  /* Row-level focus ring: the trigger's own is `outline: none` and the item no longer carries a card
+     edge to light up, so the ring has to land on the row. */
+  [data-component="accordion"]
+    [data-slot="accordion-item"]
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"]:focus-visible {
+    outline: 1px solid var(--v2-border-border-focus);
+    outline-offset: -1px;
+  }
+
+  /* `accordion.css` rounds the first and last item's trigger to the 8px list radius; a chain row is
+     never part of a list box, so every corner stays 6px. Restated with the `:first-child` /
+     `:last-child` steps so it also outweighs `:last-child:not([data-expanded])`. */
+  [data-component="accordion"]
+    [data-slot="accordion-item"]:first-child
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"],
+  [data-component="accordion"]
+    [data-slot="accordion-item"]:last-child
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"] {
+    border-radius: 6px;
+  }
+
+  /* The row owns the full width so the stat and the chevron pin right; `basic-tool.css` caps the
+     content at `100% - 24px` for a trigger that ends there. */
+  [data-slot="chain-file-row"] {
+    gap: 0;
+
+    [data-slot="basic-tool-tool-trigger-content"] {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: none;
+      min-width: 0;
+      gap: 8px;
+    }
+
+    [data-slot="basic-tool-tool-info"] {
+      flex: 1 1 auto;
+      max-width: none;
+      min-width: 0;
+      line-height: var(--line-height-compact);
+    }
+
+    [data-slot="basic-tool-tool-info-structured"] {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: 100%;
+      gap: 8px;
+      justify-content: flex-start;
+    }
+
+    [data-slot="basic-tool-tool-info-main"] {
+      flex: 1 1 auto;
+      gap: 8px;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* One type ramp for the row: the chain's 12.5px/440 when it sits in a shell. Outside one
+       `--process-shell-size` is unset and the fallbacks hand back the compact tool metric the
+       neighbouring read/bash rows use, so the row does not shrink next to them. */
+    [data-slot="basic-tool-tool-title"],
+    [data-slot="basic-tool-tool-subtitle"],
+    [data-slot="chain-tool-meta"] {
+      font-family: var(--v2-font-family-sans);
+      font-size: var(--process-shell-size, var(--font-size-small));
+      font-weight: var(--process-shell-weight, var(--font-weight-medium));
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
+    }
+
+    [data-slot="basic-tool-tool-title"] {
+      flex-shrink: 0;
+      color: var(--v2-text-text-muted);
+      white-space: nowrap;
+    }
+
+    [data-slot="basic-tool-tool-indicator"] {
+      flex: 0 0 var(--ind-col, 19px);
+      width: var(--ind-col, 19px);
+      height: 18px;
+      display: grid;
+      place-items: center;
+      background: transparent;
+      color: var(--v2-text-text-faint);
+    }
+
+    /* The stat column gets the auto margin so it and the chevron form one right-aligned cluster. */
+    [data-slot="chain-tool-meta"] {
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+      margin-inline-start: auto;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      color: var(--v2-text-text-faint);
+    }
+  }
+
+  /* The diff sits under the row's own left edge — the same axis the file icon and the read/bash rows
+     start on — with a hair of block padding so the first hunk line is not glued to the header. */
+  [data-slot="accordion-content"] > [data-slot="accordion-body"] {
+    padding-block: 2px;
+  }
+
+  /* Matches the read row's chevron: a chevron-right that rests right, turns down when open, and only
+     shows while the row is hovered or open so a column of file rows stays quiet. */
+  [data-slot="chain-file-arrow"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-inline-start: 6px;
+    color: var(--icon-weaker);
+    opacity: 0;
+    transform: none;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  [data-slot="accordion-trigger"]:hover [data-slot="chain-file-arrow"],
+  [data-slot="accordion-trigger"]:focus-visible [data-slot="chain-file-arrow"] {
+    opacity: 1;
+  }
+
+  [data-slot="accordion-trigger"][aria-expanded="true"] [data-slot="chain-file-arrow"] {
+    opacity: 1;
+    transform: rotate(90deg);
   }
 }
 
