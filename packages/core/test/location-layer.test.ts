@@ -518,13 +518,16 @@ describe("LocationServiceMap", () => {
           expect(blockedState.providers.some((provider) => provider.id === blockedID)).toBe(true)
           expect(blockedState.providers.some((provider) => provider.id === allowedID)).toBe(false)
           const blockedTools = blockedState.tools.map((tool) => tool.name)
+          // SiCode: `history` and `recall` are our own tools; upstream's list predates them.
           expect(blockedTools.filter((name) => name !== "execute").sort()).toEqual([
             "edit",
             "glob",
             "grep",
+            "history",
             "patch",
             "question",
             "read",
+            "recall",
             "shell",
             "skill",
             "subagent",
@@ -537,13 +540,16 @@ describe("LocationServiceMap", () => {
           expect(allowedState.providers.some((provider) => provider.id === blockedID)).toBe(false)
           const allowedTools = allowedState.tools.map((tool) => tool.name)
           expect(blockedTools.includes("execute")).toBe(allowedTools.includes("execute"))
+          // SiCode: `history` and `recall` are our own tools; upstream's list predates them.
           expect(allowedTools.filter((name) => name !== "execute").sort()).toEqual([
             "edit",
             "glob",
             "grep",
+            "history",
             "patch",
             "question",
             "read",
+            "recall",
             "shell",
             "skill",
             "subagent",
