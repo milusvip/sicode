@@ -46,7 +46,8 @@ You repeated the same tool call with the same arguments, and it produced the sam
 Do not call any more tools in this turn.`
 
 /** Tools whose repetition is normal and must never be nudged, with how repeated they may get. */
-const NEVER_NUDGE = new Set<string>(["todo"])
+// SiCode: "todo" was a stale name — the tool is registered as "todowrite" (tool/plugin/todo.ts).
+const NEVER_NUDGE = new Set<string>(["todowrite"])
 
 export interface LoopHit {
   /** Stable across steps, so a repeat of the same loop is recognized as "already nudged". */

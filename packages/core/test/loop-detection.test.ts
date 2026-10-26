@@ -91,7 +91,11 @@ describe("detectLoop", () => {
 
   test("never nudges todo churn", () => {
     expect(
-      detectLoop([step([tool("todo", { items: [] })]), step([tool("todo", { items: [] })]), step([tool("todo", { items: [] })])]),
+      detectLoop([
+        step([tool("todowrite", { todos: [] })]),
+        step([tool("todowrite", { todos: [] })]),
+        step([tool("todowrite", { todos: [] })]),
+      ]),
     ).toBeNull()
   })
 
