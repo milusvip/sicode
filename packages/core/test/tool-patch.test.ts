@@ -167,7 +167,7 @@ const withTempTool = <A, E, R>(body: (directory: string, registry: Tool.Interfac
   )
 
 describe("PatchTool", () => {
-  it.live("selects the same edit tools for compaction and generate requests as the agent loop", () =>
+  it.live("keeps edit, write, and patch available to every model family", () =>
     withTempTool(() =>
       Effect.gen(function* () {
         const event = (id: string): SessionHooks["context"] => ({
@@ -184,12 +184,15 @@ describe("PatchTool", () => {
         for (const name of ["context", "compaction", "generate"]) {
           const hook = sessionHooks.get(name)
           expect(hook).toBeDefined()
+          // SiCode: the patch plugin no longer swaps editing tools per model. Exposing all three to
+          // every model family (like Cursor) keeps the tool surface stable across a mid-session model
+          // switch, so prompt cache and instruction consistency don't drift. The model picks.
           const claude = event("claude-sonnet-4")
           yield* hook!(claude)
-          expect(Object.keys(claude.tools)).toEqual(["edit", "write", "read"])
+          expect(Object.keys(claude.tools).sort()).toEqual(["edit", "patch", "read", "write"])
           const gpt = event("gpt-5")
           yield* hook!(gpt)
-          expect(Object.keys(gpt.tools)).toEqual(["patch", "read"])
+          expect(Object.keys(gpt.tools).sort()).toEqual(["edit", "patch", "read", "write"])
         }
       }),
     ),

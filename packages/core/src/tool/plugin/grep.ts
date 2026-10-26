@@ -12,6 +12,7 @@ import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { Ripgrep } from "../../ripgrep.js"
 import { NonNegativeInt, RelativePath } from "../../schema.js"
+import { ToolOutput } from "../../tool-output.js"
 
 export const name = "grep"
 
@@ -69,8 +70,14 @@ type ContentRow = { readonly kind: "match" | "context"; readonly match: EncodedO
 const truncatedNote = (offset: number, shown: number) =>
   `(Results are truncated: showing ${offset + 1}-${offset + shown} of at least ${offset + shown + 1}. Use "offset" to page through the rest, or narrow the search with "path" or "include".)`
 
-const cap = (text: string) => {
-  if (text.length <= CHAR_BUDGET) return text
+/**
+ * The truncated text and the count of lines the budget hid. `fullText` is the untouched rendering
+ * so the caller can spill it to disk when the hidden lines have no other way back: `offset` pages
+ * by match, not by line, so it cannot recover lines dropped from the middle of an already-selected
+ * page. A spilled file is the only read-back path for those.
+ */
+const cap = (text: string): { text: string; hidden: number; fullText: string } => {
+  if (text.length <= CHAR_BUDGET) return { text, hidden: 0, fullText: text }
   const lines = text.split("\n")
   const kept: string[] = []
   let used = 0
@@ -79,20 +86,29 @@ const cap = (text: string) => {
     kept.push(line)
     used += line.length + 1
   }
-  return [
-    ...kept,
-    "",
-    `(Output capped at ${CHAR_BUDGET} characters; ${lines.length - kept.length} lines hidden. Narrow the search, or page with "offset".)`,
-  ].join("\n")
+  const hidden = lines.length - kept.length
+  return {
+    text: [
+      ...kept,
+      "",
+      `(Output capped at ${CHAR_BUDGET} characters; ${hidden} lines hidden. Narrow the search, or page with "offset".)`,
+    ].join("\n"),
+    hidden,
+    fullText: text,
+  }
 }
 
+/** A rendered page, with the spill the character budget dropped so the caller can save it. */
+export type Rendered = { readonly text: string; readonly spill: string | undefined; readonly hidden: number }
+
 /** Format grep rows into model content. Context rows carry a `|` marker instead of `:`. */
-export const toModelContent = (
+export const render = (
   rows: readonly ContentRow[],
-  options: { readonly mode: Mode; readonly truncated: boolean; readonly offset: number },
-) => {
+  options: { readonly mode: Mode; readonly truncated: boolean; readonly offset: number; readonly pattern: string },
+): Rendered => {
   const shown = rows.filter((row) => row.kind === "match").length
-  if (rows.length === 0) return options.offset === 0 ? "No matches found" : `No results past offset ${options.offset}.`
+  if (rows.length === 0)
+    return { text: options.offset === 0 ? "No matches found" : `No results past offset ${options.offset}.`, spill: undefined, hidden: 0 }
   const atLeast = options.truncated ? "at least " : ""
 
   if (options.mode === "count") {
@@ -102,7 +118,8 @@ export const toModelContent = (
     const lines = [`Found ${atLeast}${total} matches in ${rows.length} files`]
     for (const row of ordered) lines.push(`  ${row.match.entry.path}: ${row.match.line}`)
     if (options.truncated) lines.push("", truncatedNote(options.offset, rows.length))
-    return cap(lines.join("\n"))
+    const capped = cap(lines.join("\n"))
+    return { text: capped.text, spill: capped.hidden > 0 ? capped.fullText : undefined, hidden: capped.hidden }
   }
 
   if (options.mode === "files_with_matches") {
@@ -114,7 +131,8 @@ export const toModelContent = (
       )
     }
     if (options.truncated) lines.push("", truncatedNote(options.offset, rows.length))
-    return cap(lines.join("\n"))
+    const capped = cap(lines.join("\n"))
+    return { text: capped.text, spill: capped.hidden > 0 ? capped.fullText : undefined, hidden: capped.hidden }
   }
 
   // SiCode: group by file and lead with the hit distribution. A flat line list makes the model read
@@ -126,9 +144,36 @@ export const toModelContent = (
     if (list) list.push(row)
     else groups.set(file, [row])
   }
+
+  // SiCode: rank files by relevance, not just hit count. A bare hit-count sort lets noise dominate
+  // the page: searching `retry` floods with files that mention "retry" five times (config, an OpenAI
+  // API param) while `retry.ts` — the thing you actually want — sits at one hit and sinks. Two signals
+  // fix that: a filename match outranks any body-only hit, and test/spec/fixture files are demoted so
+  // an implementation file beats a `retry.test.ts` that matches on every other line.
+  const isTestPath = (file: string) => /(^|\/)(__tests__|test|tests|spec|__mocks__|__fixtures__)(\/|\.|$)/.test(file) || /\.(test|spec)\./.test(file)
+  const nameStem = (file: string) => {
+    const base = file.slice(file.lastIndexOf("/") + 1)
+    return base.replace(/\.(test|spec)\.[^.]+$/, "").replace(/\.[^.]+$/, "")
+  }
+  // A filename hit is meaningful only for a literal-ish pattern: "retry" matches retry.ts, but a
+  // regex like "export const" never names a file, so its stem is empty and the signal is skipped.
+  const patternStem = /[\\^$.|?*+()[\]{}]/.test(options.pattern) ? "" : nameStem(options.pattern)
   const ordered = [...groups]
-    .map(([file, list]) => ({ file, list, count: list.filter((row) => row.kind === "match").length }))
-    .sort((a, b) => b.count - a.count)
+    .map(([file, list]) => ({
+      file,
+      list,
+      count: list.filter((row) => row.kind === "match").length,
+      // Rank before count, so a noisy file never buries the implementation that names the pattern.
+      // Test/fixture files are demoted hardest: they match on every line and prove nothing about
+      // where the behavior lives. 0 = implementation whose filename names the pattern, 1 = any
+      // other implementation file, 2 = test/spec/fixture file.
+      rank: isTestPath(file)
+        ? 2
+        : nameStem(file).toLowerCase().includes(patternStem.toLowerCase()) && patternStem.length > 0
+          ? 0
+          : 1,
+    }))
+    .sort((a, b) => a.rank - b.rank || b.count - a.count)
 
   const lines = [`Found ${atLeast}${shown} matches in ${ordered.length} files`]
   // Only worth printing when the hits are concentrated: a flat scatter of one hit per file says nothing.
@@ -137,7 +182,7 @@ export const toModelContent = (
       .slice(0, 8)
       .map((group) => `${group.file} (${group.count})`)
       .join(", ")
-    lines.push(`Files by hit count: ${preview}${ordered.length > 8 ? `, +${ordered.length - 8} more` : ""}`)
+    lines.push(`Files by relevance: ${preview}${ordered.length > 8 ? `, +${ordered.length - 8} more` : ""}`)
   }
   for (const group of ordered) {
     lines.push("", `${group.file}:`)
@@ -149,8 +194,15 @@ export const toModelContent = (
       )
   }
   if (options.truncated) lines.push("", truncatedNote(options.offset, shown))
-  return cap(lines.join("\n"))
+  const capped = cap(lines.join("\n"))
+  return { text: capped.text, spill: capped.hidden > 0 ? capped.fullText : undefined, hidden: capped.hidden }
 }
+
+/** Pure string form of `render`, kept for callers that only need the text. */
+export const toModelContent = (
+  rows: readonly ContentRow[],
+  options: { readonly mode: Mode; readonly truncated: boolean; readonly offset: number; readonly pattern: string },
+) => render(rows, options).text
 
 /**
  * Content rows interleave context with matches, so a page has to break on match boundaries: a context
@@ -182,6 +234,7 @@ export const Plugin = {
     const location = yield* Location.Service
     const access = yield* FileAccess.Service
     const permission = yield* Permission.Service
+    const toolOutput = yield* ToolOutput.Service
 
     yield* ctx.tool
       .transform((editor) =>
@@ -331,25 +384,39 @@ export const Plugin = {
                 prefiltered: chunks !== undefined,
               }
             }).pipe(
-              Effect.map((result) => ({
-                output: result.matches,
-                content: toModelContent(
-                  result.rows.map((row) => ({
-                    kind: row.kind,
-                    match: {
-                      ...row.match,
-                      entry: { ...row.match.entry, path: path.resolve(location.directory, row.match.entry.path) },
+              Effect.flatMap((result) =>
+                Effect.gen(function* () {
+                  const rendered = render(
+                    result.rows.map((row) => ({
+                      kind: row.kind,
+                      match: {
+                        ...row.match,
+                        entry: { ...row.match.entry, path: path.resolve(location.directory, row.match.entry.path) },
+                      },
+                    })),
+                    { mode: input.mode ?? "content", truncated: result.truncated, offset: input.offset ?? 0, pattern: input.pattern },
+                  )
+                  // SiCode: a character-cap is the one truncation `offset` cannot page back — offset
+                  // steps by match, not line, so lines dropped from the middle of a selected page are
+                  // gone for good. Spill the full rendering to a retained file and point the model at
+                  // it, so a re-run is not the only way to recover them.
+                  let content = rendered.text
+                  if (rendered.spill !== undefined) {
+                    const file = yield* toolOutput.save(Buffer.from(rendered.spill, "utf8"), ".txt")
+                    content += `\n\n[Full results saved to ${file}; read it to see the ${rendered.hidden} hidden lines]`
+                  }
+                  return {
+                    output: result.matches,
+                    content,
+                    metadata: {
+                      matches: result.total,
+                      truncated: result.truncated,
+                      mode: input.mode ?? "content",
+                      prefiltered: result.prefiltered,
                     },
-                  })),
-                  { mode: input.mode ?? "content", truncated: result.truncated, offset: input.offset ?? 0 },
-                ),
-                metadata: {
-                  matches: result.total,
-                  truncated: result.truncated,
-                  mode: input.mode ?? "content",
-                  prefiltered: result.prefiltered,
-                },
-              })),
+                  }
+                }),
+              ),
               Effect.mapError((error) =>
                 error instanceof ToolFailure
                   ? error

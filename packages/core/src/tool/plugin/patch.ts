@@ -295,14 +295,15 @@ export const Plugin = {
 
     const hook = (event: SessionHooks["context"]) =>
       Effect.sync(() => {
-        const usePatch =
-          event.model.id.includes("gpt-") && !event.model.id.includes("oss") && !event.model.id.includes("gpt-4")
-        if (usePatch) {
-          delete event.tools.edit
-          delete event.tools.write
-          return
-        }
-        delete event.tools.patch
+        // SiCode: expose edit/write/patch to every model family, like Cursor. The upstream
+        // usePatch logic swapped the editing tools per model (gpt-* got only patch, everything
+        // else got edit/write but not patch), which made the tool surface drift when the model
+        // changed mid-session — breaking prompt cache and instruction consistency. Cursor's
+        // ToolCall oneof ships a single str_replace + whole-file-write surface to all models and
+        // lets the model pick; the upstream band-aid was called out in cursor's own reverse-eng
+        // notes as net-negative (see opencode#34491). Keep all three registered and leave the
+        // choice to the model.
+        void event
       })
     yield* ctx.session.hook("context", hook)
     yield* ctx.session.hook("compaction", hook)

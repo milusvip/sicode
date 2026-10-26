@@ -34,6 +34,7 @@ import { NARRATE_EVERY_STEPS } from "./narrate.js"
 import { EXPLORE_HARD_STEPS, EXPLORE_SOFT_STEPS, readOnlySteps } from "./explore-budget.js"
 import { detectLoop } from "./loop-detection.js"
 import { selectSteer } from "./steer.js"
+import { completionFingerprint, completionGatePrompt, detectPendingTodos } from "./completion-gate.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -85,6 +86,9 @@ const layer = Layer.effect(
       // SiCode: loop fingerprints already nudged this turn. A second sighting means the nudge did
       // not help, so the turn stops rather than being told the same thing again.
       const loopNudged = new Set<string>()
+      // SiCode: todo fingerprints already gated this turn. The completion gate fires once per open
+      // todo set, so a model that insists the todos are stale is not reminded a second time.
+      const completionNudged = new Set<string>()
       let entering = true
       const promotable = input.promotable ?? "input"
       if (!force && !continuing) {
@@ -213,7 +217,7 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step, loopNudged)
+        continuing = yield* runStep(next.context, step, loopNudged, completionNudged)
         step++
         force = false
         entering = false
@@ -234,6 +238,7 @@ const layer = Layer.effect(
       first: SessionContext.Loaded,
       step: number,
       loopNudged: Set<string>,
+      completionNudged: Set<string>,
     ) {
       const sessionID = first.session.id
       let assistantMessageID = SessionMessage.ID.create()
@@ -337,10 +342,27 @@ const layer = Layer.effect(
             // SiCode: a completion after a retry is the success half of the retry telemetry pair.
             yield* retry.succeed()
             // The Session is about to go idle, which leaves the background summary time to finish.
-            if (!outcome.needsContinuation)
+            if (!outcome.needsContinuation) {
+              // SiCode: completion gate. The turn is about to end because the model stopped calling
+              // tools. If its latest todo list still has open items, remind it once and force one
+              // more step instead of letting it declare victory mid-task. Fires once per fingerprint
+              // so a model that considers the todos stale is not nagged twice.
+              const pending = detectPendingTodos(loaded.messages)
+              if (pending.length > 0) {
+                const fingerprint = completionFingerprint(pending)
+                if (!completionNudged.has(fingerprint)) {
+                  completionNudged.add(fingerprint)
+                  yield* bus.publish(SessionEvent.Synthetic, {
+                    sessionID,
+                    text: completionGatePrompt(pending),
+                  })
+                  return true
+                }
+              }
               yield* compaction.precompute(
                 store.context(sessionID).pipe(Effect.map((messages) => ({ ...loaded, messages }))),
               )
+            }
             return outcome.needsContinuation
           }),
           Retry: (outcome) =>

@@ -276,6 +276,47 @@ Earlier work
     ])
   })
 
+  test("names the full transcript a checkpoint saved, so the agent can read it back", () => {
+    const [checkpoint] = toLLMMessages(
+      [
+        SessionMessage.Compaction.make({
+          id: id("compaction"),
+          type: "compaction",
+          status: "completed",
+          reason: "auto",
+          summary: "Earlier work",
+          metadata: { transcriptPath: "/tmp/cache/compaction/sess.transcript.txt" },
+          time: { created },
+        }),
+      ],
+      model,
+    )
+
+    const text = (checkpoint?.content?.[0] as { type: "text"; text: string } | undefined)?.text ?? ""
+    expect(text).toContain("<full-transcript>")
+    expect(text).toContain("/tmp/cache/compaction/sess.transcript.txt")
+    expect(text).toContain("Read it with the read tool")
+  })
+
+  test("leaves out the full transcript pointer when none was saved", () => {
+    const [checkpoint] = toLLMMessages(
+      [
+        SessionMessage.Compaction.make({
+          id: id("compaction"),
+          type: "compaction",
+          status: "completed",
+          reason: "auto",
+          summary: "Earlier work",
+          time: { created },
+        }),
+      ],
+      model,
+    )
+
+    const text = (checkpoint?.content?.[0] as { type: "text"; text: string } | undefined)?.text ?? ""
+    expect(text).not.toContain("<full-transcript>")
+  })
+
   describe("model-switched", () => {
     const ref = (variant?: string) =>
       Model.Ref.make({

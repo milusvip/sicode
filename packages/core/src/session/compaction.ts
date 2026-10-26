@@ -18,7 +18,10 @@ import type { StreamOptions } from "@opencode/ai/route"
 import type { SessionCompactionResult } from "@opencode/plugin/effect/session"
 import type { SessionError } from "@opencode/schema/session-error"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { Global } from "@opencode/util/global"
 import { Clock, Context, Duration, Effect, Exit, Fiber, Layer, Result, Scope, Stream } from "effect"
+import fs from "node:fs"
+import path from "node:path"
 import { Agent } from "../agent.js"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
@@ -253,9 +256,101 @@ export const layer = Layer.effect(
     const models = yield* SessionRunnerModel.Service
     const db = (yield* Database.Service).db
     const requests = yield* SessionModelRequest.Service
+    const global = yield* Global.Service
 
     const scope = yield* Scope.Scope
     const precomputed = new Map<SessionContext.Loaded["session"]["id"], Precomputed>()
+
+    // SiCode: persist a finished background summary so a session resumed after the process
+    // exited (crash, restart, closing the app mid-conversation) reuses it instead of paying to
+    // summarize again. Cursor's `persisted` does the same; the difference is Cursor bills its own
+    // account, so dropping the summary was free for it, while ours costs the user's key. The
+    // summary is a cache: it only lives until compaction consumes it, so a stale file is deleted
+    // rather than trusted.
+    const persistDir = path.join(global.cache, "compaction")
+    const persistPath = (sessionID: SessionContext.Loaded["session"]["id"]) =>
+      path.join(persistDir, `${sessionID}.json`)
+
+    type PersistedSummary = {
+      readonly text: string
+      readonly keepID: SessionMessage.ID
+      readonly firstID: SessionMessage.ID | undefined
+      readonly model: SessionContext.Loaded["model"]["ref"]
+      readonly initial: string
+      readonly tailLimit: number
+      readonly failures: number
+    }
+
+    const writePersisted = (sessionID: SessionContext.Loaded["session"]["id"], summary: PersistedSummary) =>
+      Effect.sync(() => {
+        try {
+          fs.mkdirSync(persistDir, { recursive: true })
+          fs.writeFileSync(persistPath(sessionID), JSON.stringify(summary))
+        } catch {
+          // Persistence is best-effort: a failed write only means the next run re-summarizes.
+        }
+      })
+
+    const readPersisted = (sessionID: SessionContext.Loaded["session"]["id"]): PersistedSummary | undefined => {
+      try {
+        const raw = fs.readFileSync(persistPath(sessionID), "utf8")
+        const parsed = JSON.parse(raw) as {
+          text: string
+          keepID: string
+          firstID: string | undefined
+          model: SessionContext.Loaded["model"]["ref"]
+          initial: string
+          tailLimit: number
+          failures: number
+        }
+        // JSON flattens branded IDs to plain strings; `heldIndex` compares them by value, so the
+        // brand only needs to be restored at the type boundary, not re-validated.
+        return {
+          text: parsed.text,
+          keepID: parsed.keepID as SessionMessage.ID,
+          firstID: (parsed.firstID as SessionMessage.ID | undefined) ?? undefined,
+          model: parsed.model,
+          initial: parsed.initial,
+          tailLimit: parsed.tailLimit,
+          failures: parsed.failures,
+        }
+      } catch {
+        return undefined
+      }
+    }
+
+    const deletePersisted = (sessionID: SessionContext.Loaded["session"]["id"]) =>
+      Effect.sync(() => {
+        try {
+          fs.rmSync(persistPath(sessionID), { force: true })
+        } catch {
+          // Nothing to do; the file is already gone or unreadable.
+        }
+      })
+
+    // SiCode: the verbatim conversation a summary drops, written out so the resumed agent can read it
+    // back on demand. Cursor ships the pre-summarization transcript beside the checkpoint and names its
+    // location in the tail; the summary is lossy by design, so the original is the only way to recover a
+    // dropped error string, an abandoned argument, or an exact user wording. The file lives beside the
+    // summary cache and is rebuilt on every compaction, so it never describes an older conversation.
+    const transcriptPath = (sessionID: SessionContext.Loaded["session"]["id"]) =>
+      path.join(persistDir, `${sessionID}.transcript.txt`)
+    const writeTranscript = (
+      sessionID: SessionContext.Loaded["session"]["id"],
+      messages: ReadonlyArray<SessionMessage.Info>,
+    ) =>
+      Effect.sync(() => {
+        try {
+          fs.mkdirSync(persistDir, { recursive: true })
+          const text = messages
+            .map(SessionRecentText.messageToText)
+            .filter(Boolean)
+            .join("\n\n")
+          fs.writeFileSync(transcriptPath(sessionID), text)
+        } catch {
+          // Best-effort: a failed write only means the resumed agent has no original to fall back on.
+        }
+      })
 
     const state = State.create<Settings, Editor>({
       name: "session-compaction",
@@ -298,6 +393,10 @@ export const layer = Layer.effect(
         return { status: "skipped" }
       const held = precomputed.get(context.session.id)
       precomputed.delete(context.session.id)
+      // SiCode: the held summary is consumed here, so its persisted copy is stale the moment the
+      // compaction starts. Drop it so a later restart does not resurrect a summary the session has
+      // already compacted past.
+      yield* deletePersisted(context.session.id)
       const native = context.model.compaction?.type === "native"
       const model = yield* selectModel(context, settings.buffer, native)
       // The provider just rejected this context, so the estimate ran low; the first attempt already aims below it.
@@ -349,7 +448,31 @@ export const layer = Layer.effect(
       if (anchor.tokens.input + anchor.tokens.cache.read + anchor.tokens.cache.write < PRECOMPUTE_MIN_TOKENS) return
 
       const sessionID = context.session.id
-      const existing = precomputed.get(sessionID)
+      let existing = precomputed.get(sessionID)
+      // SiCode: a summary written before the process exited is recovered here, so a resumed session
+      // skips re-summarizing. It reuses the same validity check as a fresh one: the first message,
+      // model, and instructions must still match, or the file describes a different conversation.
+      if (!existing) {
+        const persisted = readPersisted(sessionID)
+        if (persisted) {
+          const recovered: Precomputed = {
+            firstID: persisted.firstID,
+            keepID: persisted.keepID,
+            model: persisted.model,
+            initial: persisted.initial,
+            tailLimit: persisted.tailLimit,
+            failures: persisted.failures,
+            usage: [],
+            startedAt: yield* Clock.currentTimeMillis,
+            // A recovered summary is already done; await resolves immediately with the persisted text.
+            fiber: yield* Effect.succeed({ result: { text: persisted.text }, durationMs: 0 }).pipe(Effect.forkIn(scope)),
+          }
+          precomputed.set(sessionID, recovered)
+          existing = recovered
+          // SiCode: mark the recovery so `compaction-stats` can tell it apart from a fresh summary.
+          yield* Effect.logInfo("compaction.precompute", { state: "recovered" })
+        }
+      }
       const exit = existing?.fiber.pollUnsafe()
       const failed = exit !== undefined && Exit.isFailure(exit)
       const failures = (existing?.failures ?? 0) + (failed ? 1 : 0)
@@ -362,6 +485,7 @@ export const layer = Layer.effect(
         // SiCode: the held summary fell too far behind and is being written again — one wasted call.
         yield* Effect.logInfo("compaction.precompute", { state: "discarded", reason: "superseded" })
         precomputed.delete(sessionID)
+        yield* deletePersisted(sessionID)
       }
       // After a model switch nothing is cached for the new model yet; wait until its first response has written it.
       if (anchor.model.id !== context.model.ref.id || anchor.model.variant !== context.model.ref.variant) return
@@ -376,6 +500,19 @@ export const layer = Layer.effect(
         // SiCode: the time this call takes is exactly what a precomputed summary saves when it is used.
         Effect.timed,
         Effect.map(([elapsed, result]) => ({ result, durationMs: Duration.toMillis(elapsed) })),
+        // SiCode: once the summary lands, write it out so a later process reuses it. Persisting only the
+        // text and its validity anchors — not the fiber or billing — keeps the file a plain cache.
+        Effect.tap(({ result }) =>
+          writePersisted(sessionID, {
+            text: result.text,
+            keepID: anchor.id,
+            firstID: context.messages[0]?.id,
+            model: context.model.ref,
+            initial: context.initial,
+            tailLimit: tailLimit(settings.keep, model.cap),
+            failures,
+          }),
+        ),
         Effect.forkIn(scope),
       )
       precomputed.set(sessionID, {
@@ -537,6 +674,17 @@ export const layer = Layer.effect(
         background,
       )
       if (!keepID) return result
+      // SiCode: the summary replaces everything before `keepID`, so that prefix is the only place the
+      // dropped detail survives. Write it out and name the file in the checkpoint, so a resumed agent
+      // can read the original instead of trusting the lossy summary.
+      const keepIndex = messages.findIndex((message) => message.id === keepID)
+      if (keepIndex > 0) {
+        yield* writeTranscript(context.session.id, messages.slice(0, keepIndex))
+        return {
+          ...result,
+          metadata: { keepID, transcriptPath: transcriptPath(context.session.id), ...result.metadata },
+        }
+      }
       // A compaction hook may choose its own kept range.
       return { ...result, metadata: { keepID, ...result.metadata } }
     })
@@ -949,7 +1097,16 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Agent.node, Bus.node, Database.node, llmClient, Model.node, SessionModelRequest.node, SessionRunnerModel.node],
+  deps: [
+    Agent.node,
+    Bus.node,
+    Database.node,
+    Global.node,
+    llmClient,
+    Model.node,
+    SessionModelRequest.node,
+    SessionRunnerModel.node,
+  ],
 })
 
 /**
@@ -1144,7 +1301,8 @@ const calculateCeiling = (limit: SessionContext.Loaded["model"]["limit"], buffer
   // all, only a provider rejection can limit the request.
   const window = limit.input || limit.context
   if (window <= 0) return Number.POSITIVE_INFINITY
-  if (buffer !== undefined) return window - buffer
+  // A buffer that leaves no room, such as one set for a larger model, is ignored.
+  if (buffer !== undefined && buffer < window) return window - buffer
   return window - Math.max(Math.floor(window * RESERVE_SHARE), window >= 2 * RESERVE_MIN ? RESERVE_MIN : 0)
 }
 

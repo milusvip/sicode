@@ -248,7 +248,7 @@ const pre = [
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,
-  // Render model prompts after the patch plugin selects the available editing tools.
+  // Render model prompts after the patch plugin registers (it no longer prunes editing tools).
   ...OptimizePlugin.Plugins,
   VerbosityPlugin.Plugin,
   IdentityPlugin.Plugin,

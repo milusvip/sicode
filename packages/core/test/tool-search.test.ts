@@ -20,6 +20,7 @@ import { Session } from "@opencode/core/session"
 import { GlobTool } from "@opencode/core/tool/plugin/glob"
 import { GrepTool } from "@opencode/core/tool/plugin/grep"
 import { Tool } from "@opencode/core/tool"
+import { ToolOutput } from "@opencode/core/tool-output"
 import { location } from "./fixture/location"
 import { tmpdir, tmpdirScoped } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
@@ -42,6 +43,7 @@ const grepToolNode = makeLocationNode({
     FileAccess.node,
     Permission.node,
     TrigramSearch.node,
+    ToolOutput.node,
   ],
 })
 const sessionID = Session.ID.make("ses_search_tool_test")
@@ -270,6 +272,31 @@ describe("search tools", () => {
     ),
   )
 
+  it.live("ranks files by filename hit first, demotes tests", () =>
+    Effect.sync(() => {
+      // toModelContent is a pure function; assert its ordering directly so the relevance
+      // signal is pinned without a filesystem. A filename that names the pattern must beat a
+      // file that merely mentions it many times, and a test file must never bury an implementation.
+      const mk = (p: string, line: number, text: string) => ({
+        kind: "match" as const,
+        match: { entry: { path: p, type: "file" as const }, line, offset: 0, text, submatches: [] },
+      })
+      const rows = [
+        mk("src/config.ts", 3, "retryCount = 5"),
+        mk("src/config.ts", 7, "retry the request"),
+        mk("src/config.ts", 9, "retry limit"),
+        mk("src/retry.test.ts", 1, "describe retry"),
+        mk("src/retry.test.ts", 2, "retry works"),
+        mk("src/retry.ts", 1, "export function retry"),
+      ]
+      const out = GrepTool.toModelContent(rows, { mode: "content", truncated: false, offset: 0, pattern: "retry" })
+      // retry.ts (implementation + filename hit) first, config.ts (body-only) second,
+      // retry.test.ts (test file) demoted to last despite matching the stem.
+      expect(out.indexOf("src/retry.ts:")).toBeLessThan(out.indexOf("src/config.ts:"))
+      expect(out.indexOf("src/config.ts:")).toBeLessThan(out.indexOf("src/retry.test.ts:"))
+    }),
+  )
+
   it.live("counts matches per file", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -377,6 +404,44 @@ describe("search tools", () => {
               if (result.status !== "completed") return
               const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
               expect(text).toContain(`Output capped at ${GrepTool.CHAR_BUDGET} characters`)
+              expect(text.length).toBeLessThan(GrepTool.CHAR_BUDGET + 300)
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("spills the full result to a file when the character cap hides lines", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          fs.writeFile(
+            path.join(tmp.path, "wide.txt"),
+            Array.from({ length: 300 }, (_, index) => `needle ${index} ${"x".repeat(180)}\n`).join(""),
+          ),
+        ).pipe(
+          Effect.andThen(withTools(tmp.path, (registry) => executeTool(registry, call("grep", { pattern: "needle" })))),
+          Effect.tap((result) =>
+            Effect.gen(function* () {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              // The cap notice is followed by a pointer to the spilled file, not just a "narrow it".
+              expect(text).toContain("Full results saved to ")
+              const match = text.match(/Full results saved to (.+);/)
+              expect(match).not.toBeNull()
+              if (!match) return
+              const spilled = match[1]!
+              // The spilled file holds the lines the cap dropped from the visible page. The last
+              // selected match (needle 99) is beyond the character budget, so the model cannot see
+              // it inline — but it must be recoverable from the spilled file without re-running.
+              const full = yield* Effect.promise(() => fs.readFile(spilled, "utf8"))
+              expect(full).toContain("needle 0 ")
+              expect(full).toContain(`needle 99 `)
+              expect(full.split("\n").length).toBeGreaterThan(100)
+              // The visible text, by contrast, is capped and must not itself contain the late rows.
               expect(text.length).toBeLessThan(GrepTool.CHAR_BUDGET + 300)
             }),
           ),
@@ -577,6 +642,7 @@ describe("two-stage grep prefilter", () => {
       FileAccess.node,
       Permission.node,
       TrigramSearch.node,
+      ToolOutput.node,
     ],
   })
   const withPrefilter = <A, E, R>(

@@ -31,6 +31,7 @@ import { Skill } from "@opencode/schema/skill"
 import { Shell } from "@opencode/schema/shell"
 import { DateTime, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
+import fs from "node:fs"
 import { testEffect } from "./lib/effect"
 
 let requests: LLMRequest[] = []
@@ -870,6 +871,42 @@ it.effect("forked session compaction reuses the fork root prompt cache key", () 
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.promptCacheKey).toBe(rootID)
+  }),
+)
+
+it.effect("compaction writes the dropped transcript to a file and names it in the checkpoint", () =>
+  Effect.gen(function* () {
+    requests = []
+    const sessionID = Session.ID.make("ses_transcript")
+    const session = yield* insertSession(sessionID)
+    const messages = [
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text: "First question that gets summarized away.",
+        time: { created: DateTime.makeUnsafe(0) },
+      }),
+      SessionMessage.User.make({
+        id: SessionMessage.ID.create(),
+        type: "user",
+        text: "Second question that stays recent.",
+        time: { created: DateTime.makeUnsafe(1) },
+      }),
+    ]
+
+    expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+
+    // The checkpoint names the file, so the model knows where to read the dropped original.
+    const store = yield* SessionStore.Service
+    const [checkpoint] = yield* store.context(sessionID)
+    expect(checkpoint).toMatchObject({ type: "compaction" })
+    const transcriptPath = checkpoint?.metadata?.transcriptPath
+    expect(typeof transcriptPath).toBe("string")
+    const text = fs.readFileSync(transcriptPath as string, "utf8")
+    // The dropped original survives verbatim, so a resumed agent can read it back.
+    expect(text).toContain("First question that gets summarized away.")
+    // The kept recent exchange stays in the checkpoint, not the transcript file.
+    expect(text).not.toContain("Second question that stays recent.")
   }),
 )
 

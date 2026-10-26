@@ -5703,7 +5703,7 @@ describe("SessionRunnerLLM", () => {
     expect(s.requests).toHaveLength(2)
   })
 
-  scenario("caps an excessive provider retry-after delay at fifteen minutes", function* (s) {
+  scenario("caps an excessive provider retry-after delay at one minute", function* (s) {
     yield* s.admit("Retry capped rate limit")
     yield* s.llm.push(Stream.fail(rateLimited(3_600_000)))
     yield* s.llm.push(TestLLM.text("Recovered", "retry-cap-success"))
@@ -5711,7 +5711,7 @@ describe("SessionRunnerLLM", () => {
     const scheduled = yield* subscribeRetries(s)
     const run = yield* s.resume.pipe(Effect.forkChild)
     yield* Queue.take(scheduled)
-    yield* TestClock.adjust("899999 millis")
+    yield* TestClock.adjust("59999 millis")
     expect(s.requests).toHaveLength(1)
     yield* TestClock.adjust("1 millis")
     yield* Fiber.join(run)

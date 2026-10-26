@@ -313,6 +313,11 @@ function toLLMMessage(
       // History selection only keeps native windows the target model can replay.
       if (message.native?.messages !== undefined) return [...decodeNativeWindow(message.native.messages)]
       const kept = SessionRecentText.kept(message)
+      // SiCode: the summary dropped everything before `keepID`, so its verbatim original was written out
+      // and named here. The agent can `read` it to recover an exact error string or an abandoned argument
+      // the summary only paraphrased.
+      const transcriptPath =
+        typeof message.metadata?.transcriptPath === "string" ? message.metadata.transcriptPath : undefined
       return [
         Message.make({
           id: message.id,
@@ -323,6 +328,12 @@ function toLLMMessage(
             "",
             `<summary>\n${message.summary}\n</summary>`,
             ...(kept ? ["", `<recent-context>\n${kept}\n</recent-context>`] : []),
+            ...(transcriptPath
+              ? [
+                  "",
+                  `<full-transcript>\nThe full verbatim transcript of the summarized conversation was saved to ${transcriptPath}. Read it with the read tool when you need the exact wording of something the summary only paraphrases.\n</full-transcript>`,
+                ]
+              : []),
             "</conversation-checkpoint>",
           ].join("\n"),
           metadata: message.metadata,
