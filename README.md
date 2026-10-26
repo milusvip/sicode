@@ -109,13 +109,16 @@ node script/brand/generate-icons.mjs packages/desktop/branding/logo-source.png .
 
 ## 同步上游
 
+不整体 merge 上游，按需摘取。先列清单，再挑需要的提交单独移植：
+
 ```bash
 git remote add upstream git@github.com:sst/opencode.git
 git fetch upstream
-git merge upstream/dev        # 或 git rebase upstream/dev
+git log --oneline 76fd05ff45..upstream/dev   # 列出上游更新，分类挑选
+git cherry-pick <sha>                        # 只移植需要的提交
 ```
 
-品牌相关文件是本地改动，冲突时以 SiCode 为准（见上文改动点清单）。
+品牌相关文件是本地改动，冲突时以 SiCode 为准（见上文改动点清单）。完整流程和取舍标准见 [UPSTREAM.md](./UPSTREAM.md)。
 
 ## 许可
 

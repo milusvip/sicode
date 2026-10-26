@@ -2,7 +2,7 @@
 
 给 agent 用的"去哪改"索引。**只到包级**——文件树 `ls` 就有，抄下来只会过期；文件级的坑和链路写在 `notes.md`。
 
-SiCode = opencode 的桌面端二开。内核（`ai` / `core` / `server` / `cli` / `tui`）保持上游原样以便 `git merge upstream/dev`，分叉改动集中在 `desktop`、`gui-extensions`、`app` 的界面层和品牌资源。
+SiCode = opencode 的桌面端二开。内核（`ai` / `core` / `server` / `cli` / `tui`）保持上游原样，上游更新**不整体 merge，列清单按需摘取**（cherry-pick / 手工移植，流程见 `UPSTREAM.md`），分叉改动集中在 `desktop`、`gui-extensions`、`app` 的界面层和品牌资源。
 
 ## 分层（硬规则，见 AGENTS.md）
 
@@ -46,6 +46,17 @@ SiCode = opencode 的桌面端二开。内核（`ai` / `core` / `server` / `cli`
 | 模型、provider、工具调用 | `ai/` + `core/`（上游文件，改要加注释） |
 | 公开 HTTP API | `protocol/` → `server/` → `client` 重新生成 |
 | 设计系统组件 | `ui/src/<category>/`，CSS 同目录 |
+
+## `.sicode` 自身的目录约定
+
+这个目录除了下面两个工具链文件，其余全是 agent 工作产物，**必须按类型归入子目录，禁止堆在根目录**：
+
+| 路径 | 放什么 |
+| --- | --- |
+| `notes.md` / `structure.md` | 工具链管理（本文件与笔记），固定路径，脚本依赖，勿动 |
+| `demos/` | 写给人看的 HTML demo / 可视化对比页（会话侧边浏览器会打开的那种） |
+| `shots/` | CDP / 无头浏览器截图（`*.png` / `*.jpg`） |
+| `scratch/` | 一次性测量与验证脚本（`*.mjs` / `*.sh`）及其输出（`*.json`） |
 
 ## 更新规则
 

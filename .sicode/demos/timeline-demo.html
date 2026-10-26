@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SiCode 会话时间线 · 演示</title>
+<style>
+  :root {
+    --bg: #141413;
+    --panel: #1b1b1a;
+    --card: #1e1e1d;
+    --card-2: #232322;
+    --line: #2a2a29;
+    --line-soft: #262625;
+    --text: #e9e7e4;
+    --text-muted: #a3a09b;
+    --text-faint: #6f6d69;
+    --accent: #4c8dff;
+    --green: #43b581;
+    --amber: #d9a441;
+    --red: #e06c6c;
+    --purple: #a78bfa;
+    --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 22px;
+  }
+  .win {
+    width: 1080px; height: 700px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    display: flex;
+    overflow: hidden;
+    box-shadow: 0 14px 44px rgba(0,0,0,.55);
+  }
+
+  /* ---------- 左：工具栏 ---------- */
+  .rail {
+    width: 52px; flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 10px 0; gap: 6px;
+  }
+  .mark {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, #4c8dff, #22c7a9);
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+    margin-bottom: 8px;
+  }
+  .rail-btn {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--text-faint); cursor: pointer;
+  }
+  .rail-btn:hover { background: var(--card-2); color: var(--text); }
+  .rail-btn.active { background: var(--card-2); color: var(--text); }
+  .rail-spacer { margin-top: auto; }
+
+  /* ---------- 中：时间线 ---------- */
+  .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    height: 44px; flex-shrink: 0;
+    border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 16px;
+  }
+  .topbar .t { font-weight: 560; font-size: 13px; }
+  .badge {
+    font-size: 11px; color: var(--text-muted);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 1px 8px;
+  }
+  .topbar .right { margin-left: auto; display: flex; gap: 6px; }
+  .ghost {
+    border: 1px solid var(--line); background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 11.5px;
+    padding: 3px 9px; border-radius: 6px; cursor: pointer;
+  }
+  .ghost:hover { background: var(--card-2); color: var(--text); }
+
+  .scroll { flex: 1; overflow-y: auto; padding: 20px 0 8px; }
+  .thread { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+  /* 用户消息 */
+  .turn-user {
+    display: flex; justify-content: flex-end; margin-bottom: 18px;
+  }
+  .bubble {
+    background: var(--card-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px 10px 2px 10px;
+    padding: 10px 14px;
+    max-width: 78%;
+    line-height: 1.6;
+  }
+
+  /* 过程壳 */
+  .shell {
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    background: var(--card);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .shell-head {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 12px;
+    cursor: pointer; user-select: none;
+  }
+  .shell-head:hover { background: var(--card-2); }
+  .chev { transition: transform .16s; color: var(--text-faint); display: grid; place-items: center; }
+  .shell.collapsed .chev { transform: rotate(-90deg); }
+  .shell-title { font-size: 12.5px; color: var(--text-muted); }
+  .shell-title b { color: var(--text); font-weight: 540; }
+  .dots { display: flex; gap: 4px; margin-left: 2px; }
+  .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint); }
+  .dot.live { animation: pulse 1.2s ease-in-out infinite; }
+  .dot.live:nth-child(2) { animation-delay: .18s; }
+  .dot.live:nth-child(3) { animation-delay: .36s; }
+  @keyframes pulse { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+  .shell-meta { margin-left: auto; font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
+
+  .shell-body { border-top: 1px solid var(--line-soft); }
+  .shell.collapsed .shell-body { display: none; }
+
+  /* thinking */
+  .think {
+    padding: 10px 14px 10px 34px;
+    color: var(--text-muted);
+    font-size: 12.5px; line-height: 1.65;
+    border-bottom: 1px solid var(--line-soft);
+    position: relative;
+  }
+  .think::before {
+    content: ""; position: absolute; left: 14px; top: 16px;
+    width: 2px; bottom: 12px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--purple), transparent);
+    opacity: .5;
+  }
+  .think em { color: var(--purple); font-style: normal; }
+
+  /* 工具行 */
+  .tool { border-bottom: 1px solid var(--line-soft); }
+  .tool:last-child { border-bottom: none; }
+  .tool-head {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 12px 8px 14px;
+    cursor: pointer;
+  }
+  .tool-head:hover { background: var(--card-2); }
+  .tool-ico { display: grid; place-items: center; width: 16px; color: var(--text-faint); flex-shrink: 0; }
+  .tool-name { font-size: 12.5px; font-weight: 520; }
+  .tool-arg {
+    font-family: var(--mono); font-size: 11.5px; color: var(--text-faint);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .tool-stat { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 11px; }
+  .ok { color: var(--green); }
+  .run { color: var(--amber); }
+  .cost { color: var(--text-faint); font-family: var(--mono); }
+  .tool-body { padding: 0 14px 10px 39px; display: block; }
+  .tool.closed .tool-body { display: none; }
+
+  /* 终端输出 */
+  .term {
+    background: #151514;
+    border: 1px solid var(--line-soft);
+    border-radius: 7px;
+    padding: 9px 11px;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.7;
+    color: #cfccc6;
+    overflow-x: auto;
+  }
+  .term .p { color: var(--green); }
+  .term .dim { color: var(--text-faint); }
+  .term .warn { color: var(--amber); }
+  .term .err { color: var(--red); }
+
+  /* diff */
+  .diff {
+    border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.75;
+  }
+  .diff .h {
+    background: var(--card-2); color: var(--text-muted);
+    padding: 5px 10px; border-bottom: 1px solid var(--line-soft);
+    display: flex; gap: 8px;
+  }
+  .diff .ln { padding: 0 10px; white-space: pre; }
+  .diff .add { background: rgba(67,181,129,.12); color: #9fe3bf; }
+  .diff .del { background: rgba(224,108,108,.12); color: #eda3a3; }
+
+  /* 助手回答 */
+  .answer { line-height: 1.72; font-size: 13.5px; }
+  .answer p { margin-bottom: 10px; }
+  .answer code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--card-2); border: 1px solid var(--line-soft);
+    padding: 1px 5px; border-radius: 4px; color: #d6d3cd;
+  }
+  .answer ul { margin: 0 0 10px 18px; }
+  .answer li { margin-bottom: 5px; }
+  .answer li::marker { color: var(--text-faint); }
+
+  .files {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px;
+  }
+  .chip {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line-soft); background: var(--card);
+    border-radius: 6px; padding: 4px 9px;
+    font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+    cursor: pointer;
+  }
+  .chip:hover { border-color: #3a3a39; color: var(--text); }
+  .chip .plus { color: var(--green); }
+  .chip .minus { color: var(--red); }
+
+  /* 待办 */
+  .todos {
+    margin-top: 16px;
+    border: 1px solid var(--line-soft); border-radius: 10px;
+    background: var(--card); overflow: hidden;
+  }
+  .todos .h {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px; color: var(--text-muted);
+  }
+  .todos .h b { color: var(--text); font-weight: 540; }
+  .todo {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 14px; font-size: 12.5px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .todo:last-child { border-bottom: none; }
+  .todo .box { width: 13px; height: 13px; border-radius: 4px; border: 1px solid #3d3d3c; display: grid; place-items: center; flex-shrink: 0; }
+  .todo.done .box { background: var(--green); border-color: var(--green); color: #10251b; }
+  .todo.done span { color: var(--text-faint); text-decoration: line-through; }
+  .todo.now span { color: var(--text); }
+  .todo.now .box { border-color: var(--amber); }
+
+  /* 输入框 */
+  .composer {
+    flex-shrink: 0; padding: 10px 24px 14px;
+  }
+  .composer-inner {
+    max-width: 720px; margin: 0 auto;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card);
+    padding: 10px 12px;
+  }
+  .composer-inner .ph { color: var(--text-faint); font-size: 13px; padding: 2px 0 12px; }
+  .composer-row { display: flex; align-items: center; gap: 8px; }
+  .pick {
+    display: flex; align-items: center; gap: 5px;
+    border: 1px solid var(--line-soft); border-radius: 999px;
+    padding: 3px 9px; font-size: 11.5px; color: var(--text-muted);
+    cursor: pointer;
+  }
+  .pick:hover { background: var(--card-2); }
+  .pick .g { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .send {
+    margin-left: auto; width: 28px; height: 28px; border-radius: 8px;
+    background: var(--accent); border: none; color: #fff; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .send:hover { filter: brightness(1.08); }
+
+  .scroll::-webkit-scrollbar { width: 9px; }
+  .scroll::-webkit-scrollbar-thumb { background: #2f2f2e; border-radius: 9px; border: 2px solid var(--bg); }
+</style>
+</head>
+<body>
+<div class="win">
+
+  <!-- ========== 工具栏 ========== -->
+  <aside class="rail">
+    <div class="mark">S</div>
+    <div class="rail-btn active" title="会话">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M3.33 3.33h13.34v10.42H7.92L3.33 16.87V3.33Z" stroke="currentColor" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="rail-btn" title="文件">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M2.08 2.92v13.33h15.84V5.42H10L8.33 2.92H2.08Z" stroke="currentColor" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="rail-btn" title="终端">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="3.33" width="15" height="13.34" rx="1.5" stroke="currentColor"/><path d="m6 8 2.2 2.2L6 12.4M10.5 12.4h3.5" stroke="currentColor" stroke-linecap="round"/></svg>
+    </div>
+    <div class="rail-btn" title="浏览器">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor"/><path d="M2.5 10h15M10 2.5c2.4 2 3.6 4.6 3.6 7.5s-1.2 5.5-3.6 7.5c-2.4-2-3.6-4.6-3.6-7.5S7.6 4.5 10 2.5Z" stroke="currentColor"/></svg>
+    </div>
+    <div class="rail-spacer"></div>
+    <div class="rail-btn" title="设置">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" stroke="currentColor" stroke-linecap="round"/></svg>
+    </div>
+  </aside>
+
+  <!-- ========== 会话 ========== -->
+  <div class="col">
+    <div class="topbar">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="color:var(--text-faint)"><path d="M3.33 3.33h13.34v10.42H7.92L3.33 16.87V3.33Z" stroke="currentColor" stroke-linejoin="round"/></svg>
+      <span class="t">时间线性能排查</span>
+      <span class="badge">build</span>
+      <div class="right">
+        <button class="ghost" id="toggleAll">全部收起</button>
+        <button class="ghost">导出</button>
+      </div>
+    </div>
+
+    <div class="scroll" id="scroll">
+      <div class="thread">
+
+        <!-- 用户 -->
+        <div class="turn-user">
+          <div class="bubble">
+            会话滚到第 300 条消息之后明显掉帧，帮我看看虚拟化那块是不是算错了高度。顺便把重复的测量回调收敛一下。
+          </div>
+        </div>
+
+        <!-- 过程壳 -->
+        <div class="shell" id="shell">
+          <div class="shell-head" data-toggle>
+            <span class="chev">
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="m6.67 8.33 3.33 3.34 3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg>
+            </span>
+            <span class="shell-title"><b>已工作</b> 32 秒 · 4 次工具调用</span>
+            <span class="dots"><i class="dot"></i><i class="dot"></i><i class="dot"></i></span>
+            <span class="shell-meta">$0.014</span>
+          </div>
+          <div class="shell-body">
+
+            <div class="think">
+              300 条之后掉帧，最常见的原因是 <em>估算高度</em> 与实际高度偏差累积，导致滚动时不停反向修正。先确认 <em>virtualizer.tsx</em> 里 measurement 的写入路径，再看有没有重复注册的 ResizeObserver。
+            </div>
+
+            <!-- 工具 1 -->
+            <div class="tool" data-tool>
+              <div class="tool-head" data-toggle-tool>
+                <span class="tool-ico">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M7.5 6.25 3.75 10l3.75 3.75M12.5 6.25 16.25 10 12.5 13.75M11.25 4.17 8.75 15.83" stroke="currentColor" stroke-linecap="round"/></svg>
+                </span>
+                <span class="tool-name">grep</span>
+                <span class="tool-arg">"measureElement|estimateSize" packages/session-ui/src/timeline</span>
+                <span class="tool-stat"><span class="ok">✓</span><span class="cost">18 行</span></span>
+              </div>
+              <div class="tool-body">
+                <div class="term">
+                  <div><span class="dim">timeline/virtualizer.tsx:41</span>  const measure = measureElement</div>
+                  <div><span class="dim">timeline/virtualizer.tsx:88</span>  const estimate = 96</div>
+                </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 工具 2 -->
+            <div class="tool" data-tool>
+              <div class="tool-head" data-toggle-tool>
+                <span class="tool-ico">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M4.17 2.5h7.5l4.16 4.17v10.83H4.17V2.5Z" stroke="currentColor" stroke-linejoin="round"/><path d="M11.67 2.5v4.17h4.16" stroke="currentColor"/></svg>
+                </span>
+                <span class="tool-name">read</span>
+                <span class="tool-arg">packages/app/src/session/timeline/virtualizer.tsx</span>
+                <span class="tool-stat"><span class="ok">✓</span><span class="cost">1.2k 行</span></span>
+              </div>
+              <div class="tool-body">
+                <div class="term"><span class="dim">读取 1149 行 · 缓存命中</span></div>
+              </div>
+            </div>
+
+            <!-- 工具 3 -->
+            <div class="tool" data-tool>
+              <div class="tool-head" data-toggle-tool>
+                <span class="tool-ico">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M12.5 3.33 5 17.5M5.83 7.5 10 11.67l-4.17 4.16" stroke="currentColor" stroke-linecap="round"/></svg>
+                </span>
+                <span class="tool-name">edit</span>
+                <span class="tool-arg">packages/app/src/session/timeline/virtualizer.tsx</span>
+                <span class="tool-stat"><span class="ok">✓</span><span class="cost">+9 −14</span></span>
+              </div>
+              <div class="tool-body">
+                <div class="diff">
+                  <div class="h"><span>virtualizer.tsx</span><span style="margin-left:auto" class="add">+9</span><span class="del">−14</span></div>
+                  <div class="ln del">-  const [measureTick, setMeasureTick] = createSignal(0)</div>
+                  <div class="ln del">-  onMount(() => { observer = new ResizeObserver(reflow) })</div>
+                  <div class="ln add">+  // 单一入口：只在可见区间变化时重算偏移</div>
+                  <div class="ln add">+  const offsets = createMemo(() =&gt; buildOffsets(rows(), sizes()))</div>
+                  <div class="ln add">+  onCleanup(() =&gt; observer?.disconnect())</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 工具 4：运行中 -->
+            <div class="tool" data-tool>
+              <div class="tool-head" data-toggle-tool>
+                <span class="tool-ico">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="3.33" width="15" height="13.34" rx="1.5" stroke="currentColor"/><path d="m6 8 2.2 2.2L6 12.4" stroke="currentColor" stroke-linecap="round"/></svg>
+                </span>
+                <span class="tool-name">shell</span>
+                <span class="tool-arg">bun test timeline</span>
+                <span class="tool-stat"><span class="run">运行中</span><span class="cost">4.1s</span><span class="dots"><i class="dot live"></i><i class="dot live"></i><i class="dot live"></i></span></span>
+              </div>
+              <div class="tool-body">
+                <div class="term">
+<span class="p">✓</span> golden path renders 300 rows <span class="dim">(38ms)</span>
+<span class="p">✓</span> estimate converges after 12 frames <span class="dim">(51ms)</span>
+<span class="warn">…</span> scrolling regression
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 助手回答 -->
+        <div class="answer">
+          <p>问题不在估算本身，而在 <code>reflow</code> 被注册了两次：<code>onMount</code> 和 <code>createEffect</code> 各起了一个 observer，可见区间一变就双倍写入，高度差被叠加放大。</p>
+          <ul>
+            <li>把测量收敛成单一入口，避免同一帧内重复估算</li>
+            <li>偏移量改成 memo 派生，不再手动累加</li>
+            <li>卸载时显式 disconnect，防止切会话后仍在跑</li>
+          </ul>
+          <div class="files">
+            <span class="chip"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><path d="M4.17 2.5h7.5l4.16 4.17v10.83H4.17V2.5Z" stroke="currentColor"/></svg>virtualizer.tsx <span class="plus">+9</span><span class="minus">−14</span></span>
+            <span class="chip"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><path d="M4.17 2.5h7.5l4.16 4.17v10.83H4.17V2.5Z" stroke="currentColor"/></svg>message-timeline.tsx <span class="plus">+3</span></span>
+          </div>
+        </div>
+
+        <!-- 待办 -->
+        <div class="todos">
+          <div class="h">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M3.33 5h13.34M3.33 10h13.34M3.33 15h8.34" stroke="currentColor" stroke-linecap="round"/></svg>
+            <b>待办</b> · 2 / 4
+            <span style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-faint)">todo</span>
+          </div>
+          <div class="todo done"><span class="box"><svg width="9" height="9" viewBox="0 0 20 20" fill="none"><path d="m5 10.5 3.3 3.3L15 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span><span>定位重复注册的 ResizeObserver</span></div>
+          <div class="todo done"><span class="box"><svg width="9" height="9" viewBox="0 0 20 20" fill="none"><path d="m5 10.5 3.3 3.3L15 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span><span>偏移量改为 memo 派生</span></div>
+          <div class="todo now"><span class="box"></span><span>补一条 300 行滚动回归测试</span></div>
+          <div class="todo"><span class="box"></span><span>跑全量 check</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 输入框 -->
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="ph">继续追问，或按 Ctrl+Enter 引导当前轮次…</div>
+        <div class="composer-row">
+          <span class="pick"><span class="g"></span>Build</span>
+          <span class="pick">deepseek-v4.1</span>
+          <span class="pick">自动接受</span>
+          <button class="send">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 15.83V4.17M5 9.17 10 4.17l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const shell = document.getElementById("shell")
+  shell.querySelector("[data-toggle]").addEventListener("click", () => {
+    shell.classList.toggle("collapsed")
+    document.getElementById("toggleAll").textContent = shell.classList.contains("collapsed") ? "全部展开" : "全部收起"
+  })
+
+  document.getElementById("toggleAll").addEventListener("click", (e) => {
+    const collapsed = !shell.classList.contains("collapsed")
+    shell.classList.toggle("collapsed", collapsed)
+    e.target.textContent = collapsed ? "全部展开" : "全部收起"
+  })
+
+  document.querySelectorAll("[data-tool]").forEach((tool) => {
+    tool.querySelector("[data-toggle-tool]").addEventListener("click", () => {
+      tool.classList.toggle("closed")
+    })
+  })
+</script>
+</body>
+</html>

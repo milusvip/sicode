@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SiCode 设置 · TRAE 风格演示</title>
+<style>
+  :root {
+    --bg: #141413;            /* 窗口底 */
+    --panel: #1b1b1a;         /* 侧栏面板 */
+    --card: #202020;          /* 内容卡片 */
+    --card-hover: #262625;
+    --line: #2a2a29;
+    --line-soft: #262625;
+    --text: #e9e7e4;
+    --text-muted: #a8a5a0;
+    --text-faint: #6f6d69;
+    --accent: #4c8dff;
+    --sel: #2c2c2b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .win {
+    width: 1060px;
+    height: 660px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    display: flex;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+
+  /* ---------- 左侧栏 ---------- */
+  .side {
+    width: 232px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--line-soft);
+    padding: 14px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+  }
+  .back {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .back:hover { background: var(--sel); color: var(--text); }
+  .back svg { opacity: .8; }
+
+  .account {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .account:hover { background: var(--sel); }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, #4c8dff, #22c7a9);
+    display: grid; place-items: center;
+    font-weight: 600; color: #fff; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .account .name { font-size: 13px; font-weight: 530; }
+  .account .plan { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text-faint);
+    background: var(--bg);
+    cursor: text;
+  }
+  .search kbd {
+    margin-left: auto;
+    font-family: inherit;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  .group-label {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    padding: 8px 10px 2px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 9px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .nav-item:hover { background: var(--sel); color: var(--text); }
+  .nav-item.active { background: var(--sel); color: var(--text); }
+  .nav-item svg { flex-shrink: 0; opacity: .85; }
+  .sep { height: 1px; background: var(--line-soft); margin: 6px 10px; flex-shrink: 0; }
+
+  /* ---------- 内容区 ---------- */
+  .main {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 40px 48px 48px;
+  }
+  .main-inner { max-width: 640px; }
+  h1 { font-size: 19px; font-weight: 620; margin-bottom: 6px; }
+  .subtitle { color: var(--text-muted); font-size: 12.5px; margin-bottom: 26px; }
+
+  .section-label {
+    font-size: 12.5px;
+    font-weight: 560;
+    color: var(--text);
+    margin: 22px 0 10px;
+  }
+  .section-label:first-of-type { margin-top: 0; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: default;
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--card-hover); }
+  .row .info { flex: 1; min-width: 0; }
+  .row .title { font-size: 13px; font-weight: 500; }
+  .row .desc { font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.45; }
+  .row .desc a { color: var(--accent); text-decoration: none; }
+
+  .ctl {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 6px;
+    color: var(--text-muted);
+    font-size: 12.5px;
+  }
+  .ctl svg { opacity: .7; }
+
+  .select {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 9px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12.5px;
+    background: transparent;
+  }
+  .select:hover { background: var(--sel); color: var(--text); }
+
+  .switch {
+    width: 34px; height: 19px;
+    border-radius: 999px;
+    background: #3a3a39;
+    position: relative;
+    cursor: pointer;
+    transition: background .15s;
+    flex-shrink: 0;
+    border: none;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: #cfcfcc;
+    transition: left .15s;
+  }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 17px; background: #fff; }
+
+  /* 简单页面切换 */
+  .page { display: none; }
+  .page.active { display: block; }
+</style>
+</head>
+<body>
+<div class="win">
+
+  <!-- ================= 左侧栏 ================= -->
+  <aside class="side">
+    <div class="back">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M8.33 4.58 2.92 10l5.41 5.42M3.33 10H17.08" stroke="currentColor" stroke-linecap="square"/></svg>
+      返回应用
+    </div>
+
+    <div class="account">
+      <div class="avatar">S</div>
+      <div>
+        <div class="name">本地账号</div>
+        <div class="plan">SiCode Desktop</div>
+      </div>
+    </div>
+
+    <div class="search">
+      <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="m13 13 4 4M11.96 7.48a4.48 4.48 0 1 1-8.96 0 4.48 4.48 0 0 1 8.96 0Z" stroke="currentColor"/></svg>
+      搜索设置
+      <kbd>Ctrl F</kbd>
+    </div>
+
+    <div class="group-label">常规</div>
+    <div class="nav-item active" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M8.75 7.5 6.25 10l2.5 2.5M11.25 7.5l2.5 2.5-2.5 2.5M2.92 2.92h14.17v14.17H2.92V2.92Z" stroke="currentColor"/></svg>
+      偏好设置
+    </div>
+    <div class="nav-item" data-page="appearance">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M2.5 10a7.5 7.5 0 1 0 15 0c0-1.5-1-2.5-2.5-2.5h-1.7c-1 0-1.8-.8-1.8-1.8 0-1.5-1-2.5-2.5-2.5A7.5 7.5 0 0 0 2.5 10Z" stroke="currentColor"/><circle cx="7" cy="8.2" r=".9" fill="currentColor"/><circle cx="6" cy="12" r=".9" fill="currentColor"/><circle cx="9.5" cy="13.5" r=".9" fill="currentColor"/></svg>
+      外观
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 2.5c.6 2.2 2 3.3 4.2 3.3H17v4.4c0 3.6-2.6 6.2-7 7.3-4.4-1.1-7-3.7-7-7.3V5.8h2.8C8 5.8 9.4 4.7 10 2.5Z" stroke="currentColor"/></svg>
+      通知
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M7 5.5H3.5v11h13v-11H13l-1.5-2h-3L7 5.5Z" stroke="currentColor"/><path d="M10 8.5v4M8 10.5l2 2 2-2" stroke="currentColor"/></svg>
+      快捷键
+    </div>
+
+    <div class="sep"></div>
+    <div class="group-label">项目</div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M2.08 2.92v13.33h15.84V5.42H10L8.33 2.92H2.08Z" stroke="currentColor"/></svg>
+      项目
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M2.9 7.9V2.9h5M12.1 2.9h5v5M10 10l-6.7 7M10 10l6.7-6.7" stroke="currentColor"/></svg>
+      工作区
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor"/><path d="M2.5 10h15M10 2.5c2.5 2 3.8 4.6 3.8 7.5S12.5 15.5 10 17.5c-2.5-2-3.8-4.6-3.8-7.5S7.5 4.5 10 2.5Z" stroke="currentColor"/></svg>
+      提供商
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="m10 2.5 1.8 4.4 4.7.4-3.6 3.1 1.1 4.6L10 12.5l-4 2.5 1.1-4.6L3.5 7.3l4.7-.4L10 2.5Z" stroke="currentColor"/></svg>
+      模型
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="4" height="8" stroke="currentColor"/><rect x="9" y="4" width="4" height="8" stroke="currentColor"/><path d="M13.5 6.5h3.5v7h-3.5" stroke="currentColor"/></svg>
+      扩展
+    </div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="3.36" y="1.93" width="13.29" height="16.14" stroke="currentColor"/><rect x="3.36" y="11.93" width="13.29" height="6.14" stroke="currentColor"/></svg>
+      服务器
+    </div>
+
+    <div class="sep"></div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="3.5" width="15" height="13" stroke="currentColor"/><path d="M2.5 7h15" stroke="currentColor"/></svg>
+      界面扩展
+    </div>
+
+    <div class="sep" style="margin-top:auto"></div>
+    <div class="nav-item" data-page="general">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor"/><path d="M7.5 12.5c.6.8 1.5 1.2 2.5 1.2s1.9-.4 2.5-1.2M7.5 8h.01M12.5 8h.01" stroke="currentColor" stroke-linecap="round"/></svg>
+      关于
+    </div>
+  </aside>
+
+  <!-- ================= 内容区 ================= -->
+  <main class="main">
+    <div class="main-inner">
+
+      <!-- 页面：偏好设置 -->
+      <div class="page active" id="page-general">
+        <h1>偏好设置</h1>
+        <div class="subtitle">自定义偏好、主题和默认行为</div>
+
+        <div class="section-label">常规</div>
+        <div class="card">
+          <div class="row">
+            <div class="info">
+              <div class="title">语言</div>
+              <div class="desc">更改 SiCode 的显示语言</div>
+            </div>
+            <div class="select">简体中文 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+          <div class="row">
+            <div class="info">
+              <div class="title">标签页</div>
+              <div class="desc">选择会话标签页的排列方式</div>
+            </div>
+            <div class="select">水平 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+          <div class="row">
+            <div class="info">
+              <div class="title">默认环境</div>
+              <div class="desc">选择新会话的启动位置</div>
+            </div>
+            <div class="select">各项目上次使用的位置 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+        </div>
+
+        <div class="section-label">权限</div>
+        <div class="card">
+          <div class="row">
+            <div class="info">
+              <div class="title">自动接受权限</div>
+              <div class="desc">无需询问即批准权限请求。项目可在其设置中覆盖此项。</div>
+            </div>
+            <button class="switch on" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <div class="row">
+            <div class="info">
+              <div class="title">破坏性命令确认</div>
+              <div class="desc">删除类命令（rm、del 等）总是弹出确认，不受自动接受影响。</div>
+            </div>
+            <button class="switch on" onclick="this.classList.toggle('on')"></button>
+          </div>
+        </div>
+
+        <div class="section-label">输入</div>
+        <div class="card">
+          <div class="row">
+            <div class="info">
+              <div class="title">显示智能体</div>
+              <div class="desc">在输入框中切换智能体。隐藏时默认使用 Build 智能体。</div>
+            </div>
+            <button class="switch" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <div class="row">
+            <div class="info">
+              <div class="title">终端位置</div>
+              <div class="desc">选择会话中终端的打开位置</div>
+            </div>
+            <div class="select">侧边 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+          <div class="row">
+            <div class="info">
+              <div class="title">后续消息行为</div>
+              <div class="desc">选择将后续消息加入队列还是引导当前轮次。使用 Ctrl+回车 切换。</div>
+            </div>
+            <div class="select">引导 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+          <div class="row">
+            <div class="info">
+              <div class="title">双指缩放</div>
+              <div class="desc">允许使用触控板双指捏合和 Ctrl+滚轮手势缩放</div>
+            </div>
+            <button class="switch" onclick="this.classList.toggle('on')"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 页面：外观（示意） -->
+      <div class="page" id="page-appearance">
+        <h1>外观</h1>
+        <div class="subtitle">主题、字体与显示密度</div>
+
+        <div class="section-label">主题</div>
+        <div class="card">
+          <div class="row">
+            <div class="info">
+              <div class="title">外观模式</div>
+              <div class="desc">跟随系统或手动指定浅色 / 深色</div>
+            </div>
+            <div class="select">跟随系统 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+        </div>
+
+        <div class="section-label">文本</div>
+        <div class="card">
+          <div class="row">
+            <div class="info">
+              <div class="title">界面字号</div>
+              <div class="desc">调整界面文字大小（CJK 可读性已按主题 token 适配）</div>
+            </div>
+            <div class="select">默认 <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M6.67 8.33 10 11.67l3.33-3.34" stroke="currentColor" stroke-linecap="square"/></svg></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"))
+      el.classList.add("active")
+      const page = el.dataset.page
+      document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + page))
+      document.querySelector(".main").scrollTop = 0
+    })
+  })
+</script>
+</body>
+</html>
