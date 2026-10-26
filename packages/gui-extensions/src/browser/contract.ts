@@ -7,8 +7,12 @@ export interface Browser {
   canOpen(session: SessionRef, path?: string): boolean
   /** Opens a URL (http(s) or file://) as a browser tab in the session's side panel. */
   open(session: SessionRef, url: string): void
-  /** Opens a workspace file (relative path) as a file:// browser tab. Check `canOpen(session, path)` first. */
-  openFile(session: SessionRef, path: string): void
+  /**
+   * Opens a workspace file (relative path) as a file:// browser tab. Check `canOpen(session, path)` first.
+   * `select` also brings the pane forward with the new tab selected once the desktop reports it —
+   * without it the tab quietly joins the strip, as the agent's own `tabs.open` does.
+   */
+  openFile(session: SessionRef, path: string, options?: { select?: boolean }): void
 }
 
 /** The browser extension provides this on desktop. Inactive on web or while the extension is off. */

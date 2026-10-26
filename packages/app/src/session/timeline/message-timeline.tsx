@@ -17,6 +17,8 @@ import { useServer } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { Timeline, WorkShellHead, workShellDisclosureKey } from "@opencode/session-ui/timeline/projection"
 import { createSessionTimelineRowRenderer } from "@opencode/session-ui/timeline/row"
+import { ArtifactPanel } from "@opencode/session-ui/artifact-panel"
+import { useExtensionHost } from "@/runtime/extension/host"
 import { getReadyMarkdown, preloadMarkdown } from "@opencode/session-ui/markdown-cache"
 import { createTimelineController, type TimelineController, type TimelineSessionSource } from "./controller"
 import { createTimelineVirtualizer } from "./virtualizer"
@@ -129,6 +131,7 @@ function MessageTimelineView(
 ) {
   const language = useLanguage()
   const server = useServer()
+  const extensionHost = useExtensionHost()
   const data = server.ctx.data
   const sdk = useWorkspaceLocation()
   const sessionID = props.data.sessionID
@@ -355,7 +358,11 @@ function MessageTimelineView(
     return projection
       .rows()
       .flatMap((row) =>
-        Predicate.isTagged(row, "AssistantPart") ? (row.group.type === "part" ? [row.group.ref] : row.group.refs) : [],
+        Predicate.isTagged(row, "AssistantPart")
+          ? row.group.type === "part"
+            ? [row.group.ref]
+            : row.group.refs
+          : [],
       )
       .findLast((ref) => blocking.has(ref.partID))?.partID
   })
@@ -500,6 +507,31 @@ function MessageTimelineView(
 
   return (
     <div class="relative w-full h-full min-w-0">
+      {/* SiCode: HTML demos the assistant writes open in the side browser pane, never inline. The
+          browser extension owns the pane; when it is inactive (web, remote server) the panel falls
+          back to its own drawer. The same file shape file/renderer.tsx uses for HTML links. */}
+      <ArtifactPanel
+        messages={() => props.session.history.messages().filter((message) => message.type === "assistant")}
+        open={(path) => {
+          // The host types `context` as the base Context; `uses` lives on the instance context.
+          const context = extensionHost.context("browser") as
+            | { uses?: { browser?: () => { status: string; value?: unknown } } }
+            | undefined
+          const pane = context?.uses?.browser?.()
+
+          if (pane?.status !== "active") return false
+          const browser = pane.value as {
+            canOpen(session: unknown, path?: string): boolean
+            openFile(session: unknown, path: string, options?: { select?: boolean }): void
+          }
+
+          if (!browser.canOpen(props.session, path)) return false
+          // `select` brings the browser pane forward with the new tab, WorkBuddy-style.
+          browser.openFile(props.session, path, { select: true })
+
+          return true
+        }}
+      />
       <Show when={props.active !== false}>
         <SessionTurnRail
           turns={turnRailMessages}

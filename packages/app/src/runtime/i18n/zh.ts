@@ -495,7 +495,9 @@ export const dict = {
   "settings.tab.shortcuts": "快捷键",
 
   "settings.general.section.appearance": "外观",
+  "settings.general.section.input": "输入",
   "settings.general.section.notifications": "系统通知",
+  "settings.general.section.permissions": "权限",
   "settings.general.section.sounds": "音效",
   "settings.general.row.language.title": "语言",
   "settings.general.row.language.description": "更改 SiCode 的显示语言",
@@ -519,6 +521,8 @@ export const dict = {
   "settings.general.row.showCustomAgents.description": "在输入框中切换智能体。隐藏时默认使用 Build 智能体。",
   "settings.general.row.pinchZoom.title": "双指缩放",
   "settings.general.row.pinchZoom.description": "允许使用触控板双指捏合和 Ctrl+滚轮手势缩放",
+  "settings.general.row.destructiveConfirm.title": "破坏性命令确认",
+  "settings.general.row.destructiveConfirm.description": "删除类命令（rm、del 等）总是弹出确认，不受自动接受影响。",
 
   "sound.option.none": "无",
   "sound.option.alert01": "警报 01",

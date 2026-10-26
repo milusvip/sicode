@@ -1,0 +1,88 @@
+/* SiCode: side drawer preview of an HTML demo the assistant wrote. The conversation stays pure
+   prose and tool chains — the render docks to the inline-end edge instead. */
+
+[data-component="artifact-drawer"] {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+[data-slot="artifact-drawer-content"] {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: min(620px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--v2-background-bg-base, #181817);
+  border-inline-start: 1px solid var(--v2-border-border-weak-base, rgba(127, 127, 127, 0.25));
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  animation: artifact-drawer-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  outline: none;
+}
+
+@keyframes artifact-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="artifact-drawer-content"] {
+    animation: none;
+  }
+}
+
+[data-slot="artifact-drawer-header"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--v2-border-border-weak-base, rgba(127, 127, 127, 0.2));
+  background: color-mix(in srgb, var(--v2-background-bg-layer-01, #202020) 100%, transparent);
+  font-size: var(--font-size-small, 12px);
+}
+
+[data-slot="artifact-drawer-label"] {
+  color: var(--v2-text-text-muted, #a8a8a3);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+[data-slot="artifact-drawer-path"] {
+  color: var(--v2-state-fg-info, #58a6ff);
+  font-size: var(--font-size-x-small, 11px);
+  background: color-mix(in srgb, var(--v2-state-fg-info, #58a6ff) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-state-fg-info, #58a6ff) 25%, transparent);
+  padding: 1px 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  /* Keep the file name visible when long: rtl ellipsis trims the head, not the tail. */
+  text-align: start;
+}
+
+[data-slot="artifact-drawer-close"] {
+  margin-inline-start: auto;
+}
+
+[data-slot="artifact-drawer-frame"] {
+  flex: 1;
+  border: none;
+  background: #0f1419;
+}
+
+[data-slot="artifact-drawer-too-large"] {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--v2-text-text-faint, #737370);
+  font-size: var(--font-size-small, 12px);
+}

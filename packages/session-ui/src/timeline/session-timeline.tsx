@@ -13,6 +13,7 @@ import {
   type ReasoningMode,
 } from "./projection"
 import { createSessionTimelineRowRenderer, type SessionUserPresentation } from "./session-timeline-row"
+import { ArtifactPanel } from "../components/artifact-panel"
 
 export type { SessionUserPresentation } from "./session-timeline-row"
 
@@ -79,6 +80,10 @@ export function SessionTimeline(props: SessionTimelineProps) {
 
   return (
     <div data-component="session-timeline" class={props.class}>
+      {/* SiCode: HTML demos the assistant writes open in the side drawer, never inline. */}
+      <ArtifactPanel
+        messages={() => props.document.messages.filter((message) => message.type === "assistant")}
+      />
       <For each={rowKeys()}>{(rowKey) => <Row rowKey={rowKey} />}</For>
     </div>
   )

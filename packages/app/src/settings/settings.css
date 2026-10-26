@@ -26,6 +26,8 @@
   display: flex;
   width: min(100%, 1048px);
   min-width: 0;
+  /* SiCode: 侧栏面板贴住工具栏，不再整体居中——居中会在工具栏和侧栏之间留大空隙。 */
+  margin-inline-end: auto;
 }
 
 @media (max-width: 767px) {
@@ -41,11 +43,12 @@
   flex-shrink: 0;
   width: 328px;
   min-width: 328px;
-  padding-block: 50px 48px;
-  padding-inline-start: 24px;
-  padding-inline-end: 64px;
-  border-inline-end: none;
-  background: transparent;
+  /* SiCode: TRAE 式独立侧栏面板 —— 自己的底色 + 右侧分隔线，不再平铺在窗口背景上。 */
+  padding-block: 20px 24px;
+  padding-inline-start: 16px;
+  padding-inline-end: 24px;
+  border-inline-end: 0.5px solid var(--v2-border-border-muted);
+  background: var(--v2-background-bg-layer-01);
 }
 
 .settings-screen > .settings > .settings-content {
@@ -76,7 +79,58 @@
 }
 
 .settings-nav > .settings-back {
-  margin-block-end: 28px;
+  /* SiCode: TRAE 式 —— 返回键整行铺开，下面一条细分隔线，再接账户卡。 */
+  width: 100%;
+  margin-block-end: 0;
+  padding-block: 6px;
+  border-bottom: 0.5px solid var(--v2-border-border-muted);
+  border-end-end-radius: 0;
+  border-end-start-radius: 0;
+}
+
+/* SiCode: 侧栏顶部账户卡（桌面端无账号体系的固定占位）。 */
+.settings-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px 14px;
+}
+
+.settings-account-avatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--v2-background-bg-layer-03);
+  box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
+}
+
+.settings-account-mark {
+  width: 19px;
+  height: 19px;
+}
+
+.settings-account-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-account-name {
+  font-size: 13px;
+  font-weight: 530;
+  line-height: var(--line-height-compact);
+  color: var(--v2-text-text-base);
+}
+
+.settings-account-plan {
+  font-size: 11px;
+  font-weight: 440;
+  line-height: var(--line-height-compact);
+  color: var(--v2-text-text-faint);
 }
 
 .settings-nav-groups {
@@ -90,9 +144,9 @@
 
 .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"] {
   width: 100%;
-  height: 28px;
+  height: 30px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--v2-text-text-muted);
 }
 
@@ -100,8 +154,8 @@
   width: 100%;
   height: 100%;
   justify-content: flex-start;
-  gap: 6px;
-  padding: 0 6px;
+  gap: 10px;
+  padding: 0 8px;
 }
 
 .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
@@ -135,10 +189,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-inline: 6px;
+  padding-inline: 8px;
   border-radius: 4px;
-  color: var(--v2-text-text-muted);
-  font-size: 13px;
+  color: var(--v2-text-text-faint);
+  font-size: 12px;
   font-weight: 440;
   line-height: var(--line-height-compact);
 }
@@ -512,7 +566,7 @@
 }
 
 .settings-tab-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 640;
   line-height: var(--line-height-base);
   color: var(--v2-text-text-base);
@@ -543,13 +597,13 @@
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .settings-section-title {
-  padding: 0;
-  font-size: 13px;
-  font-weight: 530;
+  padding: 0 2px;
+  font-size: 12.5px;
+  font-weight: 560;
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 }
@@ -562,9 +616,9 @@
 }
 
 [data-component="settings-list"] {
-  border-radius: 8px;
+  border-radius: 10px;
   background-color: var(--v2-background-bg-layer-01);
-  padding-inline: 20px;
+  padding-inline: 16px;
   box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
 }
 
@@ -584,7 +638,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  padding-block: var(--settings-list-row-padding, 20px);
+  padding-block: var(--settings-list-row-padding, 14px);
   border-bottom: 0.5px solid var(--v2-border-border-base);
 }
 

@@ -465,6 +465,9 @@ export namespace Timeline {
       ),
     )
 
+    // SiCode: a card superseded by a later render of the same path dims into history; the newest
+    // one stays live. History rows never rewrite — the badge just points forward.
+
     return {
       activeMessageID,
       rows: detail

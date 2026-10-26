@@ -805,7 +805,9 @@ export const dict = {
 
   "settings.general.section.appearance": "Appearance",
   "settings.general.section.general": "General",
+  "settings.general.section.input": "Input",
   "settings.general.section.notifications": "Desktop notifications",
+  "settings.general.section.permissions": "Permissions",
   "settings.general.section.sounds": "Sound effects",
 
   "settings.timeline.title": "Timeline",
@@ -875,6 +877,9 @@ export const dict = {
   "settings.general.row.followUpBehavior.steer": "Steer",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
+  "settings.general.row.destructiveConfirm.title": "Destructive command confirmation",
+  "settings.general.row.destructiveConfirm.description":
+    "Deletion commands (rm, del, and similar) always ask for confirmation, even with auto-approve on.",
 
   "sound.option.none": "None",
   "sound.option.alert01": "Alert 01",

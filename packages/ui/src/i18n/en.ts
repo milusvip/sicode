@@ -304,6 +304,8 @@ const source = {
   "ui.processShell.closed.mid.one": " tool · ",
   "ui.processShell.closed.mid.other": " tools · ",
   "ui.message.modelVariant": "{{model}} ({{variant}})",
+  "ui.artifact.title": "Artifact",
+  "ui.artifact.tooLarge": "File too large to preview",
   "ui.sessionTimeline.notice.model": "Model",
   "ui.sessionTimeline.notice.modelSwitched": "Switched to {{model}}",
   "ui.sessionTimeline.notice.variantSwitched": "Switched variant to {{variant}}",

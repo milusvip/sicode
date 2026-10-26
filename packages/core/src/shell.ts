@@ -5,6 +5,7 @@ import { Context, Deferred, Duration, Effect, Fiber, Latch, Layer, Schema, Sched
 import { ChildProcess } from "effect/process"
 import { produce } from "immer"
 import { Shell } from "@opencode/schema/shell"
+import { SessionEvent } from "@opencode/schema/session-event"
 import { AppProcess } from "@opencode/util/process"
 import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { makeGlobalNode, makeLocationNode } from "@opencode/util/effect/app-node"
@@ -184,6 +185,21 @@ const layer = () =>
         yield* require(id)
         yield* removeCommand(id)
       })
+
+      // SiCode: a background shell outlives its session — when the session is deleted, reap the
+      // shells it spawned instead of letting them run to completion as orphans. Removal kills a
+      // running command (its scope closes and releases the process handle).
+      yield* bus.subscribe([SessionEvent.Deleted]).pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            const owned = [...commands.entries()]
+              .filter(([, command]) => command.info.metadata.sessionID === event.data.sessionID)
+              .map(([id]) => id)
+            for (const id of owned) yield* removeCommand(id).pipe(Effect.ignore)
+          }),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
+      )
 
       const list = Effect.fn("Shell.list")(function* () {
         return Array.from(commands.values())

@@ -79,6 +79,14 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     target: "settings-show-custom-agents",
     section: "settings.general.section.general",
   },
+  // SiCode: 破坏性命令确认入口（权限分组）。
+  {
+    tab: "general",
+    label: "settings.general.row.destructiveConfirm.title",
+    target: "settings-destructive-confirm",
+    section: "settings.general.section.permissions",
+    keywords: "rm del destructive confirm shell remove delete",
+  },
   {
     tab: "appearance",
     label: "settings.general.row.colorScheme.title",

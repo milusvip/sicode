@@ -64,7 +64,7 @@ export const Plugin = {
           // near-duplicate of something the repo already has; in a tree this large the model only
           // ever sees a slice of it, and "prefer editing" alone does not make it look.
           description:
-            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, check that nothing already covers the same job: search with `grep` or `glob`, and extend what you find. A near-duplicate file is the most expensive mistake this tool makes possible.",
+            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, check that nothing already covers the same job: search with `grep` or `glob`, and extend what you find. A near-duplicate file is the most expensive mistake this tool makes possible.\n\nSiCode: an HTML page written for a human to view (demo, visualization, mock-up) is shown to the user automatically in a side preview panel next to the conversation. Such pages must be responsive: fluid layout, relative units, no fixed widths wider than ~600px, content centered and legible at that size.",
           input: Input,
           output: Output,
           execute: (input, context) =>

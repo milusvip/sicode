@@ -98,6 +98,7 @@ describe("settings schema", () => {
         mobileTitlebarPosition: "top",
         terminalPlacement: "side",
         followUpBehavior: "steer",
+        destructiveConfirm: true,
       },
       appearance: {
         fontSize: 14,

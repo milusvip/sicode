@@ -819,6 +819,16 @@
   }
 }
 
+/* SiCode: consecutive shells must not butt together. The virtualized timeline carries no row gap
+   (message containers stack at 0px, chain lists at 1px), so two panels back-to-back read as one
+   merged card while prose-separated ones float far apart. A uniform tail margin gives every shell
+   the same breath whether the next thing is another chain row or the next message row. Safe for
+   measurement: every wrapper between here and the measured row is a flex column, so the margin is
+   part of the row's height. */
+[data-component="collapsed-tool-group"][data-process-shell] {
+  margin-block-end: 8px;
+}
+
 /* Process head matches design demo: light bar, no sticky chrome, always-visible chevron. */
 [data-component="collapsed-tool-group"][data-process-shell] {
   --process-shell-size: 12.5px;
@@ -827,6 +837,13 @@
   --process-shell-tracking: -0.04px;
   overflow: visible;
   overflow-anchor: none;
+
+  /* SiCode: container pass — the chain (trigger bar + expanded list) reads as one panel.
+     overflow stays visible: the chain rail stubs and nested sticky headers need it, so the
+     rounded corners rely on the inner trigger radius matching (outer-1px) instead of clipping. */
+  border: 1px solid var(--v2-border-border-weak-base, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 45%, transparent);
 
   > [data-component="collapsible"].tool-collapsible {
     --tool-content-gap: 2px;
@@ -839,7 +856,8 @@
       min-height: 26px;
       /* 5px left matches the work-shell 1px border + 4px pad so icons line up. */
       padding: 3px 8px 3px 5px;
-      border-radius: 6px;
+      /* Inner radius = outer 10px - 1px border, so the header fill follows the panel corners. */
+      border-radius: 9px;
       /* The design's light bar: the row owns a fill whether or not the pointer is on it. Hover used to
          be the only way to see it at all, so the header read as plain text until you found it. */
       background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
@@ -885,7 +903,11 @@
       --sticky-accordion-top: 0px;
       --sticky-accordion-offset: 0px;
       overflow: visible;
-      padding-inline: 5px 8px;
+      /* SiCode: uniform outer margins — 5px on both sides (matches the head bar's icon axis), and
+         2px bottom mirroring the flex gap above the first row, so the last hover fill no longer sits
+         flush against the panel's bottom border. */
+      padding-inline: 5px;
+      padding-block-end: 2px;
     }
 
     > [data-slot="collapsible-trigger"] [data-slot="collapsible-arrow"] {
@@ -1037,7 +1059,9 @@
     > [data-component="read-tool-group"] {
       min-height: var(--row-min);
       height: auto;
-      padding: 3px 6px 3px 0;
+      /* SiCode: 3px right + 5px content padding = 8px, matching the head bar's internal right padding,
+         so every row's chevron/seconds column lands on the same vertical line as the head's. */
+      padding: 3px 3px 3px 0;
       border-radius: 6px;
       background: transparent;
     }
@@ -1082,7 +1106,10 @@
       height: 18px;
       display: grid;
       place-items: center;
-      background: var(--v2-background-bg-base);
+      /* SiCode: transparent — the chip used to mask the chain rail with an opaque bg-base fill,
+         but rows no longer draw a rail and the panel sits on a translucent layer-01 blend, so the
+         opaque chip read as a mismatched dark square behind every icon. */
+      background: transparent;
       color: var(--v2-text-text-faint);
 
       [data-slot="icon-svg"] {
@@ -1726,50 +1753,72 @@
   }
 }
 
-/* The Q&A body carries its own indent (title column), so drop the generic body indent that
-   would otherwise stack on top of it — 12px standalone, 19px inside a process chain.
+/* The Q&A body carries its own icon column, so drop the generic body indent that would otherwise
+   stack on top of it — rows align on the same 19px glyph column as the parent trigger row.
    `[data-expanded]` is what makes this beat the 12px rule in basic-tool.css. */
 [data-component="collapsible"].tool-collapsible
   > [data-slot="collapsible-content"][data-expanded]:has(> [data-component="question-answers"]) {
   padding-inline-start: 0;
 }
 
+/* SiCode: Q&A rows reuse the process-shell chain language (icon column, row rhythm, faint/muted/
+   base colour ladder) so an answered question reads like the rest of the process rows. */
 [data-component="question-answers"] {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  /* Under the row's title column: the question body answers the row above it, it is not a
-     new paragraph at the transcript's left edge. */
-  padding: 2px 0 10px calc(var(--ind-col, 19px) + 8px);
+  gap: 1px;
+  padding: 0 0 6px;
 
   [data-slot="question-answer-item"] {
     display: flex;
     flex-direction: column;
-    gap: 4px;
     font-size: var(--process-shell-size, 12.5px);
+  }
 
-    [data-slot="question-text"] {
-      font-size: var(--process-shell-size, 12.5px);
-      line-height: var(--process-shell-leading, var(--line-height-compact));
-      letter-spacing: var(--process-shell-tracking, -0.04px);
-      color: var(--v2-text-text-muted);
-      overflow-wrap: anywhere;
-    }
+  [data-slot="question-row"],
+  [data-slot="answer-row"] {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 24px;
+    padding: 3px 6px 3px 0;
+    border-radius: 6px;
+  }
 
-    /* The answer is the outcome, so it hangs off a rail instead of reading as a second paragraph.
-       The success rail matches the process-shell's completed glyph so an answered question reads
-       as "done" rather than as a second grey line. */
-    [data-slot="answer-text"] {
-      padding-inline-start: 10px;
-      border-inline-start: 2px solid var(--v2-state-fg-success, var(--icon-success-base, #8adfa6));
-      border-radius: 2px;
-      font-size: var(--process-shell-size, 12.5px);
-      font-weight: var(--font-weight-regular);
-      line-height: var(--process-shell-leading, var(--line-height-compact));
-      letter-spacing: var(--process-shell-tracking, -0.04px);
-      color: var(--v2-text-text-base);
-      overflow-wrap: anywhere;
-    }
+  [data-slot="question-glyph"],
+  [data-slot="answer-glyph"] {
+    flex: 0 0 var(--ind-col, 19px);
+    width: var(--ind-col, 19px);
+    height: 18px;
+    display: grid;
+    place-items: center;
+  }
+
+  [data-slot="question-glyph"] {
+    color: var(--v2-text-text-faint);
+  }
+
+  /* The answer is the outcome: its glyph takes the success colour, matching the completed
+     process-shell row glyph, so the pair reads as question -> settled answer. */
+  [data-slot="answer-glyph"] {
+    color: var(--v2-state-fg-success, var(--icon-success-base, #8adfa6));
+  }
+
+  [data-slot="question-text"] {
+    padding-top: 1px;
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    letter-spacing: var(--process-shell-tracking, -0.04px);
+    color: var(--v2-text-text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="answer-text"] {
+    padding-top: 1px;
+    font-weight: var(--process-shell-weight, 440);
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    letter-spacing: var(--process-shell-tracking, -0.04px);
+    color: var(--v2-text-text-base);
+    overflow-wrap: anywhere;
   }
 }
 

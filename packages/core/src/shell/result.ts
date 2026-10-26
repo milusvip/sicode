@@ -46,7 +46,7 @@ export function notification(input: {
   shellID: string
   jobID?: string
   command: string
-  state: "completed" | "cancelled" | "error"
+  state: "completed" | "cancelled" | "error" | "running"
   text: string
   output?: Output
 }) {

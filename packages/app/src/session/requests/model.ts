@@ -8,6 +8,7 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { projectSettingsKey, useSettings } from "@/settings/model"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { sessionPermissionRequest, sessionFormRequest, sessionTreeIDs } from "@/session/requests/session-request-tree"
+import { isDestructiveShell } from "@/session/requests/destructive"
 import { createWebSearchRequest } from "./websearch"
 import { createSessionBackground } from "@/session/requests/background"
 import { useData } from "@/runtime/server/current"
@@ -100,9 +101,17 @@ export function createSessionRequestModel() {
 
     const project = projectSettingsKey(serverSDK.scope, id ? data.session.get(id)?.projectID : undefined)
 
-    if (settings.permissions.autoApproves(project)) return
+    const pending = sessionPermissionRequest(data.session.list(), data.session.permission.list, id)
 
-    return sessionPermissionRequest(data.session.list(), data.session.permission.list, id)
+    // SiCode: 开启「自动接受权限」时，破坏性 shell 命令的请求仍要显示——auto-approve
+    // 会跳过它们（不自动批准），这里若不同步放行显示，请求将不可见、会话卡死。
+    // 「破坏性命令确认」关闭时删除类命令跟随自动接受，与 auto-approve.ts 保持一致。
+    if (settings.permissions.autoApproves(project)) {
+      if (!settings.general.destructiveConfirm()) return undefined
+      return pending && isDestructiveShell(pending) ? pending : undefined
+    }
+
+    return pending
   })
 
   const blocked = createMemo(() => {

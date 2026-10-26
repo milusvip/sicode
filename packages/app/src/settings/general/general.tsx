@@ -238,6 +238,7 @@ export const SettingsGeneral: Component = () => {
     void update.catch(() => setPinchZoom(!checked))
   }
 
+  // SiCode: TRAE 式分组卡片 —— 常规 / 权限 / 输入 各成一张卡，组名在卡片外。
   const GeneralSection = () => (
     <div class="settings-section">
       <h3 class="settings-section-title">{language.t("settings.general.section.general")}</h3>
@@ -246,8 +247,35 @@ export const SettingsGeneral: Component = () => {
         <TabLayoutSetting />
 
         <WorkspaceDestinationSetting />
-        <AutoApprovePermissionsSetting />
+        <ExtensionSettingsSections page="general" section="general" />
+      </SettingsList>
+    </div>
+  )
 
+  const PermissionsSection = () => (
+    <div class="settings-section">
+      <h3 class="settings-section-title">{language.t("settings.general.section.permissions")}</h3>
+      <SettingsList>
+        <AutoApprovePermissionsSetting />
+        <SettingsRow
+          title={language.t("settings.general.row.destructiveConfirm.title")}
+          description={language.t("settings.general.row.destructiveConfirm.description")}
+        >
+          <div data-action="settings-destructive-confirm">
+            <Switch
+              checked={settings.general.destructiveConfirm()}
+              onChange={(checked) => settings.general.setDestructiveConfirm(checked)}
+            />
+          </div>
+        </SettingsRow>
+      </SettingsList>
+    </div>
+  )
+
+  const InputSection = () => (
+    <div class="settings-section">
+      <h3 class="settings-section-title">{language.t("settings.general.section.input")}</h3>
+      <SettingsList>
         <SettingsRow
           title={language.t("settings.general.row.showCustomAgents.title")}
           description={language.t("settings.general.row.showCustomAgents.description")}
@@ -273,8 +301,6 @@ export const SettingsGeneral: Component = () => {
             </div>
           </SettingsRow>
         </Show>
-
-        <ExtensionSettingsSections page="general" section="general" />
 
         <Show when={mobile()}>
           <SettingsRow
@@ -307,6 +333,10 @@ export const SettingsGeneral: Component = () => {
       </div>
       <div class="settings-tab-body settings-tab-body--sectioned">
         <GeneralSection />
+
+        <PermissionsSection />
+
+        <InputSection />
 
         <section class="settings-section" aria-label={language.t("settings.timeline.title")}>
           <h3 class="settings-section-title">{language.t("settings.timeline.title")}</h3>

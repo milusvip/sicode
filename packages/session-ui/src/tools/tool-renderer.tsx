@@ -2640,10 +2640,23 @@ ToolRegistry.register({
               {(q, i) => {
                 const answer = () => answers()[i()] ?? []
 
+                // SiCode: rows mirror the process-shell chain language — a 19px glyph column
+                // (help = question in faint, check = answer in success) aligned with the parent
+                // row's icon column, instead of plain stacked text.
                 return (
                   <div data-slot="question-answer-item">
-                    <div data-slot="question-text">{q.question}</div>
-                    <div data-slot="answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
+                    <div data-slot="question-row">
+                      <span data-slot="question-glyph">
+                        <Icon name="help" size="small" />
+                      </span>
+                      <span data-slot="question-text">{q.question}</span>
+                    </div>
+                    <div data-slot="answer-row">
+                      <span data-slot="answer-glyph">
+                        <Icon name="check" size="small" />
+                      </span>
+                      <span data-slot="answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</span>
+                    </div>
                   </div>
                 )
               }}

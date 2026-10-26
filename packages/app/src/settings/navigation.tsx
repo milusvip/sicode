@@ -1,5 +1,6 @@
 import { Button } from "@opencode/ui/button"
 import { Icon } from "@opencode/ui/icon"
+import { Mark } from "@opencode/ui/logo"
 import { Menu } from "@opencode/ui/menu"
 import { Tabs } from "@opencode/ui/tabs"
 import { createEffect, ErrorBoundary, For, on, Show, type ComponentProps, type JSX } from "solid-js"
@@ -106,6 +107,18 @@ export function SettingsNavigation(props: {
             <Icon name="arrow-left" size="small" class="settings-back-icon" />
             <span>{backLabel()}</span>
           </button>
+          {/* SiCode: TRAE 式侧栏顶部品牌/账户卡。桌面端当前没有账号体系，先放固定占位。 */}
+          <Show when={searchable()}>
+            <div class="settings-account" data-component="settings-account">
+              <span class="settings-account-avatar" aria-hidden="true">
+                <Mark class="settings-account-mark" />
+              </span>
+              <span class="settings-account-copy">
+                <span class="settings-account-name">SiCode</span>
+                <span class="settings-account-plan">Desktop</span>
+              </span>
+            </div>
+          </Show>
           <Show when={searchable()}>
             <SettingsSearch />
           </Show>

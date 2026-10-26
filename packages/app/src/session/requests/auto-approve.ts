@@ -3,6 +3,7 @@ import type { PermissionRequest } from "@opencode/client/promise"
 import type { Data } from "@opencode/client/solid"
 import type { ServerSDK } from "@/runtime/server/client"
 import { projectSettingsKey, useSettings } from "@/settings/model"
+import { isDestructiveShell } from "@/session/requests/destructive"
 
 const respondedLimit = 1000
 
@@ -13,8 +14,11 @@ const retryDelayMs = 1000
 // Auto-approves permission requests on one server connection for the projects
 // the client-local settings cover: the app-wide default, unless a project overrides it.
 export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data }) {
-  const permissions = useSettings().permissions
+  const settings = useSettings()
+  const permissions = settings.permissions
   const enabled = () => permissions.autoApprovesOnServer(input.sdk.scope)
+  // SiCode: 「破坏性命令确认」关闭时，删除类命令也跟随自动接受。
+  const destructiveConfirm = settings.general.destructiveConfirm
 
   const covers = (projectID: string | undefined) =>
     permissions.autoApproves(projectSettingsKey(input.sdk.scope, projectID))
@@ -144,6 +148,10 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
     // covers() guards the retry timer path: the user may disable the setting
     // between a failed reply and its scheduled retry.
     if (state.disposed || !covers(projectID) || state.responded.has(permission.id)) return
+    // SiCode: 破坏性 shell 命令（rm/RD/Remove-Item 等）默认不自动批准——
+    // 「自动接受权限」不放行删除类操作，请求保持 pending，由用户在弹窗里决定。
+    // 可在 设置 → 偏好设置 → 权限 → 破坏性命令确认 关闭此行为。
+    if (destructiveConfirm() && isDestructiveShell(permission)) return
     remember(permission.id)
     input.sdk.api.permission
       .reply({ sessionID: permission.sessionID, requestID: permission.id, decision: "once" })

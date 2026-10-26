@@ -50,7 +50,7 @@ const setup: Setup<typeof definition> = (ctx) => {
     attached: (session) => model()?.attached(session) ?? false,
     canOpen: (session, path) => model()?.canOpen(session, path) ?? false,
     open: (session, url) => model()?.openURL(session, url),
-    openFile: (session, path) => model()?.openFile(session, path),
+    openFile: (session, path, options) => model()?.openFile(session, path, options),
   })
 
   ctx.add(Command, (): Command | undefined => {

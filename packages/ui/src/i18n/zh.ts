@@ -274,6 +274,8 @@ export const dict = {
   "ui.common.moreCount.one": "+{{count}} 个",
   "ui.common.moreCount.other": "+{{count}} 个",
   "ui.sessionTimeline.notice.model": "模型",
+  "ui.artifact.title": "artifact",
+  "ui.artifact.tooLarge": "文件过大，无法预览",
   "ui.sessionTimeline.notice.movedTo": "已移至",
   "ui.sessionTimeline.notice.movedTooltip": "会话工作目录已更改",
   "ui.sessionTimeline.notice.failed": "{{actor}} 失败",

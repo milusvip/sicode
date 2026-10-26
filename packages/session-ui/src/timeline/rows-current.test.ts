@@ -1246,7 +1246,10 @@ describe("current session timeline rows", () => {
           : [
               [
                 row.group.type,
-                ...(row.group.type === "part" ? [row.group.ref] : row.group.refs).map((ref) => ref.partID),
+                ...(row.group.type === "part"
+                  ? [row.group.ref]
+                  : row.group.refs
+                ).map((ref) => ref.partID),
               ],
             ],
       ),

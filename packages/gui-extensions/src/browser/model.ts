@@ -38,6 +38,8 @@ type Live = {
   held: { mirror?: () => void; focus?: Browser.TabID }
   /** The agent's previews waiting for the session's screen, which resolves their paths. */
   previews: string[]
+  /** The file:// URL an `openFile({ select })` asked for, until the desktop reports its tab. */
+  openingURL?: string
   dispose: () => void
 }
 
@@ -252,7 +254,16 @@ export function createModel(ctx: SetupContext<typeof definition>) {
         strip: {
           stored: () => layout.stored(ref),
           open(tabID) {
-            if (layout.state(key(tabID), ref) === "closed") layout.open(key(tabID), ref, { tab: "append" })
+            if (layout.state(key(tabID), ref) !== "closed") return
+
+            // A tab an `openFile({ select })` asked for brings the pane forward selected; any other
+            // new tab — the agent's tools, the user — joins the strip quietly, as before.
+            const entry = live.get(ref.key)
+            const url = attachment(ref)?.browser?.tabs.find((item) => item.id === tabID)?.url
+            const select = !!entry?.openingURL && url !== undefined && url === entry.openingURL
+
+            if (select) entry!.openingURL = undefined
+            layout.open(key(tabID), ref, { tab: select ? "select" : "append" })
           },
           close: (tabID) => layout.close(key(tabID), ref),
         },
@@ -383,6 +394,9 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     const failed = (cause: unknown) => {
       if (action.type === "tabs.open") opening.delete(id)
 
+      const entry = live.get(id)
+
+      if (entry) entry.openingURL = undefined
       if (!unavailable(cause)) setState("errors", id, describe(cause instanceof Error ? cause.message : ""))
     }
 
@@ -412,10 +426,21 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     return !!current && !current.absolute(path)
   }
 
-  const openFile = (session: Session, path: string) => {
+  const openFile = (session: Session, path: string, options?: { select?: boolean }) => {
     const current = files(session)
 
-    if (current) openURL(session, workspaceFileURL(current, path))
+    if (!current) return
+
+    const url = workspaceFileURL(current, path)
+
+    // Remembered until the desktop reports the tab, so its strip write can select the pane.
+    if (options?.select) {
+      const entry = live.get(session.key)
+
+      if (entry) entry.openingURL = url
+    }
+
+    openURL(session, url)
   }
 
   // The agent's browser.preview tool: the file extension opens HTML in the browser, other files in the file panel. Only the

@@ -618,12 +618,25 @@ export function AssistantTextContent(props: {
   // Mobile omits the per-response agent and model; see CurrentUserMessageDisplay.
   const mobile = createMediaQuery("(max-width: 767px)")
 
+  // Same `formatElapsed` the work-shell head uses, so the two readings of one turn cannot disagree
+  // ("6m 11s" next to "6 分钟 11 秒" is what got the footer duration removed once before).
+  const elapsed = createMemo(() => {
+    const total =
+      props.turnDurationMs === null
+        ? undefined
+        : (props.turnDurationMs ??
+          (props.message.time.completed !== undefined
+            ? props.message.time.completed - props.message.time.created
+            : undefined))
+
+    return total === undefined ? undefined : formatElapsed(total)
+  })
+
   const meta = createMemo(() => {
     const agent = props.message.agent
 
-    // Agent and model only. The turn's elapsed time lives in the work-shell head, and "已中断" is
-    // already on the head and on the divider below — printing either again here read as noise.
-    return [...(mobile() ? [] : [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()])]
+    // "已中断" is already on the work-shell head and on the divider below, so it stays out here.
+    return [...(mobile() ? [] : [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]), elapsed()]
       .filter(Boolean)
       .join(" \u00B7 ")
   })

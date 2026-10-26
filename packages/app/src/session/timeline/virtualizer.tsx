@@ -446,7 +446,10 @@ export function createTimelineVirtualizer(input: Input) {
     const found = rows()
       .flatMap((row, index) =>
         Predicate.isTagged(row, "AssistantPart")
-          ? (row.group.type === "part" ? [row.group.ref] : row.group.refs).flatMap((ref) =>
+          ? (row.group.type === "part"
+              ? [row.group.ref]
+              : row.group.refs
+            ).flatMap((ref) =>
               matches(ref) ? [{ group: row.group, index, partID: ref.partID }] : [],
             )
           : [],

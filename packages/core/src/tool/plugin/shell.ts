@@ -5,7 +5,7 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
 import type { Tool } from "@opencode/schema/tool"
-import { Deferred, Effect, Schema, Scope } from "effect"
+import { Deferred, Duration, Effect, Option, Schema, Scope } from "effect"
 import { Config } from "../../config.js"
 import { Environment } from "../../environment/index.js"
 import { Job } from "../../job.js"
@@ -15,6 +15,8 @@ import { NonNegativeInt } from "../../schema.js"
 import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { Shell } from "../../shell.js"
+import { ToolOutput } from "../../tool-output.js"
+import { Shell as ShellSchema } from "@opencode/schema/shell"
 import { shellParserWasm } from "#shell-parser-wasm"
 import { ShellParse } from "../../shell/parse.js"
 import { ShellSelect } from "../../shell/select.js"
@@ -22,6 +24,22 @@ import { ShellResult } from "../../shell/result.js"
 
 export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
+// SiCode: a model-invoked background command used to have no timeout at all, so a server or
+// watcher the model never reaped ran for the lifetime of the app. Cap it at a day by default;
+// an explicit timeout still wins, and an explicit 0 still disables the cap entirely.
+export const DEFAULT_BACKGROUND_TIMEOUT_MS = 24 * 60 * 60 * 1_000
+
+// SiCode: a background command that stops producing output leaves the model waiting blind until
+// its timeout. Poll the captured size and, after one silent stretch, surface a notification
+// carrying the recent output so the model can judge whether the command is stuck (stop it with
+// `kill`) or normally quiet (keep waiting). One notification per silent stretch; new output
+// re-arms it. Mutable so tests can shorten the intervals.
+export const stallTimings = { pollMs: 30_000, notifyMs: 5 * 60_000 }
+
+export const resolveTimeout = (input: { background?: boolean | undefined; timeout?: number | undefined }) =>
+  input.background === true
+    ? (input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS)
+    : (input.timeout ?? DEFAULT_TIMEOUT_MS)
 
 const BACKGROUND_INSTRUCTION =
   "You will be notified automatically when the command finishes. The notification will include the command's output. Unless the user explicitly asks otherwise, DO NOT poll for completion, even if you need the final result to continue. Repeatedly sleeping and reading or searching the output file is polling, not useful work. You may read the current output if it lets you do useful work now, but do not repeatedly check it while waiting for the command to finish. Keep working on anything that does not depend on the result. If you have nothing else to do, end your response; you will be resumed automatically when the command finishes."
@@ -41,18 +59,26 @@ const description = (shell?: string) =>
     "Prefer dedicated tools over shell commands when possible.",
     "When output is large, the full result is saved to a file and a truncated preview is returned.",
     "Rely on automatic truncation unless filtering the output is more useful.",
-    "Commands accept an optional timeout, background commands have no timeout by default.",
+    "Commands accept an optional timeout, background commands default to a 24 hour timeout.",
     "Background commands return immediately, and you will be notified when they complete.",
+    "If a background command stops producing output, you will be notified with its recent output so you can judge whether it is stuck.",
+    "Set kill to a background command's shell ID to stop it instead of running a new command.",
   ].join(" ")
 
 export const Input = Schema.Struct({
-  command: Schema.String.annotate({ description: "Shell command string to execute" }),
+  command: Schema.optionalKey(Schema.String).annotate({
+    description: "Shell command string to execute. Omit when kill is set.",
+  }),
+  kill: Schema.optionalKey(Schema.String).annotate({
+    description:
+      "Shell ID of a background command to stop instead of executing a command. The command you will be notified about includes its shell ID.",
+  }),
   workdir: Schema.optionalKey(Schema.String).annotate({
     description:
       "Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead.",
   }),
   timeout: Schema.optionalKey(NonNegativeInt).annotate({
-    description: `Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to ${DEFAULT_TIMEOUT_MS} for foreground commands. Background commands have no timeout by default.`,
+    description: `Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to ${DEFAULT_TIMEOUT_MS} for foreground commands and ${DEFAULT_BACKGROUND_TIMEOUT_MS} for background commands.`,
   }),
   background: Schema.optionalKey(Schema.Boolean).annotate({
     description:
@@ -93,8 +119,8 @@ const toolResult = (output: Output) => {
   }
 }
 
-const backgroundResult = (shellID: string, file: string) => ({
-  output: `Command moved to the background (shell ID: ${shellID}).\nOutput is streaming to: ${file}`,
+const backgroundResult = (shellID: string, file: string, peers?: string) => ({
+  output: `Command moved to the background (shell ID: ${shellID}).\nOutput is streaming to: ${file}${peers ? `\n\n${peers}` : ""}`,
   shellID,
   truncated: false,
   status: "running" as const,
@@ -188,6 +214,98 @@ export const Plugin = {
       Effect.forkIn(scope, { startImmediately: true }),
     )
 
+    // Bounded recent output for a still-running shell, using the same limits as a finished result.
+    const tail = Effect.fn("ShellTool.tail")(function* (id: ShellSchema.ID) {
+      const limits = Config.latest(yield* config.entries(), "tool_output")
+      const maxBytes = limits?.max_bytes ?? ToolOutput.MAX_BYTES
+      const maxLines = limits?.max_lines ?? ToolOutput.MAX_LINES
+      const latest = yield* shell.output(id, { cursor: Number.MAX_SAFE_INTEGER })
+      if (latest.size === 0) return { text: "(no output yet)", truncated: false }
+      const page = yield* shell.output(id, { cursor: Math.max(0, latest.size - maxBytes), limit: maxBytes })
+      const lines = page.output.split("\n")
+      if (page.output.endsWith("\n")) lines.pop()
+      const truncated = lines.length > maxLines
+      const text = (truncated ? lines.slice(-maxLines).join("\n") : page.output).trimEnd()
+      return { text: text || "(no output yet)", truncated }
+    })
+
+    // SiCode: a background command that has gone silent gives the model nothing to reconsider.
+    // Once output stops growing for `stallTimings.notifyMs`, send one notification per silent
+    // stretch with the recent output, so the model can look at the progress and decide whether to
+    // stop the command (kill) or keep waiting for it.
+    const watchForStall = Effect.fn("ShellTool.watchForStall")(
+      function* (sessionID: SessionSchema.ID, shellID: ShellSchema.ID, command: string) {
+        const span = (ms: number) =>
+          ms < 120_000
+            ? `${Math.max(1, Math.round(ms / 1000))} seconds`
+            : `${Math.round(ms / 60_000)} minutes`
+        let lastSize: number | undefined
+        let silentSince = 0
+        let notified = false
+        while (true) {
+          yield* Effect.sleep(Duration.millis(stallTimings.pollMs))
+          const info = yield* Effect.option(shell.get(shellID))
+          if (Option.isNone(info) || info.value.status !== "running") return
+          const current = yield* Effect.option(shell.output(shellID, { cursor: Number.MAX_SAFE_INTEGER }))
+          if (Option.isNone(current)) return
+          const now = Date.now()
+          if (current.value.size !== lastSize) {
+            lastSize = current.value.size
+            silentSince = now
+            notified = false
+            continue
+          }
+          if (notified || now - silentSince < stallTimings.notifyMs) continue
+          notified = true
+          const captured = yield* tail(shellID)
+          yield* sessions.synthetic({
+            sessionID,
+            description: command,
+            ...ShellResult.notification({
+              shellID,
+              command,
+              state: "running",
+              text: [
+                `Background command has produced no new output for ${span(now - silentSince)} (running for ${span(now - info.value.time.started)}).`,
+                `Recent output:\n${captured.text}`,
+                `Judge from the output whether the command is stuck. If it is, stop it by calling the shell tool with kill set to "${shellID}" and try a different approach. If it is normally quiet once running (a dev server, a watcher), keep waiting; you will be notified when it finishes.`,
+              ].join("\n\n"),
+            }),
+          })
+        }
+      },
+      Effect.forkIn(scope, { startImmediately: true }),
+    )
+
+    // SiCode: sessions in one project share the shell pool, but their models cannot see each
+    // other. A background command may collide with work another session (or a user terminal) is
+    // already doing, so say so once, at backgrounding time. Foreground commands stay silent —
+    // their collision window is seconds, not hours.
+    const peerNotice = Effect.fn("ShellTool.peerNotice")(function* (
+      self: ShellSchema.ID,
+      sessionID: SessionSchema.ID,
+      command: string,
+    ) {
+      const peers = (yield* shell.list()).filter(
+        (running) => running.id !== self && running.metadata.sessionID !== sessionID,
+      )
+      if (peers.length === 0) return undefined
+      const same = peers.filter((peer) => peer.command === command)
+      const others = peers.filter((peer) => peer.command !== command)
+      return [
+        ...(same.length > 0
+          ? [
+              `Another command already running in this project is identical (shell ID: ${same.map((peer) => peer.id).join(", ")}); a second copy may conflict with it.`,
+            ]
+          : []),
+        ...(others.length > 0
+          ? [
+              `Other commands already running in this project (started elsewhere, not by this conversation): ${others.map((peer) => `${peer.command} (shell ID: ${peer.id})`).join("; ")}.`,
+            ]
+          : []),
+      ].join("\n")
+    })
+
     yield* ctx.tool
       .transform((editor) =>
         editor.add({
@@ -198,7 +316,24 @@ export const Plugin = {
           output: Output,
           execute: (input, context) =>
             Effect.gen(function* () {
-              const timeout = input.background === true ? (input.timeout ?? 0) : (input.timeout ?? DEFAULT_TIMEOUT_MS)
+              // SiCode: stop a background command instead of starting a new one. Removal kills a
+              // running process through its scope-bound handle, so this is more reliable than
+              // shelling out to kill the pid.
+              if (input.kill !== undefined) {
+                if (input.command !== undefined)
+                  return yield* Effect.fail(new Error("Provide either a command or kill, not both."))
+                const stopped = yield* shell.get(ShellSchema.ID.make(input.kill))
+                yield* shell.remove(stopped.id)
+                return {
+                  output: `Stopped background command (shell ID: ${stopped.id}).\nCommand: ${stopped.command}`,
+                  shellID: stopped.id,
+                  truncated: false,
+                }
+              }
+              if (input.command === undefined) return yield* Effect.fail(new Error("A command is required."))
+              // SiCode: default a model-invoked background command to a 24h lifetime instead of no
+              // timeout, so an unreaped server or watcher cannot run forever.
+              const timeout = resolveTimeout(input)
               let finalTimeout = timeout
               const info = yield* shell.create(
                 {
@@ -253,8 +388,10 @@ export const Plugin = {
 
               if (input.background === true) {
                 yield* jobs.background(job.id)
+                const peers = yield* peerNotice(info.id, context.sessionID, input.command)
                 yield* notifyWhenDone(context.sessionID, job.id, info.id, info.command, settled)
-                return backgroundResult(info.id, info.file)
+                yield* watchForStall(context.sessionID, info.id, info.command)
+                return backgroundResult(info.id, info.file, peers)
               }
 
               const result = yield* jobs
@@ -262,8 +399,10 @@ export const Plugin = {
                 .pipe(Effect.onInterrupt(() => jobs.cancel(job.id).pipe(Effect.ignore)))
               if (result?.type === "backgrounded") {
                 yield* shell.timeout(info.id, 0)
+                const peers = yield* peerNotice(info.id, context.sessionID, input.command)
                 yield* notifyWhenDone(context.sessionID, job.id, info.id, info.command, settled)
-                return backgroundResult(info.id, info.file)
+                yield* watchForStall(context.sessionID, info.id, info.command)
+                return backgroundResult(info.id, info.file, peers)
               }
               if (result?.info.status === "error")
                 return yield* Effect.fail(new Error(result.info.error ?? "Command failed"))

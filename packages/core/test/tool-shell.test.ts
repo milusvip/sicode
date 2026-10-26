@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import { realpathSync, watch } from "node:fs"
 import os from "os"
 import path from "path"
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Scope, Stream } from "effect"
 import { Money } from "@opencode/schema/money"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -34,7 +34,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
 import { Shell } from "@opencode/core/shell"
 import { ShellSelect } from "@opencode/core/shell/select"
-import { ID } from "@opencode/schema/shell"
+import { Event as ShellEvent, ID } from "@opencode/schema/shell"
 import { ShellTool } from "@opencode/core/tool/plugin/shell"
 import { ToolOutput } from "@opencode/core/tool-output"
 import { Tool } from "@opencode/core/tool"
@@ -188,6 +188,10 @@ const mixedOutputCommand = isWindows
   ? "[Console]::Out.Write('stdout'); Start-Sleep -Milliseconds 50; [Console]::Error.Write('stderr'); Start-Sleep -Milliseconds 100"
   : "printf stdout; sleep 0.05; printf stderr >&2"
 const idleCommand = isWindows ? "Start-Sleep -Seconds 60" : "sleep 60"
+const stallCommand = isWindows
+  ? "[Console]::Out.Write('mark-stall'); Start-Sleep -Seconds 60"
+  : "printf mark-stall; sleep 60"
+const distinctCommand = isWindows ? "Get-Date; Start-Sleep -Seconds 60" : "date; sleep 60"
 const bodyExitCommand = isWindows
   ? "[Console]::Out.Write('body'); Start-Sleep -Milliseconds 100; exit 7"
   : "printf body && exit 7"
@@ -844,6 +848,17 @@ describe("ShellTool ordinary shell syntax", () => {
         pwsh ?? "pwsh",
       ))
   }
+})
+
+describe("ShellTool timeout policy", () => {
+  test("background commands default to a 24 hour lifetime", () => {
+    expect(ShellTool.resolveTimeout({ background: true })).toBe(24 * 60 * 60 * 1_000)
+    expect(ShellTool.resolveTimeout({ background: true, timeout: 50 })).toBe(50)
+    // An explicit 0 still disables the cap entirely.
+    expect(ShellTool.resolveTimeout({ background: true, timeout: 0 })).toBe(0)
+    expect(ShellTool.resolveTimeout({})).toBe(ShellTool.DEFAULT_TIMEOUT_MS)
+    expect(ShellTool.resolveTimeout({ background: false })).toBe(ShellTool.DEFAULT_TIMEOUT_MS)
+  })
 })
 
 describe("ShellTool", () => {
@@ -1605,6 +1620,178 @@ describe("ShellTool", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
     ),
   )
+
+  it.live("reaps a session's background shells when the session is removed", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const bus = yield* Bus.Service
+            const shell = yield* Shell.Service
+            const sessions = yield* Session.Service
+            const settled = yield* executeTool(
+              registry,
+              call({ command: idleCommand, background: true }, "call-background-reap"),
+            )
+            const shellID = settled.metadata?.shellID
+            expect(typeof shellID).toBe("string")
+            if (typeof shellID !== "string") return
+            const id = ID.make(shellID)
+            expect((yield* shell.list()).map((info) => info.id)).toContain(id)
+
+            const exited = yield* bus.subscribe(ShellEvent.Exited).pipe(
+              Stream.filter((event) => event.data.id === id),
+              Stream.runHead,
+              Effect.forkScoped({ startImmediately: true }),
+            )
+
+            yield* sessions.remove(sessionID)
+
+            // Removing the session kills the running shell instead of leaving it as an orphan.
+            expect(yield* Fiber.join(exited)).toMatchObject({ valueOrUndefined: { data: { status: "killed" } } })
+            expect((yield* shell.list()).map((info) => info.id)).not.toContain(id)
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+  )
+
+  it.live("tells a background command about commands running elsewhere in the project", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const shell = yield* Shell.Service
+            const other = Session.ID.make("ses_shell_tool_other")
+            const firstText = (settled: { content?: ReadonlyArray<Tool.Content> }) => {
+              const text = settled.content?.[0]
+              if (!text || text.type !== "text") throw new Error("Expected text content")
+              return text.text
+            }
+
+            // A same-session command is not announced as a peer.
+            yield* shell.create({ command: idleCommand, timeout: 30_000, metadata: { sessionID } })
+            const alone = yield* executeTool(
+              registry,
+              call({ command: idleCommand, background: true }, "call-peer-alone"),
+            )
+            expect(firstText(alone)).not.toContain("already running in this project")
+
+            // An identical command from another session warns about the collision.
+            yield* shell.create({ command: idleCommand, timeout: 30_000, metadata: { sessionID: other } })
+            const collision = yield* executeTool(
+              registry,
+              call({ command: idleCommand, background: true }, "call-peer-collision"),
+            )
+            expect(firstText(collision)).toContain("already running in this project is identical")
+            expect(firstText(collision)).not.toContain("Other commands already running")
+
+            // A different command from another session is listed, not flagged as a collision.
+            const listed = yield* shell.create({
+              command: distinctCommand,
+              timeout: 30_000,
+              metadata: { sessionID: other },
+            })
+            const peers = yield* executeTool(
+              registry,
+              call({ command: stallCommand, background: true }, "call-peer-listed"),
+            )
+            expect(firstText(peers)).toContain("Other commands already running")
+            expect(firstText(peers)).toContain(distinctCommand)
+            expect(firstText(peers)).toContain(listed.id)
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+    { timeout: 20_000 },
+  )
+
+  it.live("stops a background command when called with kill", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const shell = yield* Shell.Service
+            const settled = yield* executeTool(
+              registry,
+              call({ command: idleCommand, background: true }, "call-kill-target"),
+            )
+            const shellID = settled.metadata?.shellID
+            expect(typeof shellID).toBe("string")
+            if (typeof shellID !== "string") return
+            const id = ID.make(shellID)
+            expect((yield* shell.list()).map((info) => info.id)).toContain(id)
+
+            const rejected = yield* executeTool(
+              registry,
+              call({ command: helloCommand, kill: shellID }, "call-kill-conflict"),
+            )
+            expect(rejected.status).toBe("error")
+
+            const stopped = yield* executeTool(registry, call({ kill: shellID }, "call-kill-stop"))
+            expect(stopped.status).toBe("completed")
+            expect(stopped.output?.output).toContain("Stopped background command")
+            expect(stopped.output?.shellID).toBe(shellID)
+            expect((yield* shell.list()).map((info) => info.id)).not.toContain(id)
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+    { timeout: 15_000 },
+  )
+
+  it.live("notifies with recent output when a background command goes silent", () => {
+    const previous = { ...ShellTool.stallTimings }
+    ShellTool.stallTimings.pollMs = 50
+    ShellTool.stallTimings.notifyMs = 150
+    return Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const bus = yield* Bus.Service
+            const admitted = yield* bus.subscribe(SessionEvent.InboxEnqueued).pipe(
+              Stream.filter(
+                (event) => event.data.sessionID === sessionID && event.data.item.type === "synthetic",
+              ),
+              Stream.runHead,
+              Effect.forkScoped({ startImmediately: true }),
+            )
+            const settled = yield* executeTool(
+              registry,
+              call({ command: stallCommand, background: true }, "call-stall-notify"),
+            )
+            const shellID = settled.metadata?.shellID
+            expect(typeof shellID).toBe("string")
+
+            const payload = (yield* Fiber.join(admitted)).valueOrUndefined?.data.item.payload
+            expect(payload).toMatchObject({
+              description: stallCommand,
+              metadata: { source: "shell", shellID, state: "running" },
+            })
+            const text = typeof payload?.text === "string" ? payload.text : ""
+            expect(text).toContain("no new output")
+            expect(text).toContain("mark-stall")
+            expect(text).toContain(`kill set to "${shellID}"`)
+          }),
+        )
+      },
+      (tmp) =>
+        Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)).pipe(
+          Effect.ensuring(Effect.sync(() => Object.assign(ShellTool.stallTimings, previous))),
+        ),
+    )
+  })
 
   it.live("preserves a background command's non-zero exit", () =>
     Effect.acquireUseRelease(
