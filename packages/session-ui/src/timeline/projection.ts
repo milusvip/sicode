@@ -387,7 +387,8 @@ export namespace Timeline {
         ?.id ?? turns.at(-1)?.id
 
     const visibleNotice = (message: Notice) =>
-      !detail || detail.notices.placement !== "hidden" || timelineNoticeRequired(message)
+      !isInstructionUpdateNotice(message) &&
+      (!detail || detail.notices.placement !== "hidden" || timelineNoticeRequired(message))
 
     const visibleTurns = detail
       ? turns.filter((turn) => {
@@ -642,6 +643,8 @@ export namespace Timeline {
 
           return
         case "notice":
+          // SiCode: suppress instruction-update notices here too — this path builds rows inside a turn.
+          if (isInstructionUpdateNotice(entry.message)) return
           if (detail?.notices.placement === "hidden" && !timelineNoticeRequired(entry.message)) return
           appendAssistantSegment(assistantSegment)
           assistantSegment = []
@@ -934,6 +937,16 @@ function insertWorkShells(
 
 function isFailedIdle(message: SessionMessageInfo): message is FailedIdle {
   return message.type === "idle" && message.outcome === "failed" && !!message.error
+}
+
+// SiCode: instruction-update notices ("指令已更新 core/git-status …") fire whenever volatile
+// instruction sources change mid-run — the git-status snapshot changes as the agent works and the
+// codemode catalog churns while tools connect. The system message still reaches the model; only
+// the timeline row (standalone or inside a grouped context fold) is suppressed.
+function isInstructionUpdateNotice(message: SessionMessageInfo): boolean {
+  if (message.type !== "system") return false
+
+  return message.metadata?.notice === "instructions" || message.description?.startsWith("Instructions updated: ") === true
 }
 
 function shellFailed(message: SessionMessageShell) {

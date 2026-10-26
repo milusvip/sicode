@@ -839,8 +839,10 @@ export const instructionsUpdatedSingleDocument = document([
   {
     id: "msg_instructions_updated_single",
     type: "system",
-    text: "Updated instructions for api/v2-demo",
-    description: "Instructions updated: api/v2-demo",
+    text: "Refreshed context for api/v2-demo",
+    // SiCode: was "Instructions updated: api/v2-demo" — those notices are suppressed in the
+    // SiCode timeline, so the story fixture uses a generic system notice.
+    description: "Context refreshed: api/v2-demo",
     time: { created: STORY_TIME + 89_000 },
   },
 ] satisfies SessionMessageInfo[])
@@ -861,8 +863,9 @@ export const instructionsUpdatedMultipleDocument = document([
   {
     id: "msg_instructions_updated_multi",
     type: "system",
-    text: "Updated instructions for api/v2-demo and api/session",
-    description: "Instructions updated: api/v2-demo, api/session",
+    text: "Refreshed context for api/v2-demo and api/session",
+    // SiCode: same suppression as the single-source fixture above.
+    description: "Context refreshed: api/v2-demo, api/session",
     time: { created: STORY_TIME + 89_000 },
   },
 ] satisfies SessionMessageInfo[])

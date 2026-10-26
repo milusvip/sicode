@@ -457,7 +457,9 @@ export function createSessionTimelineRowRenderer(input: {
     return currentContentDefaultOpen(item, input.shellToolDefaultOpen(), input.editToolDefaultOpen())
   }
 
-  const notice = (message: SessionMessageInfo) => {
+  // SiCode: explicit return type — the instruction-update backstop below removed the only
+  // `items`-bearing returns, and inference narrows the union where callers read `.items`.
+  const notice = (message: SessionMessageInfo): { label: string; data?: string; items?: string[]; outcome?: string } | undefined => {
     if (message.type === "agent-switched")
       return {
         label: i18n.t("ui.sessionTimeline.notice.agentChanged"),
@@ -471,26 +473,17 @@ export function createSessionTimelineRowRenderer(input: {
     if (message.type === "skill") return { label: i18n.t("ui.tool.skill"), data: message.name }
 
     if (message.type === "system") {
-      const sources = Array.isArray(message.metadata?.instructionSources)
-        ? message.metadata.instructionSources.filter(Predicate.isString)
-        : undefined
-
-      if (message.metadata?.notice === "instructions" && sources?.length)
-        return { label: i18n.t("ui.sessionTimeline.notice.instructionsUpdated"), items: sources }
-      const prefix = "Instructions updated: "
-
-      if (message.description?.startsWith(prefix)) {
-        const keys = message.description
-          .slice(prefix.length)
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-
-        return {
-          label: i18n.t("ui.sessionTimeline.notice.instructionsUpdated"),
-          items: keys,
-        }
-      }
+      // SiCode: instruction-update notices (git-status snapshot, date, environment, codemode
+      // catalog, mcp guidance, api/* plugin entries …) fire nearly every turn while the agent
+      // works. They are model-facing context refreshes, not user-facing events — projection.ts
+      // already drops their rows, and this is the row-renderer backstop so a projection refactor
+      // cannot resurrect them. Returning undefined (not the generic label below) is required:
+      // the fallback would print the raw "Instructions updated: ..." description text.
+      if (
+        message.metadata?.notice === "instructions" ||
+        message.description?.startsWith("Instructions updated: ")
+      )
+        return undefined
 
       return { label: message.description ?? message.text }
     }

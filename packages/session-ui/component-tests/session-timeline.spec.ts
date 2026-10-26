@@ -13,7 +13,9 @@ story("spaces an error between a shell result and expanded updates", async ({ mo
   expect(updatesBox.x).toBe(errorBox.x)
   await updates.click()
   const notice = timeline.locator('[data-slot="session-timeline-notice"]')
-  await expect(notice).toContainText("Instructions updated")
+  // SiCode: instruction-update notices are suppressed in the SiCode timeline, so the story
+  // fixture now carries a generic system notice; the spacing assertions are unchanged.
+  await expect(notice).toContainText("Context refreshed")
   const expandedBox = (await updates.boundingBox())!
   expect((await notice.boundingBox())!.y - (expandedBox.y + expandedBox.height)).toBe(0)
   expect((await notice.boundingBox())!.x - expandedBox.x).toBe(12)

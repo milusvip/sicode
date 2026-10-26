@@ -48,8 +48,10 @@ const document = {
     {
       id: "msg_after_error_updates",
       type: "system",
-      description: "Instructions updated: core/codemode, core/mcp-guidance",
-      text: "Instructions updated: core/codemode, core/mcp-guidance",
+      // SiCode: was "Instructions updated: ..." — instruction-update notices are suppressed in
+      // the SiCode timeline, so this spacing story uses a generic system notice instead.
+      description: "Context refreshed",
+      text: "Context refreshed",
       time: { created: STORY_TIME + 500 },
     },
   ],

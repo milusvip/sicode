@@ -645,10 +645,12 @@ export const Conversation = {
 }
 
 export const InstructionsUpdatedSingle = {
+  // SiCode: renamed copy — instruction-update notices are suppressed in the SiCode timeline,
+  // so this story now demonstrates a generic system notice instead.
   render: () => (
     <CurrentSessionTimelineStory
-      title="Instructions updated (single)"
-      description="A system notice in the timeline showing a single updated instruction source."
+      title="System notice (single)"
+      description="A system notice in the timeline showing a single context refresh."
       document={instructionsUpdatedSingleDocument}
       width="600px"
     />
@@ -658,8 +660,8 @@ export const InstructionsUpdatedSingle = {
 export const InstructionsUpdatedMultiple = {
   render: () => (
     <CurrentSessionTimelineStory
-      title="Instructions updated (multiple)"
-      description="A system notice in the timeline showing multiple updated instruction sources."
+      title="System notice (multiple)"
+      description="A system notice in the timeline showing multiple context refreshes."
       document={instructionsUpdatedMultipleDocument}
       width="600px"
     />
