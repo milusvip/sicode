@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { GenerationOptions, LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai"
+import { GenerationOptions, LLMClient, LLMEvent, LanguageModel, ToolDefinition, type LLMRequest } from "@opencode/ai/effect"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -344,6 +344,15 @@ it.effect("auto compaction estimates current content against the buffered prompt
     const outputLimited = { context: 100_000, output: 30_000 }
     expect(yield* due(input(83_999, outputLimited))).toBe(false)
     expect(yield* due(input(84_000, outputLimited))).toBe(true)
+
+    // A buffer that leaves the model no room, such as one set for a larger model, falls back to the default reserve.
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        yield* compaction.transform((editor) => editor.configure({ buffer: 100_000 }))
+        expect(yield* due(input(60_000, contextLimited))).toBe(false)
+        expect(yield* due(input(84_000, contextLimited))).toBe(true)
+      }),
+    )
 
     const assistant = input(89_000, contextLimited).messages[0]
     const tool = SessionMessage.AssistantTool.make({

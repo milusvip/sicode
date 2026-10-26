@@ -462,6 +462,7 @@ function MessageTimelineView(
               status={server.ctx.sdk.connection.status() === "connected" ? "running" : "disconnected"}
               startedAt={workingStartedAt()}
               toolCount={0}
+              failedCount={0}
               hasReply={false}
               open={pendingWorkOpen()}
               onToggle={() => virtualized.disclosure.set(pendingWorkKey(), !pendingWorkOpen())}

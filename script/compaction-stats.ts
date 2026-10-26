@@ -4,7 +4,7 @@
 //   bun script/compaction-stats.ts                 # the most recent log
 //   bun script/compaction-stats.ts path/to/a.log   # one or more explicit logs
 //
-// Why this exists: `experimental.precompute_compaction` was shipped default-off because nobody could say what it
+// Why this exists: `experimental.background_compaction` was shipped default-off because nobody could say what it
 // would save. This reads the two lines `compaction-metrics.ts` and `session/compaction.ts` write and answers that
 // with numbers — how long a compaction actually blocks, and how many held summaries were thrown away — so the
 // setting can be decided on evidence instead of a guess.
@@ -93,7 +93,7 @@ for (const file of files) {
 if (lines === 0) {
   console.log(`read ${files.join(", ")}`)
   console.log("no compaction lines yet — run a session until it compacts, or turn on")
-  console.log("`experimental.precompute_compaction` to also record background summaries")
+  console.log("`experimental.background_compaction` to also record background summaries")
   process.exit(0)
 }
 
@@ -122,7 +122,7 @@ if (failed > 0) console.log(`  failed     ${failed}`)
 
 console.log("\nBackground summaries")
 if (started === 0) {
-  console.log("  none started — `experimental.precompute_compaction` is off or never reached 85% of the window")
+  console.log("  none started — `experimental.background_compaction` is off or never reached 85% of the window")
 } else {
   console.log(`  started    ${started}`)
   console.log(`  used       ${used.length}${used.length > 0 ? `  (saved ${seconds(used.reduce((sum, entry) => sum + (entry.savedMs ?? 0), 0))}, ready ${seconds(percentile(used.map((entry) => entry.leadMs ?? 0), 0.5))} before it was needed)` : ""}`)
@@ -154,6 +154,6 @@ if (started === 0 && completed.length === 0) {
     console.log("  too little to judge — collect more compactions before deciding.")
   } else {
     console.log(`  ${used.length} of ${written} held summaries were used, saving ${seconds(saved)} of waiting.`)
-    console.log("  that is a real gain — leaving `precompute_compaction` on is justified.")
+    console.log("  that is a real gain — leaving `background_compaction` on is justified.")
   }
 }

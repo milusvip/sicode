@@ -826,7 +826,7 @@ export const dict = {
   "settings.timeline.description.custom": "Uses advanced settings.",
   "settings.timeline.custom": "Custom",
   "settings.timeline.row.turnDiffs.title": "Changed files",
-  "settings.timeline.row.turnDiffs.description": "List the files each prompt changed when it finishes",
+  "settings.timeline.row.turnDiffs.description": "List the files each turn changed when it finishes",
   "settings.timeline.advanced": "Advanced",
   "settings.timeline.advanced.description": "Set placement and details for each activity category.",
   "settings.timeline.group": "Group",

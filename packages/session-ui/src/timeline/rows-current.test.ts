@@ -116,61 +116,6 @@ describe("current session timeline rows", () => {
     expect(head).toBe(1)
     expect(end).toBeGreaterThan(head)
     expect(tags.slice(head, end)).toContain("AssistantPart")
-    // Opening narration with tools after it is a stage head (demo scheme B), not a buried paragraph.
-    expect(tags.slice(head, end)).toContain("WorkStage")
-    const stage = result.rows.find((row) => Predicate.isTagged(row, "WorkStage"))
-    expect(stage).toMatchObject({ _tag: "WorkStage", title: "let me look at the file first", last: true })
-  })
-
-  test("splits a mid-prose turn into a leading stage and a mid-prose stage", () => {
-    const tool = (id: string, name: string, created: number): SessionMessageAssistantTool => ({
-      type: "tool",
-      id,
-      name,
-      state: {
-        status: "completed",
-        input: {},
-        content: [{ type: "text", text: "ok" }],
-        metadata: {},
-      },
-      time: { created, ran: created + 1, completed: created + 2 },
-    })
-
-    const source = [
-      { id: "msg_u", type: "user", text: "这文档有啥", time: { created: 1 } },
-      {
-        id: "msg_a",
-        type: "assistant",
-        agent: "build",
-        model: { id: "model", providerID: "provider" },
-        content: [
-          { type: "reasoning", text: "The user asks about a file path" },
-          tool("tool_1", "shell", 2),
-          tool("tool_2", "read", 5),
-          { type: "text", text: "这份文档是一次 Agent 会话的过程复盘，并非产品功能规格。" },
-          tool("tool_3", "shell", 8),
-        ],
-        time: { created: 2, completed: 11 },
-      },
-      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 12 } },
-    ] satisfies SessionMessageInfo[]
-
-    const result = Timeline.constructSessionMessageRows(source, false, { type: "idle" })
-    const stages = result.rows.filter((row) => Predicate.isTagged(row, "WorkStage"))
-
-    // Without this split the mid-prose stayed as answer-sized markdown and cut the well in two.
-    expect(stages).toHaveLength(2)
-    expect(stages[0]).toMatchObject({
-      _tag: "WorkStage",
-      title: "The user asks about a file path",
-      last: false,
-    })
-    expect(stages[1]).toMatchObject({
-      _tag: "WorkStage",
-      title: "这份文档是一次 Agent 会话的过程复盘，并非产品功能规格。",
-      last: true,
-    })
-    expect(result.rows.filter((row) => Predicate.isTagged(row, "WorkStageEnd"))).toHaveLength(2)
   })
 
   test("keeps assistant content when no user root is available", () => {
@@ -415,11 +360,9 @@ describe("current session timeline rows", () => {
       "AssistantPart",
       "WorkShellEnd",
     ])
-    // SiCode: compact keeps tools `separate`, so a lone read no longer merges into the reasoning's
-    // context row — it gets its own row next to it.
     expect(
       rows([thought, storyTool("read", "read", "running", { filePath: "package.json" })], true).map((row) => row._tag),
-    ).toEqual(["UserMessage", "WorkShell", "AssistantPart", "AssistantPart", "WorkShellEnd"])
+    ).toEqual(["UserMessage", "WorkShell", "AssistantPart", "WorkShellEnd"])
     expect(rows([thought], false).map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
 
     const failed = storyDocument([thought], true)
@@ -731,12 +674,10 @@ describe("current session timeline rows", () => {
       timelinePresets.find((preset) => preset.id === "compact")!.value,
     ).rows
 
-    // SiCode: compact keeps tools `separate`, so the read is its own part row rather than a
-    // single-member context group. The notice still sits outside it — that is what this asserts.
     expect(rows.map(TimelineRow.key)).toEqual([
       "user-message:msg_user",
       "work-shell:msg_user",
-      "assistant-part:read:part:msg_assistant:tool_read",
+      "assistant-part:context:context:msg_assistant:tool_read",
       "work-shell-end:msg_user",
       "notice:msg_moved",
       "assistant-part:context:message:msg_skill",
@@ -1219,12 +1160,11 @@ describe("current session timeline rows", () => {
       },
     ] satisfies SessionMessageInfo[]
 
-    const result = Timeline.constructSessionMessageRows(source, false, { type: "idle" })
-    const groups = result.rows.flatMap((row) => (Predicate.isTagged(row, "AssistantPart") ? [row.group] : []))
+    const groups = Timeline.constructSessionMessageRows(source, false, { type: "idle" }).rows.flatMap((row) =>
+      Predicate.isTagged(row, "AssistantPart") ? [row.group] : [],
+    )
 
-    // Mid-prose with tools after it becomes a WorkStage head, so only the two tool batches remain
-    // as AssistantPart groups.
-    expect(groups.map((group) => group.type)).toEqual(["context", "context"])
+    expect(groups.map((group) => group.type)).toEqual(["context", "part", "context"])
     expect(groups[0]?.type === "context" ? groups[0].refs.map((ref) => ref.partID) : []).toEqual([
       "tool_0",
       "tool_1",
@@ -1234,8 +1174,7 @@ describe("current session timeline rows", () => {
       "tool_5",
       "tool_6",
     ])
-    expect(groups[1]?.type === "context" ? groups[1].refs.map((ref) => ref.partID) : []).toEqual(["tool_after_text"])
-    expect(result.rows.some((row) => Predicate.isTagged(row, "WorkStage") && row.title === "finished")).toBe(true)
+    expect(groups[2]?.type === "context" ? groups[2].refs.map((ref) => ref.partID) : []).toEqual(["tool_after_text"])
   })
 
   test.each([
@@ -1373,7 +1312,7 @@ describe("current session timeline rows", () => {
     { name: "shell", expanded: true, types: ["context", "part"] },
     { name: "execute", expanded: true, types: ["context", "part"] },
     { name: "subagent", expanded: true, types: ["context"] },
-    { name: "shell", separator: "text", types: ["context", "part"], stage: true },
+    { name: "shell", separator: "text", types: ["context", "part", "part"] },
     { name: "shell", separator: "reasoning", showReasoning: true, types: ["context"] },
     { name: "shell", separator: "reasoning", showReasoning: false, types: ["context"] },
   ] as const)("respects active tool grouping boundaries: %j", (profile) => {
@@ -1394,10 +1333,6 @@ describe("current session timeline rows", () => {
     expect(rows.flatMap((row) => (Predicate.isTagged(row, "AssistantPart") ? [row.group.type] : []))).toEqual([
       ...profile.types,
     ])
-    // A text separator with tools after it is a stage head, not a buried part row.
-    if ("stage" in profile && profile.stage) {
-      expect(rows.some((row) => Predicate.isTagged(row, "WorkStage") && row.title === "Visible boundary")).toBe(true)
-    }
   })
 
   test("keeps active and background work standalone when no group precedes them", () => {
@@ -1733,7 +1668,7 @@ describe("current session timeline rows", () => {
     )
   })
 
-  test("summarizes what each prompt's steps changed once the turn that contains them ends", () => {
+  test("summarizes a turn's changed files after the idle marker that ends it", () => {
     const step = (id: string, files?: string[]) =>
       ({
         id,
@@ -1749,8 +1684,8 @@ describe("current session timeline rows", () => {
     const user = (id: string) => ({ id, type: "user", text: id, time: { created: 1 } }) as const
 
     const source = [
-      // A steered prompt owns the steps that follow it, so the turn reports one summary per prompt
-      // instead of merging them.
+      // A steered prompt joins the running turn; the summary diffs from its opening prompt and lists
+      // every path its steps recorded once, sorted.
       user("msg_open"),
       step("msg_edit", ["src/a.ts"]),
       user("msg_steer"),
@@ -1774,26 +1709,19 @@ describe("current session timeline rows", () => {
 
     expect(rows.filter((row) => Predicate.isTagged(row, "TurnDiff"))).toEqual([
       new TimelineRow.TurnDiff({
-        userMessageID: "msg_open",
-        messageID: "msg_idle_1",
-        from: "msg_open",
-        files: ["src/a.ts"],
-      }),
-      new TimelineRow.TurnDiff({
         userMessageID: "msg_steer",
         messageID: "msg_idle_1",
-        from: "msg_steer",
+        from: "msg_open",
         files: ["src/a.ts", "src/c.ts"],
       }),
     ])
-    expect(rows.map(TimelineRow.key).slice(0, 7)).toEqual([
+    expect(rows.map(TimelineRow.key).slice(0, 6)).toEqual([
       "user-message:msg_open",
       "assistant-part:part:part:msg_edit:msg_edit:text:0",
-      "turn-diff:msg_open",
       "turn-gap:msg_steer",
       "user-message:msg_steer",
       "assistant-part:part:part:msg_answer:msg_answer:text:0",
-      "turn-diff:msg_steer",
+      "turn-diff:msg_idle_1",
     ])
     expect(rows.find((row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === "msg_steer")).toEqual(
       new TimelineRow.UserMessage({ userMessageID: "msg_steer", steer: true }),

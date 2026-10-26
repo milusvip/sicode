@@ -3,15 +3,13 @@ import type { TurnDiffInput } from "@opencode/session-ui/context"
 import { createStore } from "solid-js/store"
 
 /**
- * One tab's in-memory cache of the files each finished prompt changed. A finished prompt's snapshots
- * never change, so each prompt loads once per tab and survives the timeline remounting; closing the tab
- * drops it.
+ * One tab's in-memory cache of the files each finished turn changed. A finished turn's snapshots never
+ * change, so each turn loads once per tab and survives the timeline remounting; closing the tab drops it.
  */
 export function createTurnDiffCache() {
   const [diffs, setDiffs] = createStore<Record<string, readonly FileDiffInfo[] | undefined>>({})
   const loading = new Set<string>()
-  // The prompt flag selects a different range for the same message, so it is part of the identity.
-  const key = (input: TurnDiffInput) => `${input.sessionID}/${input.from}${input.prompt ? ":prompt" : ""}`
+  const key = (input: TurnDiffInput) => `${input.sessionID}/${input.from}`
 
   return {
     get: (input: TurnDiffInput) => diffs[key(input)],

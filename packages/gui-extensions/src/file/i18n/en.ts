@@ -1,8 +1,8 @@
 export default {
   "tree.all": "All files",
   "tree.empty": "No files",
-  "tree.changes.one": "Files Changed {{count}}",
-  "tree.changes.other": "Files Changed {{count}}",
+  "tree.changes.one": "{{count}} file changed",
+  "tree.changes.other": "{{count}} files changed",
   "tree.refresh": "Refresh files",
   "tab.notFound": "File not found: {{name}}",
   "mobile.title": "Files",

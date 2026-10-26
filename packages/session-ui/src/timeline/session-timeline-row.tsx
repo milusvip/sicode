@@ -4,10 +4,9 @@ import type {
   SessionMessageUser,
   SessionStatus,
 } from "@opencode/client/promise"
-import { Icon } from "@opencode/ui/icon"
 import { useI18n } from "@opencode/ui/context/i18n"
 import { Option, Predicate, Schema } from "effect"
-import { For, Show, createContext, createEffect, createMemo, useContext, type Accessor, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, type Accessor, type JSX } from "solid-js"
 import { DiffChanges } from "@opencode/ui/diff-changes"
 import { Dynamic } from "solid-js/web"
 import type { SessionUserActions, SessionUserAttachmentReference, SessionUserComment } from "../actions"
@@ -28,7 +27,6 @@ import {
   SessionCompactionQueued,
 } from "../message/message-content"
 import { ToolRegistry, type ContextGroupPart } from "../tools/tool-renderer"
-import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 import { GenericTool } from "../components/basic-tool"
 import { SessionRetry } from "../components/session-retry"
 import { SessionError } from "../components/session-error"
@@ -42,19 +40,7 @@ import {
   type PartRef,
   type ReasoningMode,
 } from "./projection"
-import {
-  openWorkShellOnly,
-  WorkShellHead,
-  workFoldDisclosureKey,
-  workShellCardBlocks,
-  workShellCardMembers,
-  workShellDefaultOpen,
-  workShellDisclosureKey,
-  workStageDisclosureKey,
-} from "./work-shell"
-
-/** When true, row chrome skips the per-slice card paint — the open shell owns one real card. */
-const WorkShellCardNesting = createContext(false)
+import { openWorkShellOnly, WorkShellHead, workShellDefaultOpen, workShellDisclosureKey } from "./work-shell"
 
 const emptyAssistantMessages: SessionMessageAssistant[] = []
 
@@ -117,10 +103,7 @@ export function createSessionTimelineRowRenderer(input: {
         active = false
         continue
       }
-      if (!active) continue
-      // Markers paint nothing; counting them as members puts the well's bottom edge on an empty row.
-      if (Predicate.isTagged(row, "WorkStageEnd")) continue
-      members.add(TimelineRow.key(row))
+      if (active) members.add(TimelineRow.key(row))
     }
     return members
   })
@@ -203,9 +186,6 @@ export function createSessionTimelineRowRenderer(input: {
   }
 
   const padding = () => input.padding?.() ?? "px-4 md:px-6"
-  /** SiCode: members of an open shell sit inside the card/well — the panel owns the gutter. */
-  const gutter = (row: TimelineRow.TimelineRow) =>
-    workShellMembers().has(TimelineRow.key(row)) ? "" : padding()
 
   const indexGroupContents = (refs: PartRef[]) => {
     const result = new Map<string, Map<string, SessionMessageAssistant["content"][number]>>()
@@ -279,7 +259,6 @@ export function createSessionTimelineRowRenderer(input: {
                 id: ref.partID,
                 render: () => <Notice messageID={ref.messageID} grouped />,
                 summary,
-                outcome: content?.outcome,
               },
             ]
           }
@@ -294,9 +273,6 @@ export function createSessionTimelineRowRenderer(input: {
         <div class="contents" data-notices-only={parts().every((part) => part.type === "notice") ? "" : undefined}>
           <SessionContextToolGroup
             parts={parts()}
-            // SiCode: inside the shell the stage heading is the fold; flatten so tools sit in the well
-            // like the preview (no nested "过程" bar + second well).
-            flat={workShellMembers().has(TimelineRow.key(row()))}
             patchGroupKey={(tools) => {
               const parts = tools.map((tool) => patchPartKeys.get(tool)!)
 
@@ -330,11 +306,9 @@ export function createSessionTimelineRowRenderer(input: {
             }
             // Live: only the current process stage stays open.
             // Settled: all collapsed unless the turn failed — then only the last process opens.
-            // Flat shells always expand: the stage heading already owns the fold.
             open={
-              workShellMembers().has(TimelineRow.key(row()))
-                ? true
-                : (input.disclosure.value(key()) ?? processDefaultOpen(row().userMessageID, row().group.key))
+              input.disclosure.value(key()) ??
+              processDefaultOpen(row().userMessageID, row().group.key)
             }
             onOpenChange={(open) => input.disclosure.set(key(), open)}
             onSizeChange={onSizeChange}
@@ -483,9 +457,7 @@ export function createSessionTimelineRowRenderer(input: {
     return currentContentDefaultOpen(item, input.shellToolDefaultOpen(), input.editToolDefaultOpen())
   }
 
-  const notice = (
-    message: SessionMessageInfo,
-  ): { label: string; data?: string; items?: string[]; outcome?: string } | undefined => {
+  const notice = (message: SessionMessageInfo) => {
     if (message.type === "agent-switched")
       return {
         label: i18n.t("ui.sessionTimeline.notice.agentChanged"),
@@ -503,30 +475,21 @@ export function createSessionTimelineRowRenderer(input: {
         ? message.metadata.instructionSources.filter(Predicate.isString)
         : undefined
 
-      // SiCode: core/* instruction refreshes (git-status snapshot, date, environment) are internal
-      // context plumbing aimed at the model, not the user — they fire nearly every turn during
-      // active development, so they render no notice card. User-level sources (AGENTS.md and
-      // friends) still notify. An all-core delta returns undefined instead of falling through to
-      // the generic label below, which would print the raw "Instructions updated: ..." text.
-      const visibleSources = (items: string[]) => items.filter((item) => !item.startsWith("core/"))
-
-      if (message.metadata?.notice === "instructions" && sources?.length) {
-        const items = visibleSources(sources)
-
-        return items.length ? { label: i18n.t("ui.sessionTimeline.notice.instructionsUpdated"), items } : undefined
-      }
+      if (message.metadata?.notice === "instructions" && sources?.length)
+        return { label: i18n.t("ui.sessionTimeline.notice.instructionsUpdated"), items: sources }
       const prefix = "Instructions updated: "
 
       if (message.description?.startsWith(prefix)) {
-        const keys = visibleSources(
-          message.description
-            .slice(prefix.length)
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        )
+        const keys = message.description
+          .slice(prefix.length)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
 
-        return keys.length ? { label: i18n.t("ui.sessionTimeline.notice.instructionsUpdated"), items: keys } : undefined
+        return {
+          label: i18n.t("ui.sessionTimeline.notice.instructionsUpdated"),
+          items: keys,
+        }
       }
 
       return { label: message.description ?? message.text }
@@ -555,9 +518,6 @@ export function createSessionTimelineRowRenderer(input: {
       return {
         label: i18n.t(outcomeNoticeKey(Predicate.isString(state) ? state : undefined), { actor }),
         data: message.description,
-        // SiCode: carry the outcome so a collapsed group can mark itself cancelled or failed
-        // instead of showing the success check over rows that never ran.
-        outcome: Predicate.isString(state) ? state : undefined,
       }
     }
 
@@ -565,14 +525,7 @@ export function createSessionTimelineRowRenderer(input: {
   }
 
   const Frame = (props: { row: FramedTimelineRow; children: JSX.Element }) => {
-    // Nested inside an open shell card: no outer chrome — the card owns the panel.
-    if (useContext(WorkShellCardNesting)) {
-      return (
-        <div data-timeline-row={props.row._tag} data-work-shell-step="" class="min-w-0 w-full">
-          {props.children}
-        </div>
-      )
-    }
+    const member = () => workShellMembers().has(TimelineRow.key(props.row))
 
     return (
       <div
@@ -580,11 +533,14 @@ export function createSessionTimelineRowRenderer(input: {
         data-message-id={props.row.userMessageID}
         data-timeline-row={props.row._tag}
         data-timeline-spacing={Predicate.isTagged(props.row, "AssistantPart") ? props.row.spacing : undefined}
+        data-work-shell-member={member() ? "" : undefined}
         classList={{
           "min-w-0 w-full max-w-full": true,
           "md:max-w-session md:mx-auto": input.centered?.(),
-          "pt-2": Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "tool",
-          "pt-4": Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "content",
+          "pt-2":
+            !member() && Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "tool",
+          "pt-4":
+            !member() && Predicate.isTagged(props.row, "AssistantPart") && props.row.spacing === "content",
           "pt-6": Predicate.isTagged(props.row, "Error"),
         }}
       >
@@ -644,14 +600,6 @@ export function createSessionTimelineRowRenderer(input: {
       const value = message()
 
       return value ? notice(value) : undefined
-    })
-
-    // SiCode: a shell notice carries a command in `data`; render it in the mono face so its
-    // character widths line up with the terminal output the user is comparing it against.
-    const commandData = createMemo(() => {
-      const value = message()
-
-      return value?.type === "synthetic" && value.metadata?.source === "shell"
     })
 
     const childID = createMemo(() => {
@@ -718,14 +666,8 @@ export function createSessionTimelineRowRenderer(input: {
                         <Dynamic
                           component={href() ? "a" : "div"}
                           data-slot="session-timeline-notice"
-                          data-outcome={content().outcome}
-                          class={`block w-full truncate ${props.grouped ? "py-1" : "pt-3 pb-1"} text-13-regular leading-text-compact ${inset()}`}
-                          classList={{
-                            "cursor-pointer": clickable(),
-                            // SiCode: a cancelled shell never ran, so it must not read like a result.
-                            "text-v2-text-text-faint": content().outcome === "cancelled",
-                            "text-text-weak": content().outcome !== "cancelled",
-                          }}
+                          class={`block w-full truncate ${props.grouped ? "py-1" : "pt-3 pb-1"} text-13-regular leading-text-compact text-text-weak ${inset()}`}
+                          classList={{ "cursor-pointer": clickable() }}
                           href={href()}
                           role={clickable() && !href() ? "link" : undefined}
                           tabIndex={clickable() && !href() ? 0 : undefined}
@@ -743,9 +685,7 @@ export function createSessionTimelineRowRenderer(input: {
                             {(data) => (
                               <span classList={{ "ms-2": message()?.type === "agent-switched" }}>
                                 <Show when={message()?.type !== "agent-switched"}>{" · "}</Show>
-                                <bdi dir="auto" classList={{ "font-mono": commandData() }}>
-                                  {data()}
-                                </bdi>
+                                <bdi dir="auto">{data()}</bdi>
                               </span>
                             )}
                           </Show>
@@ -799,7 +739,7 @@ export function createSessionTimelineRowRenderer(input: {
     )
   }
 
-  function Shell(props: { messageID: string; grouped?: boolean; inset?: boolean }) {
+  function Shell(props: { messageID: string; grouped?: boolean }) {
     const message = createMemo(() => {
       const value = input.projection.messageByID().get(props.messageID)
 
@@ -820,10 +760,7 @@ export function createSessionTimelineRowRenderer(input: {
     return (
       <Show when={message()}>
         {(message) => (
-          <div
-            data-slot="session-turn-message-container"
-            class={`w-full ${props.grouped || props.inset ? "" : padding()}`}
-          >
+          <div data-slot="session-turn-message-container" class={`w-full ${props.grouped ? "" : padding()}`}>
             <SessionShellMessage
               message={message()}
               defaultOpen={defaultOpen()}
@@ -838,36 +775,15 @@ export function createSessionTimelineRowRenderer(input: {
 
   function TurnDiff(props: { row: TimelineRow.TurnDiff; onSizeChange?: () => void }) {
     const render = ToolRegistry.render("patch") ?? GenericTool
-    // `prompt` slices the range at this prompt, so a steered prompt reports its own work rather than the
-    // work of the prompt it interrupted.
-    const turn = () => ({ sessionID: input.sessionID(), from: props.row.from, prompt: true })
+    // Until the diff loads, list the paths the turn's steps recorded, without change counts.
+    const turn = () => ({ sessionID: input.sessionID(), from: props.row.from })
     const diffs = () => data.turnDiff?.get(turn())
-    // SiCode: the diff route compares two snapshots of the whole worktree, so anything else writing to
-    // the repository meanwhile (another session, an editor, a background process) came back as this
-    // prompt's work. The prompt's own steps are the only attribution available, so they decide which
-    // paths belong to the summary; the diff fills in their change counts. A path its steps touched but
-    // the range no longer shows (written and reverted) is not a change, so it stays out as well.
-    const changed = () => {
-      const loaded = diffs()
-
-      if (!loaded) return []
-
-      const byFile = new Map(loaded.map((diff) => [diff.file, diff]))
-
-      return props.row.files.flatMap((path) => {
-        const diff = byFile.get(path)
-
-        return diff ? [diff] : []
-      })
-    }
-    // Nothing paints before the diff answers: a list that shrinks or reorders while it is being read is
-    // worse than one that appears a moment late.
-    const paths = () => changed().map((diff) => diff.file)
-    const showAllKey = () => `turn-diff:${props.row.userMessageID}`
+    const paths = () => diffs()?.map((diff) => diff.file) ?? props.row.files
+    const showAllKey = () => `turn-diff:${props.row.messageID}`
     const showAll = () => input.disclosure.value(showAllKey()) === true
     const limit = <T,>(items: readonly T[]) => (showAll() ? items : items.slice(0, turnDiffFileLimit))
     const overflow = () => paths().length > turnDiffFileLimit
-    const fileKey = (path: string) => `turn-diff:${props.row.userMessageID}:file:${path}`
+    const fileKey = (path: string) => `turn-diff:${props.row.messageID}:file:${path}`
 
     createEffect(() => data.turnDiff?.load(turn()))
 
@@ -878,7 +794,7 @@ export function createSessionTimelineRowRenderer(input: {
             <span class="text-14-medium text-text-strong tabular-nums">
               {i18n.plural("ui.sessionTurn.diffs.changed", paths().length)}
             </span>
-            <DiffChanges changes={changed()} />
+            <DiffChanges changes={[...(diffs() ?? [])]} />
             <Show when={overflow()}>
               <button
                 type="button"
@@ -893,7 +809,8 @@ export function createSessionTimelineRowRenderer(input: {
             component={render}
             tool="patch"
             input={{}}
-            metadata={{ files: limit(changed()) }}
+            metadata={{ files: limit(diffs() ?? []) }}
+            pendingFiles={diffs() ? undefined : limit(props.row.files)}
             status="completed"
             fileOpen={(path: string) => input.disclosure.value(fileKey(path))}
             onFileOpenChange={(path: string, open: boolean) => input.disclosure.set(fileKey(path), open)}
@@ -911,7 +828,6 @@ export function createSessionTimelineRowRenderer(input: {
 
     // Marker only — collapse filtering removes it; never paint it.
     if (Predicate.isTagged(row(), "WorkShellEnd")) return null
-    if (Predicate.isTagged(row(), "WorkStageEnd")) return null
 
     // The host owns live status and renders this slot itself.
     if (Predicate.isTagged(row(), "Activity")) return null
@@ -938,213 +854,32 @@ export function createSessionTimelineRowRenderer(input: {
         return workShellDefaultOpen(status())
       }
 
-      const toggle = () => {
-        const next = !open()
-        if (!next) {
-          input.disclosure.set(key(), false)
-          return
-        }
-        if (input.disclosure.openWorkShell) input.disclosure.openWorkShell(current().userMessageID)
-        else {
-          openWorkShellOnly(input.projection.rows(), input.disclosure, current().userMessageID)
-          input.disclosure.set(key(), true)
-        }
-      }
-
-      const members = () =>
-        workShellCardMembers(
-          input.projection.rows(),
-          current().userMessageID,
-          (stage) => input.disclosure.value(workStageDisclosureKey(stage)) ?? stage.last,
-          (fold) => input.disclosure.value(workFoldDisclosureKey(fold)) === true,
-        )
-      const blocks = () => workShellCardBlocks(members())
-
-      const step = (member: TimelineRow.TimelineRow) => render(() => member, onSizeChange)
-
-      // Collapsed: overview bar only. Expanded: one real card (demo scheme B), members nested inside.
       return (
         <Frame row={current()}>
-          <Show
-            when={open()}
-            fallback={
-              <div data-slot="session-turn-message-container" data-work-shell-head-slot="" class="w-full">
-                <WorkShellHead
-                  status={status()}
-                  startedAt={current().startedAt}
-                  endedAt={current().endedAt}
-                  toolCount={current().toolCount}
-                  counts={current().counts}
-                  hasReply={current().hasReply}
-                  open={open()}
-                  onToggle={toggle}
-                />
-              </div>
-            }
-          >
-            <div data-slot="session-turn-message-container" data-work-shell-card="" class="w-full">
-              <WorkShellHead
-                status={status()}
-                startedAt={current().startedAt}
-                endedAt={current().endedAt}
-                toolCount={current().toolCount}
-                counts={current().counts}
-                hasReply={current().hasReply}
-                open={open()}
-                onToggle={toggle}
-              />
-              <div data-work-shell-body="">
-                <div data-work-shell-body-in="">
-                  <WorkShellCardNesting.Provider value={true}>
-                    <For each={blocks()}>
-                      {(block) => {
-                        if (block.type === "fold") return step(block.fold)
-                        if (block.type === "well") {
-                          return (
-                            <div data-work-shell-well="">
-                              <For each={block.rows}>{(member) => step(member)}</For>
-                            </div>
-                          )
-                        }
-                        const stageKey = () => workStageDisclosureKey(block.stage)
-                        const stageOpen = () => input.disclosure.value(stageKey()) ?? block.stage.last
-                        return (
-                          <div data-work-shell-stage="" data-open={stageOpen() ? "true" : "false"}>
-                            <button
-                              type="button"
-                              data-component="work-stage-head"
-                              data-open={stageOpen() ? "true" : "false"}
-                              data-outcome={block.stage.outcome}
-                              aria-expanded={stageOpen()}
-                              onClick={() => input.disclosure.set(stageKey(), !stageOpen())}
-                            >
-                              <span data-slot="work-stage-icon">
-                                <Show
-                                  when={block.stage.outcome === "running"}
-                                  fallback={
-                                    <Show
-                                      when={block.stage.outcome === "failed"}
-                                      fallback={<Icon name="circle-check" size="small" />}
-                                    >
-                                      <Icon name="outline-hexagonal-warning" size="small" />
-                                    </Show>
-                                  }
-                                >
-                                  <SessionProgressIndicatorV2 width={13} height={13} />
-                                </Show>
-                              </span>
-                              <span data-slot="work-stage-title">{block.stage.title}</span>
-                              <span data-slot="work-stage-steps">
-                                {i18n.plural("ui.workShell.steps", block.stage.stepCount)}
-                              </span>
-                              <span data-slot="work-stage-chevron">
-                                <Icon name="chevron-right" size="small" />
-                              </span>
-                            </button>
-                            <Show when={stageOpen() && block.rows.length > 0}>
-                              <div data-work-shell-well="">
-                                <For each={block.rows}>{(member) => step(member)}</For>
-                              </div>
-                            </Show>
-                          </div>
-                        )
-                      }}
-                    </For>
-                  </WorkShellCardNesting.Provider>
-                </div>
-              </div>
-            </div>
-          </Show>
-        </Frame>
-      )
-    }
+          <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
+            <WorkShellHead
+              status={status()}
+              startedAt={current().startedAt}
+              endedAt={current().endedAt}
+              toolCount={current().toolCount}
+              failedCount={current().failedCount}
+              hasReply={current().hasReply}
+              open={open()}
+              onToggle={() => {
+                const next = !open()
+                if (!next) {
+                  input.disclosure.set(key(), false)
 
-    // SiCode: "show the rest" for a long stage or a stage-heavy turn — one line that opens the
-    // keys the filter is currently hiding.
-    if (Predicate.isTagged(row(), "WorkFold")) {
-      const current = () => {
-        const value = row()
-        if (!Predicate.isTagged(value, "WorkFold")) throw new Error("Expected a work-fold timeline row")
-        return value
-      }
-      const key = () => workFoldDisclosureKey(current())
-      const open = () => input.disclosure.value(key()) === true
-      const label = () => {
-        const fold = current()
-        if (fold.kind === "stages") {
-          return i18n.t("ui.workShell.fold.stages", {
-            count: fold.stages ?? 0,
-            steps: fold.steps ?? 0,
-          })
-        }
-        return i18n.plural("ui.workShell.fold.steps", fold.steps ?? fold.keys.length)
-      }
-
-      return (
-        <Frame row={current()}>
-          <div data-slot="session-turn-message-container" class={`w-full ${gutter(current())}`}>
-            <button
-              type="button"
-              data-component="work-fold-head"
-              data-open={open() ? "true" : "false"}
-              aria-expanded={open()}
-              onClick={() => input.disclosure.set(key(), !open())}
-            >
-              <span data-slot="work-fold-label">{label()}</span>
-            </button>
-          </div>
-        </Frame>
-      )
-    }
-
-    // SiCode: a stage heading inside an open shell. The prose it replaces becomes the title, its
-    // steps fold away underneath, and the last stage of a turn opens by default so the freshest
-    // work is already visible when the shell opens.
-    if (Predicate.isTagged(row(), "WorkStage")) {
-      const current = () => {
-        const value = row()
-
-        if (!Predicate.isTagged(value, "WorkStage")) throw new Error("Expected a work-stage timeline row")
-
-        return value
-      }
-      const key = () => workStageDisclosureKey(current())
-      const open = () => input.disclosure.value(key()) ?? current().last
-      // Folded stages are the only thing left of their steps, so the heading carries the outcome.
-      const outcome = () => current().outcome
-
-      return (
-        <Frame row={current()}>
-          <div data-slot="session-turn-message-container" class={`w-full ${gutter(current())}`}>
-            <button
-              type="button"
-              data-component="work-stage-head"
-              data-open={open() ? "true" : "false"}
-              data-outcome={outcome()}
-              aria-expanded={open()}
-              onClick={() => input.disclosure.set(key(), !open())}
-            >
-              <span data-slot="work-stage-icon">
-                <Show
-                  when={outcome() === "running"}
-                  fallback={
-                    <Show
-                      when={outcome() === "failed"}
-                      fallback={<Icon name="circle-check" size="small" />}
-                    >
-                      <Icon name="outline-hexagonal-warning" size="small" />
-                    </Show>
-                  }
-                >
-                  <SessionProgressIndicatorV2 width={13} height={13} />
-                </Show>
-              </span>
-              <span data-slot="work-stage-title">{current().title}</span>
-              <span data-slot="work-stage-steps">{i18n.plural("ui.workShell.steps", current().stepCount)}</span>
-              <span data-slot="work-stage-chevron">
-                <Icon name="chevron-right" size="small" />
-              </span>
-            </button>
+                  return
+                }
+                // One overview bar at a time; the host may anchor the scroll while the others close.
+                if (input.disclosure.openWorkShell) input.disclosure.openWorkShell(current().userMessageID)
+                else {
+                  openWorkShellOnly(input.projection.rows(), input.disclosure, current().userMessageID)
+                  input.disclosure.set(key(), true)
+                }
+              }}
+            />
           </div>
         </Frame>
       )
@@ -1208,10 +943,7 @@ export function createSessionTimelineRowRenderer(input: {
 
       return (
         <Frame row={current()}>
-          <Shell
-            messageID={current().messageID}
-            inset={workShellMembers().has(TimelineRow.key(current()))}
-          />
+          <Shell messageID={current().messageID} />
         </Frame>
       )
     }
@@ -1288,7 +1020,7 @@ export function createSessionTimelineRowRenderer(input: {
 
       return (
         <Frame row={current()}>
-          <div data-slot="session-turn-message-container" class={`w-full ${gutter(current())}`}>
+          <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
             <div data-slot="session-turn-assistant-content" aria-hidden={workingTurn(current().userMessageID)}>
               {content}
             </div>
@@ -1315,7 +1047,7 @@ export function createSessionTimelineRowRenderer(input: {
 
       return (
         <Frame row={current()}>
-          <div data-slot="session-turn-message-container" class={`w-full ${gutter(current())}`}>
+          <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
             <div data-slot="session-turn-thinking-row">
               <Show when={content()}>
                 {(content) => (

@@ -717,8 +717,7 @@
     font-size: var(--process-shell-size, 12.5px);
     font-weight: var(--process-shell-weight, 440);
     line-height: var(--process-shell-leading, var(--line-height-compact));
-    /* SiCode: stage title reads as body text, not faint meta. */
-    color: var(--v2-text-text-base);
+    color: var(--v2-text-text-faint);
   }
 
   [data-slot="context-tool-group-usage"] {
@@ -755,7 +754,7 @@
     font-size: var(--process-shell-size, 12.5px);
     font-weight: var(--process-shell-weight, 440);
     line-height: var(--process-shell-leading, var(--line-height-compact));
-    color: var(--v2-text-text-base);
+    color: var(--v2-text-text-faint);
   }
 
   [data-slot="process-shell-meta"] {
@@ -820,24 +819,7 @@
   }
 }
 
-/* SiCode: flat process chain inside a work-shell well — stage heading owns the fold; drop the
-   nested "过程" bar and the second well so tools sit as demo rows. */
-[data-component="collapsed-tool-group"][data-process-shell-flat]
-  > [data-component="collapsible"].tool-collapsible
-  > [data-slot="collapsible-trigger"] {
-  display: none;
-}
-
-[data-component="collapsed-tool-group"][data-process-shell-flat] [data-component="context-tool-group-list"],
-[data-work-shell-well] [data-component="context-tool-group-list"] {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  border-radius: 0;
-}
-
-/* SiCode: preview scheme B stage head — transparent row, not a filled bar; well holds the tools. */
+/* Process head matches design demo: light bar, no sticky chrome, always-visible chevron. */
 [data-component="collapsed-tool-group"][data-process-shell] {
   --process-shell-size: 12.5px;
   --process-shell-weight: 440;
@@ -854,32 +836,35 @@
     > [data-slot="collapsible-trigger"] {
       position: static;
       height: auto;
-      min-height: auto;
-      /* Demo stage-head: 8/8/8/12 — icon column lines up with the well's 4+8 row pad. */
-      padding: 8px 8px 8px 12px;
+      min-height: 26px;
+      /* 5px left matches the work-shell 1px border + 4px pad so icons line up. */
+      padding: 3px 8px 3px 5px;
       border-radius: 6px;
-      background: transparent;
-      box-shadow: none;
-      transition: background-color 120ms ease;
+      /* The design's light bar: the row owns a fill whether or not the pointer is on it. Hover used to
+         be the only way to see it at all, so the header read as plain text until you found it. */
+      background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
+      box-shadow: inset 0 0 0 1px transparent;
+      transition:
+        background-color 120ms ease,
+        box-shadow 120ms ease;
     }
 
+    /* Hover lights the rim instead of the fill, so the bar does not blink from flat to filled. */
     > [data-slot="collapsible-trigger"]:hover {
-      background: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.04)) 40%, transparent);
-      box-shadow: none;
+      box-shadow: inset 0 0 0 1px var(--v2-border-border-strong, rgba(255, 255, 255, 0.2));
     }
 
     > [data-slot="collapsible-trigger"][aria-expanded="true"] {
       position: static;
       height: auto;
-      min-height: auto;
-      padding: 8px 8px 8px 12px;
-      background: transparent;
+      min-height: 26px;
+      padding: 3px 8px 3px 5px;
+      background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
       z-index: auto;
     }
 
     > [data-slot="collapsible-trigger"][aria-expanded="true"]:hover {
-      background: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.04)) 40%, transparent);
-      box-shadow: none;
+      box-shadow: inset 0 0 0 1px var(--v2-border-border-strong, rgba(255, 255, 255, 0.2));
     }
 
     /* Demo .process-head is width:100%: the head must span the row so the meta/chevron pin right.
@@ -900,9 +885,7 @@
       --sticky-accordion-top: 0px;
       --sticky-accordion-offset: 0px;
       overflow: visible;
-      /* SiCode: well owns its own pad; keep a thin outer gutter so the tray clears the head. */
-      padding-inline: 0;
-      padding-block: 0 2px;
+      padding-inline: 5px 8px;
     }
 
     > [data-slot="collapsible-trigger"] [data-slot="collapsible-arrow"] {
@@ -1001,20 +984,14 @@
      cards whose edge is the item's left edge, so it disappeared under a card and came back in the
      gutter below it. Rows align on the icon column now. */
   --chain-rail: color-mix(in srgb, var(--v2-text-text-faint, rgba(255, 255, 255, 0.45)) 75%, transparent);
-  /* Demo #ffffff0f hover wash inside the well. */
-  --chain-row-hover: color-mix(in srgb, white 6%, transparent);
+  --chain-row-hover: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.045)) 100%, transparent);
   position: relative;
-  /* SiCode: preview #222 well — recessed under the stage head (deeper than page base). */
-  padding: 4px;
-  margin-top: 2px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   overflow: visible;
   overflow-anchor: none;
-  background: color-mix(in srgb, var(--v2-background-bg-deep, #161616) 55%, var(--v2-background-bg-base, #242424));
-  border: 1px solid color-mix(in srgb, var(--v2-border-border-weak, rgba(255, 255, 255, 0.04)) 100%, transparent);
-  border-radius: var(--radius-lg, 8px);
 
   [data-slot="context-tool-group-item"] {
     position: relative;
@@ -1060,8 +1037,7 @@
     > [data-component="read-tool-group"] {
       min-height: var(--row-min);
       height: auto;
-      /* SiCode: demo row pad 8px equal — hover fill sits evenly on all sides. */
-      padding: 8px;
+      padding: 3px 6px 3px 0;
       border-radius: 6px;
       background: transparent;
     }

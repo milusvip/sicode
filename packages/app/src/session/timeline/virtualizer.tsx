@@ -39,9 +39,6 @@ import { filterVirtualIndexes } from "./virtual-items"
 
 const fallbackItemSize = 60
 
-/** Overview-bar height used as the sticky pin size — not the open composite card's measured height. */
-const workShellPinSize = 48
-
 const pendingMarkdown = '[data-component="markdown"]:not([data-markdown-ready])'
 
 // Distance from the bottom that counts as "at the end". Deliberately tight: a collapse clamps
@@ -149,17 +146,10 @@ export function createTimelineVirtualizer(input: Input) {
     return workShellDefaultOpen(status)
   }
 
-  const rows = createMemo(() => filterCollapsedWorkShellRows(input.projection.rows(), workShellOpen))
+  const rows = createMemo(() =>
+    filterCollapsedWorkShellRows(input.projection.rows(), workShellOpen),
+  )
   const rowByKey = input.projection.rowByKey
-
-  // Open work shells are one tall composite card — keep overflow visible so sticky/pin chrome is not clipped.
-  const workShellCardKeys = createMemo(() => {
-    const keys = new Set<string>()
-    for (const row of rows()) {
-      if (Predicate.isTagged(row, "WorkShell")) keys.add(TimelineRow.key(row))
-    }
-    return keys
-  })
 
   // Absolute VirtualRows break CSS sticky — the overview bar is re-rendered as a floating copy once
   // its own head scrolls under the top inset. Any turn qualifies, not just the live one: scrolling
@@ -843,9 +833,8 @@ export function createTimelineVirtualizer(input: Input) {
       // Rows are ordered, so nothing further down can contain the edge.
       if (edge < head.start) break
 
-      // Stick through the whole turn — packed card body and the reply under it — so the bar keeps
-      // saying which turn the reader is in. Pin height is the overview bar (~42), not the composite
-      // card: head.size is the full open card after packing, and using that never sticks.
+      // Stick through the whole turn — its tools and the reply under them — so the bar keeps saying
+      // which turn the reader is in.
       let end = head.end
       for (let next = index + 1; next < all.length; next++) {
         const member = all[next]!
@@ -855,7 +844,7 @@ export function createTimelineVirtualizer(input: Input) {
         if (item) end = item.end
       }
 
-      if (edge >= head.start && edge + workShellPinSize < end) stuck = row.userMessageID
+      if (edge >= head.start && edge + head.size < end) stuck = row.userMessageID
     }
 
     setStuckShellID(stuck)
@@ -910,12 +899,10 @@ export function createTimelineVirtualizer(input: Input) {
       })
 
       // Process chains draw rail stubs between tool rows; clip would shave them off.
-      // Open work-shell cards need visible overflow so sticky/pin chrome is not clipped.
       const current = row()
       const clip =
-        workShellCardKeys().has(rowProps.rowKey) ||
-        (Predicate.isTagged(current, "AssistantPart") &&
-          (current.group.type === "context" || current.group.type === "read" || current.group.type === "file"))
+        Predicate.isTagged(current, "AssistantPart") &&
+        (current.group.type === "context" || current.group.type === "read" || current.group.type === "file")
           ? "visible"
           : "clip"
 
@@ -1042,6 +1029,7 @@ export function createTimelineVirtualizer(input: Input) {
                     startedAt={shell().startedAt}
                     endedAt={shell().endedAt}
                     toolCount={shell().toolCount}
+                    failedCount={shell().failedCount}
                     hasReply={shell().hasReply}
                     open={open()}
                     onToggle={() => {

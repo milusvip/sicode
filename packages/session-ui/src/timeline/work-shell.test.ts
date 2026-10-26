@@ -5,8 +5,6 @@ import {
   formatElapsed,
   openWorkShellOnly,
   toolSpanElapsed,
-  workShellCardBlocks,
-  workShellCardMembers,
   workShellDefaultOpen,
   workShellSilent,
 } from "./work-shell"
@@ -229,84 +227,11 @@ test("filterCollapsedWorkShellRows keeps the head and drops members when closed"
     "WorkShell",
     "UserMessage",
   ])
-  // Open shells also withhold process members — the head row paints them inside one card.
   expect(filterCollapsedWorkShellRows(rows, () => true).map((row) => row._tag)).toEqual([
     "UserMessage",
-    "WorkShell",
-    "UserMessage",
-  ])
-})
-
-test("filterCollapsedWorkShellRows keeps the closing answer outside an open card", () => {
-  const rows = [
-    new TimelineRow.WorkShell({
-      userMessageID: "u1",
-      status: "done",
-      startedAt: 1,
-      endedAt: 2,
-      toolCount: 1,
-      failedCount: 0,
-      hasReply: true,
-    }),
-    new TimelineRow.AssistantPart({
-      userMessageID: "u1",
-      previousAssistantPart: false,
-      group: { type: "context", key: "context:a", refs: [{ messageID: "a", partID: "a" }] },
-    }),
-    new TimelineRow.AssistantPart({
-      userMessageID: "u1",
-      previousAssistantPart: true,
-      group: { type: "part", key: "part:a:text:0", ref: { messageID: "a", partID: "a:text:0" } },
-    }),
-    new TimelineRow.WorkShellEnd({ userMessageID: "u1" }),
-  ]
-
-  // Demo puts `.answer` after `.card`, open or closed.
-  expect(filterCollapsedWorkShellRows(rows, () => true).map((row) => row._tag)).toEqual([
     "WorkShell",
     "AssistantPart",
-  ])
-})
-
-test("workShellCardMembers packs tools into stages and leaves the answer out", () => {
-  const stage = new TimelineRow.WorkStage({
-    userMessageID: "u1",
-    stageKey: "stage:0",
-    title: "Look around",
-    stepCount: 1,
-    last: true,
-  })
-  const tool = new TimelineRow.AssistantPart({
-    userMessageID: "u1",
-    previousAssistantPart: false,
-    group: { type: "context", key: "context:a", refs: [{ messageID: "a", partID: "a" }] },
-  })
-  const answer = new TimelineRow.AssistantPart({
-    userMessageID: "u1",
-    previousAssistantPart: true,
-    group: { type: "part", key: "part:a:text:0", ref: { messageID: "a", partID: "a:text:0" } },
-  })
-  const rows = [
-    new TimelineRow.WorkShell({
-      userMessageID: "u1",
-      status: "done",
-      startedAt: 1,
-      endedAt: 2,
-      toolCount: 1,
-      failedCount: 0,
-      hasReply: true,
-    }),
-    stage,
-    tool,
-    new TimelineRow.WorkStageEnd({ userMessageID: "u1", stageKey: "stage:0" }),
-    answer,
-    new TimelineRow.WorkShellEnd({ userMessageID: "u1" }),
-  ]
-
-  const members = workShellCardMembers(rows, "u1")
-  expect(members.map((row) => row._tag)).toEqual(["WorkStage", "AssistantPart"])
-  expect(workShellCardBlocks(members)).toEqual([
-    { type: "stage", stage, rows: [tool] },
+    "UserMessage",
   ])
 })
 

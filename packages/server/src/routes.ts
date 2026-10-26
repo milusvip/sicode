@@ -18,10 +18,12 @@ import { Worktree } from "@opencode/core/worktree"
 import { Session } from "@opencode/core/session"
 import { Instance } from "@opencode/core/instance/service"
 import { SessionTransfer } from "@opencode/core/session/transfer"
+import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { ShellSelect } from "@opencode/core/shell/select"
 import { Job } from "@opencode/core/job"
 import { Mcp } from "@opencode/core/mcp/index"
 import { Global } from "@opencode/util/global"
+import { FSUtil } from "@opencode/util/fs-util"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { LocationActivity } from "@opencode/core/location-activity"
@@ -50,6 +52,7 @@ import type { ServerOptions } from "./options"
 
 const applicationServiceNodes = [
   Global.node,
+  FSUtil.node,
   Database.node,
   Bus.node,
   EventLogger.node,
@@ -61,6 +64,7 @@ const applicationServiceNodes = [
   Session.node,
   Instance.node,
   SessionTransfer.node,
+  InstructionEntry.node,
   SdkPlugins.node,
   PluginUpdate.node,
   PermissionSaved.node,

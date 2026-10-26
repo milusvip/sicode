@@ -8,7 +8,7 @@ import { Bus } from "./bus.js"
 
 /**
  * SiCode: how long a compaction blocks, and — once background precomputation is on — whether the
- * summary it wrote was actually used. Both answer the same question: is `precompute_compaction`
+ * summary it wrote was actually used. Both answer the same question: is `background_compaction`
  * worth the tokens it spends. Without a record nobody could decide that with numbers, so the
  * setting stayed off. `bun script/compaction-stats.ts` reads these lines back out of the log.
  *

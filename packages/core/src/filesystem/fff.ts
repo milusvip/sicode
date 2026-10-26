@@ -44,8 +44,7 @@ export interface MixedSearch {
 
 export interface Picker {
   destroy(): void
-  /** Resolves once the initial scan finishes; `value` is false when the wait timed out. */
-  waitForScan(timeoutMs?: number): Promise<Result<boolean>>
+  isScanning(): boolean
   fileSearch(query: string, options?: SearchOptions): Result<Search>
   directorySearch(query: string, options?: SearchOptions): Result<DirSearch>
   mixedSearch(query: string, options?: SearchOptions): Result<MixedSearch>
