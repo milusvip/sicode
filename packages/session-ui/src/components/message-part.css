@@ -1100,6 +1100,12 @@
       color: var(--v2-state-fg-danger, var(--icon-critical-base, #e5756a));
     }
 
+    /* SiCode: a completed in-chain tool wears the same success glyph as the process-shell head, so
+       an answered question or a finished read reads as "done" instead of a grey check. */
+    [data-component="tool-trigger"][data-status="completed"] [data-slot="basic-tool-tool-indicator"] {
+      color: var(--v2-state-fg-success, var(--icon-success-base, #8adfa6));
+    }
+
     [data-slot="basic-tool-tool-info-structured"] {
       flex: 1 1 auto;
       width: 100%;
@@ -1255,7 +1261,8 @@
       width: 10px;
       height: 10px;
       color: inherit;
-      transform: translateZ(0) rotate(-90deg);
+      /* SiCode: chevron-right rests pointing right; expanded rotates 90° below. */
+      transform: translateZ(0) rotate(0deg);
     }
 
     [data-slot="collapsible-trigger"]:hover [data-slot="collapsible-arrow"],
@@ -1266,13 +1273,24 @@
     }
 
     [data-slot="collapsible-trigger"][aria-expanded="true"] [data-slot="collapsible-arrow-icon"] {
-      transform: translateZ(0) rotate(0deg);
+      /* SiCode: expanded chevron-right points down, matching the work-shell head. */
+      transform: translateZ(0) rotate(90deg);
     }
 
     /* Expanded body sits under the rail column like demo .body-pad */
     > [data-component="tool-part-wrapper"] > [data-component="collapsible"] > [data-slot="collapsible-content"],
     > [data-component="collapsible"] > [data-slot="collapsible-content"] {
       padding: 4px 0 10px 19px;
+    }
+
+    /* SiCode: a bordered card (shell console output) must share the trigger bar's inline edges.
+       The 19px left-only indent above made the card 19px narrower on the left while the right
+       edges stayed flush — measured trigger 819px vs card 800px, which reads as crooked. Pull the
+       card back out (width:auto so the negative margin stretches it); its own 12px padding keeps
+       the command text off the shell edge. */
+    > * [data-component="bash-output"] {
+      width: auto;
+      margin-inline-start: -19px;
     }
 
     /* Reasoning masks the chain rail; only the fading accent shows (demo .reason-text). */
@@ -1728,25 +1746,27 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    font-size: var(--font-size-small);
+    font-size: var(--process-shell-size, 12.5px);
 
     [data-slot="question-text"] {
-      font-size: 12.5px;
-      line-height: var(--line-height-compact);
-      letter-spacing: -0.04px;
+      font-size: var(--process-shell-size, 12.5px);
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
       color: var(--v2-text-text-muted);
       overflow-wrap: anywhere;
     }
 
-    /* The answer is the outcome, so it hangs off a rail instead of reading as a second paragraph. */
+    /* The answer is the outcome, so it hangs off a rail instead of reading as a second paragraph.
+       The success rail matches the process-shell's completed glyph so an answered question reads
+       as "done" rather than as a second grey line. */
     [data-slot="answer-text"] {
       padding-inline-start: 10px;
-      border-inline-start: 2px solid var(--v2-border-border-strong, var(--v2-border-border-base));
+      border-inline-start: 2px solid var(--v2-state-fg-success, var(--icon-success-base, #8adfa6));
       border-radius: 2px;
-      font-size: var(--font-size-small);
+      font-size: var(--process-shell-size, 12.5px);
       font-weight: var(--font-weight-regular);
-      line-height: var(--line-height-compact);
-      letter-spacing: -0.04px;
+      line-height: var(--process-shell-leading, var(--line-height-compact));
+      letter-spacing: var(--process-shell-tracking, -0.04px);
       color: var(--v2-text-text-base);
       overflow-wrap: anywhere;
     }
@@ -1868,8 +1888,11 @@
   }
 
   [data-slot="apply-patch-file-info"] [data-component="file-icon"] {
-    width: 16px;
-    height: 16px;
+    /* SiCode: same 19px indicator column everywhere, so the file icon lines up whether the row sits
+       in the process chain or the end-of-turn list (was 16px — a 3px drift off the chain's icon axis).
+       The 13px height matches the in-chain glyph so both placements share one vertical rhythm. */
+    width: var(--ind-col, 19px);
+    height: 13px;
   }
 
   [data-slot="apply-patch-file-name-container"] {
@@ -2152,13 +2175,15 @@
     justify-content: center;
     color: var(--icon-weaker);
     opacity: 0;
-    transform: rotate(-90deg);
+    /* SiCode: chevron-right rests pointing right (collapsed) and rotates 90° to point down when
+       expanded, matching the work-shell / process-shell heads. */
+    transform: none;
     transition:
       opacity 0.15s ease,
       transform 0.15s ease;
 
     &:dir(rtl) {
-      transform: rotate(90deg);
+      transform: rotate(180deg);
     }
 
     @media (hover: none) {
@@ -2191,7 +2216,8 @@
 
     [data-slot="read-tool-group-arrow"] {
       opacity: 1;
-      transform: none;
+      /* SiCode: expanded → chevron-right points down, same as the open work-shell head. */
+      transform: rotate(90deg);
     }
   }
 }

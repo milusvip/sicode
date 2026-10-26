@@ -1043,7 +1043,9 @@ export function CurrentReadToolGroup(props: {
         </div>
         <Show when={expandable()}>
           <span data-slot="read-tool-group-arrow" aria-hidden="true">
-            <Icon name="fill-triangle-down" size="small" />
+            {/* SiCode: chevron-right matches the work-shell / process-shell heads, so every
+                expand affordance in the transcript points the same way. */}
+            <Icon name="chevron-right" size="small" />
           </span>
         </Show>
       </div>

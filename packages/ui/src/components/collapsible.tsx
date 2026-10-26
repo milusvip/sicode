@@ -36,7 +36,9 @@ function CollapsibleArrow(props?: ComponentProps<"div">) {
   return (
     <div data-slot="collapsible-arrow" {...(props || {})}>
       <span data-slot="collapsible-arrow-icon">
-        <Icon name="fill-triangle-down" size="small" />
+        {/* SiCode: chevron-right matches the work-shell / process-shell heads, so every expand
+            affordance across the transcript points and rotates the same way. */}
+        <Icon name="chevron-right" size="small" />
       </span>
     </div>
   )

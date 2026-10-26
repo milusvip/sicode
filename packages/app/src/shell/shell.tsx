@@ -11,6 +11,7 @@ import { useSettingsSurface } from "@/settings/surface"
 import { useSettings } from "@/settings/model"
 import { ExtensionServerCover } from "@/runtime/extension/server-shell"
 import { ExtensionSlot } from "@/runtime/extension/render"
+import { ToolRail } from "@/shell/tool-rail"
 
 export default function Layout(props: ParentProps) {
   const platform = usePlatform()
@@ -66,6 +67,10 @@ export default function Layout(props: ParentProps) {
                 onResize={(width) => setState("tabsWidth", width)}
               />
             </aside>
+          </Show>
+          {/* SiCode: 顶部标签（horizontal）时显示左侧工具栏；vertical 时让位给标签侧栏，二者互斥。 */}
+          <Show when={!verticalTabs() && !mobile()}>
+            <ToolRail />
           </Show>
           {/* Size containment collapses percentage-height descendants in WebKit. */}
           <main

@@ -154,7 +154,8 @@
     }
 
     &:dir(rtl):not([aria-expanded="true"]) [data-slot="collapsible-arrow-icon"] {
-      transform: rotate(90deg);
+      /* SiCode: chevron-right mirrors to point left in RTL (was 90° for the triangle glyph). */
+      transform: rotate(180deg);
     }
   }
 

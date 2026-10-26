@@ -34,7 +34,9 @@
     [data-slot="collapsible-arrow-icon"] {
       display: inline-flex;
       color: var(--icon-weaker);
-      transform: translateZ(0) rotate(-90deg);
+      /* SiCode: chevron-right rests pointing right when collapsed (was fill-triangle-down rotated
+         -90°); expanded rotates 90° to point down, matching the work-shell head. */
+      transform: translateZ(0) rotate(0deg);
       transition: transform 0.15s ease;
       will-change: transform;
     }
@@ -83,7 +85,8 @@
     }
 
     [data-slot="collapsible-arrow-icon"] {
-      transform: translateZ(0) rotate(0deg);
+      /* SiCode: expanded chevron-right points down, same as the open work-shell head. */
+      transform: translateZ(0) rotate(90deg);
     }
   }
 
