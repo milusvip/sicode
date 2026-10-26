@@ -17,6 +17,9 @@ import { PluginHooks } from "../plugin/hooks.js"
 import { Skill } from "../skill.js"
 import { AttachmentError, SkillNotFoundError } from "./error.js"
 
+// Image types the resizer can decode; others such as HEIC and AVIF go to the provider unchanged.
+const RESIZABLE_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"])
+
 export type Input = {
   text: string
   files?: PromptInput.Prompt["files"]
@@ -135,7 +138,7 @@ const normalizeImageAttachment = Effect.fn("SessionPrompt.normalizeImageAttachme
   data: string,
   mime: string,
 ) {
-  if (!mime.startsWith("image/")) return { data: Base64.make(data), mime }
+  if (!RESIZABLE_IMAGE_MIMES.has(mime)) return { data: Base64.make(data), mime }
   const image = yield* Image.Service
   const label = attachmentLabel(input)
   const content = { uri: label, content: data, encoding: "base64" as const, mime }
