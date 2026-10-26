@@ -192,13 +192,16 @@ List the files and directories, other than the current working directory, that a
 - [facts the next agent cannot continue without and cannot easily find on its own; or "(none)"]
 </template>`
 
+// SiCode: a resumed agent reads the summary as fact, so a goal listed under Completed stops being
+// checked. Requiring the artifact path (or an explicit "not on disk") keeps the checkpoint
+// falsifiable: the next agent can verify a claim instead of inheriting it.
 const SUMMARY_RULES = `Rules:
 - Keep each section concise. Use terse, single-line bullets, not prose paragraphs or nested lists.
 - Prefer short references over detailed restatement. It is fine to leave out information the next agent can recover from the code or the files listed above.
 - Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers.
 - Carry forward only user questions or requests that remain unanswered or require further action. Do not repeat ones that newer history has answered or resolved. Preserve exact wording when carrying one forward.
 - Preserve consequential workflow state, including whether changes are uncommitted, committed, pushed, under review, or merged.
-- In Work State, a completed goal names the paths it produced, or is marked "not on disk". Complete means the artifact exists, not that it was planned, described, or assumed finished.
+- In Work State, every completed goal must name the paths it produced, or be marked "not on disk". A goal is complete when the artifact exists, not when it was planned, described, or assumed done.
 - Do not mention the summary process or that context was compacted.`
 
 export const buildPrompt = (update: boolean, legacy = false) => {
@@ -1141,8 +1144,7 @@ const calculateCeiling = (limit: SessionContext.Loaded["model"]["limit"], buffer
   // all, only a provider rejection can limit the request.
   const window = limit.input || limit.context
   if (window <= 0) return Number.POSITIVE_INFINITY
-  // A buffer that leaves no room, such as one set for a larger model, is ignored.
-  if (buffer !== undefined && buffer < window) return window - buffer
+  if (buffer !== undefined) return window - buffer
   return window - Math.max(Math.floor(window * RESERVE_SHARE), window >= 2 * RESERVE_MIN ? RESERVE_MIN : 0)
 }
 

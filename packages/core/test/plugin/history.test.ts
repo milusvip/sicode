@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { SessionMessage } from "@opencode/schema/session-message"
-import { archiveOf, clip, HistoryTool } from "@opencode/core/tool/plugin/history.js"
+import { archiveOf, clip, HistoryTool } from "@opencode/core/tool/plugin/history"
 
 const user = (text: string) => ({ type: "user", text }) as unknown as SessionMessage.Info
 const assistant = (text: string) => ({ type: "assistant", content: [{ type: "text", text }] }) as unknown as SessionMessage.Info

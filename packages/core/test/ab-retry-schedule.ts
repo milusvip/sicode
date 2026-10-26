@@ -2,7 +2,7 @@
  * 用真实 ModelRetry.policy 跑：一个 Transport/read/Timeout 错误，最多重试几次、间隔多久。
  * 不 sleep，直接读 policy 给出的 attempt / delay。
  */
-import { AIError, TransportError, isRetryable } from "@opencode/ai"
+import { AIError, TransportError, isRetryable } from "@opencode/ai/effect"
 import { Effect } from "effect"
 import { ModelRetry } from "../src/model-retry.js"
 
