@@ -1878,6 +1878,39 @@
   background: transparent;
 }
 
+/* SiCode: a file row inside the process chain is a chain row, not a card. The card rules pull the
+   item out by -5px/-8px and re-add that as trigger padding so its chrome reaches the end-of-turn
+   file list's edges; in the chain that pull overshoots the shell's rounded border (measured: card
+   145..958 against shell 144..956 and chain rows 150..951), which pinned the diff stat and the
+   chevron onto the border. Keep the item on the chain's content box, flat, with no compensating
+   padding, so the file icon shares the icon column of the shell and reasoning rows. */
+[data-component="collapsed-tool-group"][data-process-shell] {
+  [data-slot="context-tool-group-item"] [data-component="apply-patch-tool"] [data-slot="accordion-item"],
+  [data-slot="context-tool-group-item"] [data-component="edit-tool"] [data-slot="accordion-item"],
+  [data-slot="context-tool-group-item"] [data-component="write-tool"] [data-slot="accordion-item"] {
+    width: auto;
+    margin-inline: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  [data-slot="context-tool-group-item"]
+    [data-component="apply-patch-tool"]
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"],
+  [data-slot="context-tool-group-item"]
+    [data-component="edit-tool"]
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"],
+  [data-slot="context-tool-group-item"]
+    [data-component="write-tool"]
+    [data-slot="accordion-header"]
+    [data-slot="accordion-trigger"] {
+    padding-inline: 0;
+  }
+}
+
 /* Process-shell folds stay in document flow: content grows under the clicked row, never pins to the timeline top. */
 [data-component="collapsed-tool-group"][data-process-shell] {
   [data-slot="collapsible-trigger"][aria-expanded="true"],
