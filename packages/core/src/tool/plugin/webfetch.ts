@@ -15,7 +15,11 @@ export const MAX_RESPONSE_BYTES = MAX_MARKDOWN_BYTES
 export const DEFAULT_TIMEOUT_SECONDS = 30
 export const MAX_TIMEOUT_SECONDS = 120
 
+// SiCode: timing guidance added — fetch when the answer lives at a known address, complementing
+// websearch's trigger list ("search to find it, fetch to read it").
 export const description = `Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.
+
+Reach for this when the answer lives at a known address: official docs for an API you are coding against, a changelog or migration guide, a package README, or a page returned by websearch. Reading the real page beats writing from memory.
 
 Use a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.`
 

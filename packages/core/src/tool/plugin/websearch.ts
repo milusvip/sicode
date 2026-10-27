@@ -17,9 +17,17 @@ const httpErrors = new Map([
   [401, "Web search authentication failed (HTTP 401)"],
 ])
 
-export const description = `Search the web using the user's selected search integration. Use this for current information beyond knowledge cutoff.
+// SiCode: trigger scenarios in the description so "when to search" is read at every tool listing,
+// pairing with the "Check before you commit" prompt section rather than relying on it alone.
+export const description = `Search the web using the user's selected search integration.
 
-The current year is ${new Date().getFullYear()}. Use this year when searching for recent information or current events.`
+Search when any of these hold — do not guess:
+- A version, price, release note, or current behavior you have not verified this session.
+- An error you do not recognize, or one that has resisted two fix attempts.
+- A library or API you are not certain about — then fetch the official docs from the results.
+- A fact from memory that the task's outcome depends on.
+
+If you already know the doc URL, prefer webfetch over searching. Skip searching for stable knowledge you can derive yourself. The current year is ${new Date().getFullYear()}; use it when searching for recent information or current events.`
 
 export const Input = Schema.Struct({
   query: Schema.String.annotate({ description: "Websearch query" }),
