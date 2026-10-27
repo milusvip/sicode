@@ -64,6 +64,25 @@ describe("validateCustomProvider", () => {
     expect(result.result?.providerID).toBe("custom-provider")
   })
 
+  test("falls back to the model id when the display name is empty", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "custom-provider",
+        name: "Provider",
+        baseURL: "https://api.example.com",
+        apiKey: "",
+        models: [{ row: "m0", id: "model-a", name: "", err: {} }],
+        headers: [{ row: "h0", key: "", value: "", err: {} }],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+
+    expect(result.result?.config.models).toEqual({ "model-a": { name: "model-a" } })
+  })
+
   test("flags duplicate rows and allows reconnecting disabled providers", () => {
     const result = validateCustomProvider({
       form: {

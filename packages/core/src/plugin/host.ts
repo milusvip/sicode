@@ -10,6 +10,7 @@ import { Effect, Schema, Stream } from "effect"
 import { Agent } from "../agent.js"
 import { AISDK } from "../aisdk.js"
 import { Command } from "../command.js"
+import { probeModels } from "../provider-probe.js"
 import { Credential } from "../credential.js"
 import { Bus } from "../bus.js"
 import { Integration } from "../integration.js"
@@ -198,6 +199,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
                 : response(Effect.succeed(provider)),
             ),
           ),
+      models: (input) => Effect.map(probeModels(input), (models) => ({ models })),
       reload: providers.reload,
       transform: (callback) =>
         providers.transform((editor) => {

@@ -114,13 +114,15 @@ export function validateCustomProvider(input: ValidateArgs) {
             return undefined
           })()
 
-    const nameError = !m.name.trim() ? input.t("provider.custom.error.required") : undefined
-
-    return { id: idError, name: nameError }
+    // The display name is optional: an endpoint's model ids are usually legible enough, and a
+    // fetched list should not force a second field per row. Empty falls back to the id.
+    return { id: idError, name: undefined }
   })
 
-  const modelsValid = models.every((m) => !m.id && !m.name)
-  const modelConfig = Object.fromEntries(input.form.models.map((m) => [m.id.trim(), { name: m.name.trim() }]))
+  const modelsValid = models.every((m) => !m.id)
+  const modelConfig = Object.fromEntries(
+    input.form.models.map((m) => [m.id.trim(), { name: m.name.trim() || m.id.trim() }]),
+  )
 
   const seenHeaders = new Set<string>()
 

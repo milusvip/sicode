@@ -1462,9 +1462,20 @@ export type ProviderGetInput = {
 export type ProviderGetOutput = { readonly location: Location.PublicRef; readonly data: Provider.Info }
 export type ProviderGetOperation<E = never> = (input: ProviderGetInput) => Effect.Effect<ProviderGetOutput, E>
 
+export type ProviderModelsInput = {
+  readonly baseURL: string
+  readonly apiKey?: string | undefined
+  readonly headers?: { readonly [x: string]: string } | undefined
+}
+export type ProviderModelsOutput = {
+  readonly models: ReadonlyArray<{ readonly id: string; readonly name?: string | undefined }>
+}
+export type ProviderModelsOperation<E = never> = (input: ProviderModelsInput) => Effect.Effect<ProviderModelsOutput, E>
+
 export interface ProviderApi<E = never> {
   readonly list: ProviderListOperation<E>
   readonly get: ProviderGetOperation<E>
+  readonly models: ProviderModelsOperation<E>
 }
 
 export type IntegrationListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }

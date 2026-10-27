@@ -2,7 +2,7 @@ import { Provider } from "@opencode/schema/provider"
 import { Location } from "@opencode/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { ProviderNotFoundError, ServiceUnavailableError } from "../errors.js"
+import { InvalidRequestError, ProviderNotFoundError, ServiceUnavailableError } from "../errors.js"
 import { LocationQuery, locationQueryOpenApi } from "./location.js"
 
 export const ProviderGroup = HttpApiGroup.make("server.provider")
@@ -36,6 +36,33 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
           description: "Retrieve a single AI provider so clients can inspect its availability and endpoint settings.",
         }),
       ),
+  )
+  .add(
+    // SiCode: ask the endpoint the user configured what it serves, instead of making them type model
+    // ids from memory. Nothing here reads the Location, so it answers before a project is open.
+    HttpApiEndpoint.post("provider.models", "/api/provider/models", {
+      payload: Schema.Struct({
+        baseURL: Schema.String,
+        apiKey: Schema.optional(Schema.String),
+        headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+      }),
+      success: Schema.Struct({
+        models: Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            name: Schema.optional(Schema.String),
+          }),
+        ),
+      }).annotate({ identifier: "ProviderModelProbe" }),
+      error: [InvalidRequestError, ServiceUnavailableError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "provider.models",
+        summary: "List a provider's models",
+        description:
+          "Query an OpenAI-compatible endpoint's model list with the credentials being configured, so a custom provider can offer its models for selection.",
+      }),
+    ),
   )
   .annotateMerge(
     OpenApi.annotations({

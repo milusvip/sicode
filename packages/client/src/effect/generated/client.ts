@@ -122,6 +122,8 @@ import type {
   ProviderListOutput,
   ProviderGetInput,
   ProviderGetOutput,
+  ProviderModelsInput,
+  ProviderModelsOutput,
   IntegrationListInput,
   IntegrationListOutput,
   IntegrationGetInput,
@@ -915,9 +917,17 @@ const EndpointProviderGet = (raw: RawClient["server.provider"]) => (input: Provi
     ),
   )
 
+const EndpointProviderModels = (raw: RawClient["server.provider"]) => (input: ProviderModelsInput) =>
+  preserveEffect<ProviderModelsOutput>()(
+    raw["provider.models"]({
+      payload: { baseURL: input["baseURL"], apiKey: input["apiKey"], headers: input["headers"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
 const adaptGroupProvider = (raw: RawClient["server.provider"]) => ({
   list: EndpointProviderList(raw),
   get: EndpointProviderGet(raw),
+  models: EndpointProviderModels(raw),
 })
 
 const EndpointIntegrationList = (raw: RawClient["server.integration"]) => (input?: IntegrationListInput) =>

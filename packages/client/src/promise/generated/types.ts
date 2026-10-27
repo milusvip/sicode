@@ -188,6 +188,8 @@ export type VoiceWebSocketTransport = { type: "websocket"; url: string; token: s
 
 export type IntegrationID = string
 
+export type ProviderModelProbe = { models: Array<{ id: string; name?: string | undefined }> }
+
 export type IntegrationMethodID = string
 
 export type IntegrationEnvMethod = { type: "env"; names: Array<string> }
@@ -5050,6 +5052,26 @@ export type ProviderGetInput = {
 }
 
 export type ProviderGetOutput = { location: LocationPublicRef; data: ProviderInfo }
+
+export type ProviderModelsInput = {
+  readonly baseURL: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+  }["baseURL"]
+  readonly apiKey?: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+  }["apiKey"]
+  readonly headers?: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+  }["headers"]
+}
+
+export type ProviderModelsOutput = ProviderModelProbe
 
 export type IntegrationListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]

@@ -1,5 +1,6 @@
 import { Provider } from "@opencode/core/provider"
-import { ProviderNotFoundError } from "@opencode/protocol/errors"
+import { probeModels } from "@opencode/core/provider-probe"
+import { InvalidRequestError, ProviderNotFoundError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
@@ -26,6 +27,21 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
               message: `Provider not found: ${ctx.params.providerID}`,
             })
           return yield* response(Effect.succeed(provider))
+        }),
+      )
+      .handle(
+        "provider.models",
+        Effect.fn("server.provider.models")(function* (ctx) {
+          const models = yield* probeModels({
+            baseURL: ctx.payload.baseURL,
+            apiKey: ctx.payload.apiKey,
+            headers: ctx.payload.headers ? { ...ctx.payload.headers } : undefined,
+          }).pipe(
+            Effect.mapError(
+              (error) => new InvalidRequestError({ message: error.message }),
+            ),
+          )
+          return { models }
         }),
       )
   }),
