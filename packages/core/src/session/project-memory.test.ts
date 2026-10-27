@@ -203,3 +203,61 @@ test("the recall tool's output names each fact, its paths, and a stale warning",
   expect(toModelContent([], 0)).toBe("This project has no memory yet. Search the code as usual.")
   expect(toModelContent([], 4)).toContain("4 facts are kept")
 })
+
+test("SiCode: a query typed without spaces reaches a fact written with them", () => {
+  const facts = [
+    { kind: "context" as const, text: "长 diff 底部需要收起栏，溢出测量要等折叠动画结束", paths: [], misses: 0, seen: 2 },
+    { kind: "context" as const, text: "编辑卡在过程容器里应压成链条行，不要卡片形态", paths: [], misses: 0, seen: 1 },
+    { kind: "decision" as const, text: "设置页内容列自己管宽度，不再整体居中", paths: [], misses: 0, seen: 3 },
+  ]
+
+  // Chinese has no word boundaries, so the query is one token. The exact pass asks whether the fact
+  // holds that whole run and finds nothing, because the stored text spells the words apart.
+  expect(search(facts, "长diff底部").map((fact) => fact.text)).toEqual([
+    "长 diff 底部需要收起栏，溢出测量要等折叠动画结束",
+  ])
+  // Reordered wording lands on the same fact: matching pairs instead of the whole string is the
+  // whole point of the fallback.
+  expect(search(facts, "收起栏在底部")).toHaveLength(1)
+  // A CJK query sharing nothing returns nothing, rather than whichever fact looked closest.
+  expect(search(facts, "量子纠缠拓扑绝缘体")).toEqual([])
+  // Latin-only queries never reach the fallback: `panl` would otherwise ride `pa`/`an` into
+  // `panel` and rank a typo above a real hit.
+  expect(search(facts, "panl")).toEqual([])
+})
+
+test("SiCode: a verbatim hit stops the fallback, and a checked fact outranks its stale twin", () => {
+  // Both facts cover the query, but only one contains it exactly. The fallback must not run once
+  // the exact pass has an answer, or the fuzzy neighbour would join a result that is already right.
+  expect(
+    search(
+      [
+        { kind: "context" as const, text: "长 diff 底部需要收起栏", paths: [], misses: 0, seen: 1 },
+        { kind: "context" as const, text: "长diff底部", paths: [], misses: 0, seen: 2 },
+      ],
+      "长diff底部",
+    ).map((fact) => fact.text),
+  ).toEqual(["长diff底部"])
+
+  // Paths are part of the haystack: the query names the area in Chinese and the file in Latin.
+  const projection = [
+    {
+      kind: "file" as const,
+      text: "时间线投影逻辑",
+      paths: ["session-ui/src/timeline/projection.ts"],
+      misses: 1,
+      seen: 9,
+    },
+    {
+      kind: "file" as const,
+      text: "时间线投影逻辑",
+      paths: ["session-ui/src/timeline/projection.ts"],
+      misses: 0,
+      seen: 1,
+    },
+  ]
+
+  expect(search(projection, "投影projection")).toHaveLength(2)
+  // Equal coverage, so the fact whose paths still resolve leads despite being older.
+  expect(search(projection, "投影projection")[0]?.misses).toBe(0)
+})
