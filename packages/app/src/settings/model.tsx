@@ -295,7 +295,9 @@ export const defaultSettings: Settings = {
     showFileTree: false,
     timelineDetail: { ...timelinePresets[2].value },
     showCustomAgents: false,
-    showTurnDiffs: false,
+    // SiCode: on by default — a finished turn has to leave its files behind, or the only trace of
+    // what the assistant produced is a row inside the collapsed process fold.
+    showTurnDiffs: true,
     mobileTitlebarPosition: "top",
     terminalPlacement: "side",
     followUpBehavior: "steer",

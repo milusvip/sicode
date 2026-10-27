@@ -773,7 +773,12 @@ export function createSessionTimelineRowRenderer(input: {
     const render = ToolRegistry.render("patch") ?? GenericTool
     // Until the diff loads, list the paths the turn's steps recorded, without change counts.
     const turn = () => ({ sessionID: input.sessionID(), from: props.row.from })
-    const diffs = () => data.turnDiff?.get(turn())
+    // The git route wins once it answers; a turn no snapshot could cover keeps the file tools' report.
+    const diffs = () => {
+      const loaded = data.turnDiff?.get(turn())
+
+      return loaded?.length ? loaded : props.row.diffs
+    }
     const paths = () => diffs()?.map((diff) => diff.file) ?? props.row.files
     const showAllKey = () => `turn-diff:${props.row.messageID}`
     const showAll = () => input.disclosure.value(showAllKey()) === true
@@ -784,7 +789,7 @@ export function createSessionTimelineRowRenderer(input: {
     createEffect(() => data.turnDiff?.load(turn()))
 
     return (
-      <Show when={data.turnDiff && paths().length > 0}>
+      <Show when={paths().length > 0}>
         <div data-slot="session-turn-diffs" class="flex flex-col gap-2 pt-4">
           <div class="flex h-6 min-w-0 items-center gap-2">
             <span class="text-14-medium text-text-strong tabular-nums">

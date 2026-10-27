@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Predicate } from "effect"
+import { createTwoFilesPatch } from "diff"
 import type { SessionMessageAssistant, SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/client/promise"
 import { storyDocument, storyTool } from "../storybook/current-session-scenarios"
 import { timelinePresets } from "./detail"
@@ -1739,5 +1740,74 @@ describe("current session timeline rows", () => {
         Predicate.isTagged(row, "TurnDiff"),
       ),
     ).toBe(false)
+  })
+
+  test("lists a turn's files from the file tools when no snapshot covers them", () => {
+    // No git worktree means no snapshot, so the paths and diffs come from the tools themselves:
+    // `edit` reports them, `write` only keeps the permission preview, so its diff comes from input.
+    const patch = "--- a.md\n+++ b.md\n+a\n+b\n"
+    const source = [
+      { id: "msg_u", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_a",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          {
+            type: "tool",
+            id: "tool_write",
+            name: "write",
+            state: {
+              status: "completed",
+              input: { path: "notes/plan.md", content: "a\nb\n" },
+              content: [{ type: "text", text: "ok" }],
+              metadata: {},
+            },
+            time: { created: 2, ran: 3, completed: 4 },
+          },
+          {
+            type: "tool",
+            id: "tool_edit",
+            name: "edit",
+            state: {
+              status: "completed",
+              input: { path: "README.md" },
+              content: [{ type: "text", text: "ok" }],
+              metadata: { files: [{ file: "README.md", patch, additions: 2, deletions: 0, status: "modified" }] },
+            },
+            time: { created: 5, ran: 6, completed: 7 },
+          },
+        ],
+        time: { created: 2, completed: 8 },
+      },
+      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 9 } },
+    ] satisfies SessionMessageInfo[]
+
+    const rows = createTimelineProjection({
+      sessionMessages: source,
+      status: { type: "idle" },
+      reasoningMode: "compact",
+      turnDiffs: true,
+    }).rows
+
+    expect(rows.filter((row) => Predicate.isTagged(row, "TurnDiff"))).toEqual([
+      new TimelineRow.TurnDiff({
+        userMessageID: "msg_u",
+        messageID: "msg_idle",
+        from: "msg_u",
+        files: ["README.md", "notes/plan.md"],
+        diffs: [
+          { file: "README.md", patch, additions: 2, deletions: 0, status: "modified" },
+          {
+            file: "notes/plan.md",
+            patch: createTwoFilesPatch("notes/plan.md", "notes/plan.md", "", "a\nb\n"),
+            additions: 2,
+            deletions: 0,
+            status: "added",
+          },
+        ],
+      }),
+    ])
   })
 })

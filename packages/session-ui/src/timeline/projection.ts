@@ -1,4 +1,5 @@
 import type {
+  FileDiffInfo,
   ModelRef,
   SessionMessageAssistant,
   SessionMessageIdle,
@@ -8,13 +9,17 @@ import type {
   SessionStatus,
 } from "@opencode/client/promise"
 import { Effect, Option, Predicate, Schema } from "effect"
+import { createTwoFilesPatch } from "diff"
 import { createMemo, mapArray, type Accessor } from "solid-js"
 import {
   currentContentDefaultOpen,
   currentToolFailed,
   currentToolGroupedRead,
   currentToolHasLoadedFiles,
+  currentToolInput,
+  currentToolMetadata,
 } from "../message/current-tool-state"
+import { changedFileDiff } from "../components/apply-patch-file"
 import { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap } from "./timeline-row"
 import { timelineCategory, timelineNoticeRequired, type TimelineDetail } from "./detail"
 
@@ -43,7 +48,7 @@ type Entry =
   | { type: "assistant"; message: SessionMessageAssistant }
   | { type: "notice"; message: Notice }
   | { type: "idle"; message: FailedIdle }
-  | { type: "diff"; message: SessionMessageIdle; from: string; files: string[] }
+  | { type: "diff"; message: SessionMessageIdle; from: string; files: string[]; diffs?: readonly FileDiffInfo[] }
 
 type Content = SessionMessageAssistant["content"][number]
 
@@ -80,6 +85,40 @@ const decodeErrorEnvelope = Schema.decodeUnknownOption(
 const decodeErrorDetails = Schema.decodeUnknownOption(
   Schema.Struct({ type: lenient(Schema.String), message: lenient(Schema.String), code: lenient(Schema.String) }),
 )
+
+/**
+ * SiCode: the snapshot-backed file list is git-only (`Snapshot.enabled` checks `vcs.type`), so a
+ * session in a plain directory changed files and left nothing at the end of its turn. `edit` and
+ * `patch` report their own `metadata.files`; `write` keeps only the permission preview there, so its
+ * diff comes from the input it was called with. The result is what stands in for a missing snapshot.
+ */
+function toolFileChanges(message: SessionMessageAssistant): FileDiffInfo[] {
+  return message.content.flatMap((content) => {
+    if (content.type !== "tool") return []
+    if (content.name !== "write" && content.name !== "edit" && content.name !== "patch") return []
+    if (content.state.status === "error" || content.state.status === "streaming") return []
+
+    const files = currentToolMetadata(content).files
+    const reported = Array.isArray(files) ? files.filter(changedFileDiff) : []
+    if (reported.length > 0 || content.name !== "write") return reported
+
+    const input = currentToolInput(content)
+    const path = typeof input.path === "string" ? input.path : undefined
+    const text = typeof input.content === "string" ? input.content : undefined
+    if (!path || !text) return []
+
+    return [
+      {
+        file: path,
+        patch: createTwoFilesPatch(path, path, "", text),
+        // Counted the way the write card counts it, so the row agrees with the tool it names.
+        additions: text.split("\n").length - Number(text.endsWith("\n")),
+        deletions: 0,
+        status: "added" as const,
+      },
+    ]
+  })
+}
 
 export type TimelineProjectionInput = {
   sessionMessages: SessionMessageInfo[]
@@ -281,7 +320,7 @@ export namespace Timeline {
     const leading: Notice[] = []
     let current: Turn | undefined
     // Everything since the last idle marker is one turn, including prompts steered in meanwhile.
-    let execution: { opener: string; turn: Turn; files: Set<string> } | undefined
+    let execution: { opener: string; turn: Turn; files: Set<string>; diffs: Map<string, FileDiffInfo> } | undefined
 
     messages.forEach((message) => {
       if (isNotice(message)) {
@@ -311,7 +350,13 @@ export namespace Timeline {
         current = turn
 
         // Undelivered input has not joined the turn yet.
-        if (!pending) execution = { opener: execution?.opener ?? message.id, turn, files: execution?.files ?? new Set() }
+        if (!pending)
+          execution = {
+            opener: execution?.opener ?? message.id,
+            turn,
+            files: execution?.files ?? new Set(),
+            diffs: execution?.diffs ?? new Map(),
+          }
 
         return
       }
@@ -327,6 +372,7 @@ export namespace Timeline {
             message,
             from: execution.opener,
             files: [...execution.files].sort(),
+            diffs: execution.diffs.size ? [...execution.diffs.values()].sort((a, b) => (a.file < b.file ? -1 : 1)) : undefined,
           })
         execution = undefined
 
@@ -334,7 +380,15 @@ export namespace Timeline {
       }
 
       if (message.type !== "assistant") return
-      message.snapshot?.files?.forEach((file) => execution?.files.add(file))
+      // Snapshot files win where they exist; a plain directory only has the tools' own report.
+      const snapshotFiles = message.snapshot?.files
+      if (snapshotFiles?.length) snapshotFiles.forEach((file) => execution?.files.add(file))
+      else
+        toolFileChanges(message).forEach((diff) => {
+          if (!execution) return
+          execution.files.add(diff.file)
+          execution.diffs.set(diff.file, diff)
+        })
       const existing = current?.user ? current : undefined
 
       if (existing?.user) {
@@ -641,6 +695,7 @@ export namespace Timeline {
               messageID: entry.message.id,
               from: entry.from,
               files: entry.files,
+              diffs: entry.diffs,
             }),
           )
 

@@ -1,4 +1,5 @@
 import { Data, Equal, Match } from "effect"
+import type { FileDiffInfo } from "@opencode/client/promise"
 
 export type PartRef = {
   messageID: string
@@ -85,12 +86,15 @@ export namespace TimelineRow {
    * idle marker that ended the turn; `from` is the prompt that opened it, which names the turn
    * to the session diff route even when later prompts were steered in. `files` are the paths its
    * steps recorded, listed before the diff loads; the diff can omit a file a later step reverted.
+   * `diffs` holds the file tools' own reports for a turn no snapshot could cover (no git worktree),
+   * so the list still opens the change it names instead of waiting for a diff route with no answer.
    */
   export class TurnDiff extends Data.TaggedClass("TurnDiff")<{
     userMessageID: string
     messageID: string
     from: string
     files: readonly string[]
+    diffs?: readonly FileDiffInfo[]
   }> {}
 
   /** Where the host shows the active turn's live status when undelivered input waits below it. */
