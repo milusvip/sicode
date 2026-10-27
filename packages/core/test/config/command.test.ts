@@ -216,6 +216,11 @@ Review files`,
           )
 
           expect(yield* command.list()).toEqual([
+            // SiCode: the built-in `init` command is registered before the configured ones.
+            Command.Info.make({
+              name: "init",
+              description: "Write .sicode/structure.md as a project map",
+            }),
             Command.Info.make({
               name: "review",
               description: "File review",

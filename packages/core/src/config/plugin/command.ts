@@ -69,6 +69,24 @@ export const Plugin = define({
     )
     loaded.documents = yield* load()
     yield* ctx.command.transform((editor) => {
+      // SiCode: `/init` writes the project map that ConfigProjectMapPlugin injects on every request. Nothing
+      // created that file, so the map only ever existed in this repository. Same shape as Claude Code's
+      // /init: hand the model the job and the format, let it read the code, and have it improve an existing
+      // map instead of overwriting one. Registered before the configured commands so a user's own `init`
+      // wins.
+      editor.add({
+        name: "init",
+        description: "Write .sicode/structure.md as a project map",
+        execute: (input) =>
+          Effect.gen(function* () {
+            yield* ctx.session.prompt({
+              ...input.prompt,
+              sessionID: input.sessionID,
+              text: INIT_PROJECT_MAP,
+              delivery: input.delivery,
+            })
+          }).pipe(Effect.asVoid),
+      })
       for (const document of loaded.documents) {
         for (const [name, command] of Object.entries(document.commands ?? {})) {
           const subagent = command.subagent ?? command.subtask
@@ -136,6 +154,31 @@ export const Plugin = define({
     })
   }),
 })
+
+// SiCode: the prompt behind `/init`. It has to be specific about the format, because the output is read on
+// every request by every later session, and vague about the contents, because only the code knows them.
+const INIT_PROJECT_MAP = [
+  "Write this repository's project map to `.sicode/structure.md`.",
+  "",
+  "That file is injected into every request, so it has to earn its tokens: aim for a page, not a document.",
+  "A reader who already has the file tree in front of them should learn only what the tree cannot tell them.",
+  "",
+  "Cover:",
+  "- What the project is, in one sentence.",
+  "- The main packages or directories: what each is responsible for, and which way dependencies point.",
+  "- Where common changes belong — a new feature, a new command, a new provider, a new panel — so the next",
+  "  change lands in the right place instead of the nearest file.",
+  "- The commands worth running: install, test, typecheck, build.",
+  "",
+  "Leave out anything that goes stale within a week: file inventories, line counts, TODO lists, version",
+  "numbers, and anything the manifests already state.",
+  "",
+  "Read the code before writing. Decide what each area does from its source and manifests, not from its",
+  "directory name alone.",
+  "",
+  "If `.sicode/structure.md` already exists, read it first and improve it in place. Do not rewrite it from",
+  "scratch.",
+].join("\n")
 
 // Keep in sync with the loadDirectory scan pattern and the name-strip regex in decode.
 const sourceDirectories = ["command", "commands"] as const
