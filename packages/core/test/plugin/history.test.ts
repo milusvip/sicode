@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { SessionMessage } from "@opencode/schema/session-message"
-import { archiveOf, clip, HistoryTool } from "@opencode/core/tool/plugin/history"
+import { archiveOf, clip, HistoryTool, search } from "@opencode/core/tool/plugin/history"
 
 const user = (text: string) => ({ type: "user", text }) as unknown as SessionMessage.Info
 const assistant = (text: string) => ({ type: "assistant", content: [{ type: "text", text }] }) as unknown as SessionMessage.Info
@@ -71,5 +71,43 @@ describe("history output", () => {
 
   it("leaves a short exchange untouched", () => {
     expect(clip("[User]: hi")).toBe("[User]: hi")
+  })
+})
+
+describe("history search", () => {
+  const archive = [
+    "[User]: the settings column was 720px wide, so the right side was empty",
+    "[User]: an error in the provider config lost its reasoning field",
+    "[Assistant]: tsc said Cannot find package @opencode/*; the subpackage node_modules was empty",
+  ]
+
+  it("returns the newest exchanges when there is nothing to look for", () => {
+    expect(search(archive, undefined, 2)).toEqual(archive.slice(-2))
+    expect(search(archive, "  ", 2)).toEqual(archive.slice(-2))
+  })
+
+  // The reported bug: `error` is in half a session's exchanges, so matching any single word handed
+  // back an exchange about provider config for a question about a certificate. A confident wrong
+  // answer is worse than a miss, because the caller cannot see it is wrong.
+  it("skips an exchange that shares only one word of a three-word query", () => {
+    expect(search(archive, "ssl certificate error", 5)).toEqual([])
+  })
+
+  it("keeps an exchange that shares most of a three-word query", () => {
+    expect(search(archive, "provider config error", 5)).toEqual([archive[1]])
+  })
+
+  // One word is all the words, so the bar collapses to plain containment and nothing about a short
+  // query changes.
+  it("still matches on a single word", () => {
+    expect(search(archive, "reasoning", 5)).toEqual([archive[1]])
+  })
+
+  it("still matches on one of two words", () => {
+    expect(search(archive, "reasoning 配置", 5)).toEqual([archive[1]])
+  })
+
+  it("returns the newest matches up to the limit", () => {
+    expect(search(archive, "was", 1)).toEqual([archive[2]])
   })
 })

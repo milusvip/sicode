@@ -70,6 +70,40 @@ export const archiveOf = (messages: ReadonlyArray<SessionMessage.Info>) => {
   }
 }
 
+/**
+ * The exchanges worth handing back for a query: the newest `limit` of them.
+ *
+ * A word that appears in an exchange says little on its own — `error`, `config` and `test` are in
+ * half of them — so matching *any* word of a multi-word query used to hand back an exchange that
+ * shared one incidental word with it. That is worse than a miss: the caller is told "2 of 9 archived
+ * exchanges" and cannot tell a strong match from a weak one, so it reads the wrong exchange as if it
+ * were the answer. The bar is half the words, rounded up, which leaves a one- or two-word query
+ * exactly as strict as before and asks a three-word query for two.
+ *
+ * Deliberately not a character-level fallback for Chinese written without spaces: two-character
+ * windows would match almost any long exchange, and the windows that straddle a word boundary are
+ * not words at all, so requiring all of them can never match. A miss is recoverable here — the
+ * output says so and invites another word — while a confident wrong answer is not.
+ */
+export const search = (archived: readonly string[], query: string | undefined, limit: number) => {
+  const terms = (query ?? "")
+    .toLowerCase()
+    .split(/[\s,;]+/)
+    .map((term) => term.trim())
+    .filter(Boolean)
+
+  if (terms.length === 0) return archived.slice(-limit)
+
+  const needed = Math.ceil(terms.length / 2)
+
+  return archived
+    .filter((text) => {
+      const lower = text.toLowerCase()
+      return terms.filter((term) => lower.includes(term)).length >= needed
+    })
+    .slice(-limit)
+}
+
 export const toModelContent = (matches: EncodedOutput, archived: number) => {
   if (matches.length > 0)
     return [
@@ -101,22 +135,7 @@ export const Plugin = {
               const { archived, compacted } = archiveOf(all)
 
               const limit = input.limit ?? 5
-              const terms = (input.query ?? "")
-                .toLowerCase()
-                .split(/[\s,;]+/)
-                .map((term) => term.trim())
-                .filter(Boolean)
-              const matched =
-                terms.length === 0
-                  ? archived.slice(-limit)
-                  : archived
-                      .filter((text) => {
-                        const lower = text.toLowerCase()
-                        return terms.some((term) => lower.includes(term))
-                      })
-                      .slice(-limit)
-
-              const output = matched.map((text) => ({ text: clip(text) }))
+              const output = search(archived, input.query, limit).map((text) => ({ text: clip(text) }))
               return {
                 output,
                 content: toModelContent(output, archived.length),
