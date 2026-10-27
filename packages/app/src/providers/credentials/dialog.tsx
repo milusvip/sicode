@@ -3,6 +3,7 @@ import { useDialog } from "@opencode/ui/context/dialog"
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@opencode/ui/dialog"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@opencode/ui/text-field"
 import { showToast } from "@/shell/notifications/toast"
@@ -33,13 +34,15 @@ export type CustomProviderInitial = {
   }
 }
 
-export function CustomProviderForm(props: {
-  autofocus?: boolean
-  initial?: CustomProviderInitial
-  onSaved?: (providerID: string) => void
-  /** When true, omit the in-form title — the surrounding DialogHeader owns it. */
-  hideTitle?: boolean
-} = {}) {
+export function CustomProviderForm(
+  props: {
+    autofocus?: boolean
+    initial?: CustomProviderInitial
+    onSaved?: (providerID: string) => void
+    /** When true, omit the in-form title — the surrounding DialogHeader owns it. */
+    hideTitle?: boolean
+  } = {},
+) {
   const dialog = useDialog()
   const data = useData()
   const language = useLanguage()
@@ -47,15 +50,17 @@ export function CustomProviderForm(props: {
   const editing = () => props.initial?.providerID
 
   const [form, setForm] = createStore<FormState>(
-    props.initial ? formFromConfig(props.initial) : {
-      providerID: "",
-      name: "",
-      baseURL: "",
-      apiKey: "",
-      models: [modelRow()],
-      headers: [headerRow()],
-      err: {},
-    },
+    props.initial
+      ? formFromConfig(props.initial)
+      : {
+          providerID: "",
+          name: "",
+          baseURL: "",
+          apiKey: "",
+          models: [modelRow()],
+          headers: [headerRow()],
+          err: {},
+        },
   )
 
   const addModel = () => {
@@ -176,10 +181,12 @@ export function CustomProviderForm(props: {
   const probeMatches = createMemo(() => {
     const query = probe.query.trim().toLowerCase()
     const existing = new Set(form.models.map((m) => m.id.trim()).filter(Boolean))
-    return probe.models.map((model) => ({ ...model, added: existing.has(model.id) })).filter((model) => {
-      if (!query) return true
-      return model.id.toLowerCase().includes(query) || (model.name ?? "").toLowerCase().includes(query)
-    })
+    return probe.models
+      .map((model) => ({ ...model, added: existing.has(model.id) }))
+      .filter((model) => {
+        if (!query) return true
+        return model.id.toLowerCase().includes(query) || (model.name ?? "").toLowerCase().includes(query)
+      })
   })
 
   const toggleProbeModel = (id: string) => {
@@ -214,18 +221,21 @@ export function CustomProviderForm(props: {
     data.location.integration.invalidate()
     data.location.provider.invalidate()
     data.location.model.invalidate()
-    await Promise.all([
-      data.location.integration.sync(),
-      data.location.provider.sync(),
-      data.location.model.sync(),
-    ])
+    await Promise.all([data.location.integration.sync(), data.location.provider.sync(), data.location.model.sync()])
     props.onSaved?.(providerID)
   }
 
   const saveMutation = useMutation(() => ({
     mutationFn: async (result: NonNullable<ReturnType<typeof validate>>) => {
+      // SiCode: renaming an editable provider id moves the config entry and its credentials, since
+      // both the config document and the credential store key off that id.
+      const renamed = !!props.initial && result.providerID !== props.initial.providerID
+
       await serverSdk.api.config.update({
-        providers: { [result.providerID]: result.config },
+        providers: {
+          [result.providerID]: result.config,
+          ...(renamed ? { [props.initial!.providerID]: null } : {}),
+        },
       })
 
       if (result.key) {
@@ -233,6 +243,26 @@ export function CustomProviderForm(props: {
           integrationID: result.providerID,
           key: result.key,
         })
+
+        if (renamed) {
+          const stale = (await serverSdk.api.credential.list()).filter(
+            (credential) => credential.integrationID === props.initial!.providerID,
+          )
+          await Promise.all(stale.map((credential) => serverSdk.api.credential.remove({ credentialID: credential.id })))
+        }
+      } else if (renamed) {
+        const stale = (await serverSdk.api.credential.list()).filter(
+          (credential) => credential.integrationID === props.initial!.providerID,
+        )
+        for (const credential of stale) {
+          await serverSdk.api.credential.remove({ credentialID: credential.id })
+          await serverSdk.api.credential.create({
+            integrationID: result.providerID,
+            label: credential.label,
+            value: credential.value,
+            activate: credential.active,
+          })
+        }
       }
 
       await refresh(result.providerID)
@@ -266,248 +296,249 @@ export function CustomProviderForm(props: {
   }
 
   return (
-    <form onSubmit={save} class="flex min-h-0 flex-col">
-      <div class="flex max-h-[min(56vh,520px)] min-h-0 flex-col gap-6 overflow-y-auto px-2.5 pb-4">
-        <Show when={!props.hideTitle}>
-          <div class="flex items-center gap-3 pt-1">
-            <CustomManagedProviderIcon class="size-5 shrink-0" />
-            <div class="text-16-medium text-text-strong">
-              {editing() ? language.t("provider.custom.edit.title") : language.t("provider.custom.title")}
-            </div>
-          </div>
-        </Show>
-
-        <p class="text-14-regular text-text-weak">
-          {language.t("provider.custom.description.prefix")}
-          <ExternalLink href="https://opencode.ai/v2/docs/providers#custom" tabIndex={-1}>
-            {language.t("provider.custom.description.link")}
-          </ExternalLink>
-          {language.t("provider.custom.description.suffix")}
-        </p>
-
-        <section class="flex flex-col gap-4 border-t border-border-weak-base pt-5">
-          <h3 class="text-12-medium text-text-weak">{language.t("provider.custom.section.connection")}</h3>
-          <div class="grid grid-cols-2 gap-3">
-            <TextField
-              autofocus={props.autofocus ?? true}
-              label={language.t("provider.custom.field.name.label")}
-              placeholder={language.t("provider.custom.field.name.placeholder")}
-              value={form.name}
-              onChange={(v) => setField("name", v)}
-              validationState={form.err.name ? "invalid" : undefined}
-              error={form.err.name}
-            />
-            <TextField
-              label={language.t("provider.custom.field.providerID.label")}
-              placeholder={language.t("provider.custom.field.providerID.placeholder")}
-              description={language.t("provider.custom.field.providerID.description")}
-              value={form.providerID}
-              onChange={(v) => setField("providerID", v)}
-              disabled={!!editing()}
-              validationState={form.err.providerID ? "invalid" : undefined}
-              error={form.err.providerID}
-            />
-          </div>
-          <TextField
-            label={language.t("provider.custom.field.baseURL.label")}
-            placeholder={language.t("provider.custom.field.baseURL.placeholder")}
-            value={form.baseURL}
-            onChange={(v) => setField("baseURL", v)}
-            validationState={form.err.baseURL ? "invalid" : undefined}
-            error={form.err.baseURL}
-          />
-          <TextField
-            label={language.t("provider.custom.field.apiKey.label")}
-            placeholder={language.t("provider.custom.field.apiKey.placeholder")}
-            description={
-              editing()
-                ? language.t("provider.custom.field.apiKey.editDescription")
-                : language.t("provider.custom.field.apiKey.description")
-            }
-            value={form.apiKey}
-            onChange={(v) => setField("apiKey", v)}
-          />
-        </section>
-
-        <section class="flex flex-col gap-3 border-t border-border-weak-base pt-5">
-          <div class="flex items-center justify-between gap-3">
-            <h3 class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</h3>
-            <Button
-              type="button"
-              size="small"
-              variant="outline"
-              icon="refresh"
-              disabled={!form.baseURL.trim() || probeMutation.isPending}
-              onClick={() => probeMutation.mutate()}
-            >
-              {probeMutation.isPending
-                ? language.t("provider.custom.models.fetching")
-                : language.t("provider.custom.models.fetch")}
-            </Button>
-          </div>
-
-          <For each={form.models}>
-            {(m, i) => (
-              <div class="flex gap-2 items-start" data-row={m.row}>
-                <div class="flex-[2]">
-                  <TextField
-                    label={language.t("provider.custom.models.id.label")}
-                    hideLabel
-                    placeholder={language.t("provider.custom.models.id.placeholder")}
-                    value={m.id}
-                    onChange={(v) => setModel(i(), "id", v)}
-                    validationState={m.err.id ? "invalid" : undefined}
-                    error={m.err.id}
-                  />
-                </div>
-                <div class="flex-1">
-                  <TextField
-                    label={language.t("provider.custom.models.name.label")}
-                    hideLabel
-                    placeholder={language.t("provider.custom.models.name.placeholder")}
-                    value={m.name}
-                    onChange={(v) => setModel(i(), "name", v)}
-                  />
-                </div>
-                <IconButton
-                  type="button"
-                  icon={<Icon name="trash" />}
-                  variant="ghost"
-                  class="mt-1.5"
-                  onClick={() => removeModel(i())}
-                  disabled={form.models.length <= 1}
-                  aria-label={language.t("provider.custom.models.remove")}
-                />
-              </div>
-            )}
-          </For>
-
-          <Show when={probe.open}>
-            <div class="flex flex-col gap-2 rounded-[8px] border border-border-weak-base p-2.5">
-              <div class="flex items-center gap-2">
-                <Icon name="magnifying-glass" class="size-4 shrink-0 text-text-weak" />
-                <input
-                  type="text"
-                  class="h-7 min-w-0 flex-1 bg-transparent text-14-regular text-text-base outline-none placeholder:text-text-weak"
-                  placeholder={language.t("provider.custom.models.search")}
-                  value={probe.query}
-                  onInput={(e) => setProbe("query", e.currentTarget.value)}
-                />
-                <Button
-                  type="button"
-                  size="small"
-                  variant="contrast"
-                  disabled={probe.selected.length === 0}
-                  onClick={applyProbeModels}
-                >
-                  {language.t("provider.custom.models.apply", { count: probe.selected.length })}
-                </Button>
-              </div>
-              <div class="flex max-h-48 flex-col overflow-y-auto">
-                <For each={probeMatches()}>
-                  {(model) => (
-                    <label
-                      class="flex cursor-pointer items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-14-regular text-text-base hover:bg-v2-background-bg-layer-02"
-                      classList={{ "opacity-50": model.added }}
-                    >
-                      <input
-                        type="checkbox"
-                        class="size-3.5 accent-current"
-                        checked={probe.selected.includes(model.id)}
-                        disabled={model.added}
-                        onChange={() => toggleProbeModel(model.id)}
-                      />
-                      <span class="min-w-0 flex-1 truncate">{model.id}</span>
-                      <Show when={model.name && model.name !== model.id}>
-                        <span class="min-w-0 flex-1 truncate text-text-weak">{model.name}</span>
-                      </Show>
-                      <Show when={model.added}>
-                        <span class="text-12-regular text-text-weak">
-                          {language.t("provider.custom.models.added")}
-                        </span>
-                      </Show>
-                    </label>
-                  )}
-                </For>
-                <Show when={probeMatches.length === 0}>
-                  <div class="px-2 py-3 text-center text-14-regular text-text-weak">
-                    {language.t("provider.custom.models.none")}
-                  </div>
-                </Show>
+    <form onSubmit={save} class="flex min-h-0 flex-1 flex-col">
+      <ScrollView class="min-h-0 flex-1">
+        <div class="flex flex-col gap-6 px-2.5 pb-4">
+          <Show when={!props.hideTitle}>
+            <div class="flex items-center gap-3 pt-1">
+              <CustomManagedProviderIcon class="size-5 shrink-0" />
+              <div class="text-16-medium text-text-strong">
+                {editing() ? language.t("provider.custom.edit.title") : language.t("provider.custom.title")}
               </div>
             </div>
           </Show>
-          <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addModel} class="self-start">
-            {language.t("provider.custom.models.add")}
-          </Button>
-        </section>
 
-        <section class="border-t border-border-weak-base pt-5">
-          <button
-            type="button"
-            class="flex w-full items-center gap-1.5 text-12-medium text-text-weak hover:text-text-base"
-            onClick={() => setAdvancedOpen((open) => !open)}
-          >
-            <Icon
-              name="chevron-down"
-              class="size-3.5 shrink-0 transition-transform"
-              classList={{ "-rotate-90": !advancedOpen() }}
+          <p class="text-14-regular text-text-weak">
+            {language.t("provider.custom.description.prefix")}
+            <ExternalLink href="https://opencode.ai/v2/docs/providers#custom" tabIndex={-1}>
+              {language.t("provider.custom.description.link")}
+            </ExternalLink>
+            {language.t("provider.custom.description.suffix")}
+          </p>
+
+          <section class="flex flex-col gap-4 border-t border-border-weak-base pt-5">
+            <h3 class="text-12-medium text-text-weak">{language.t("provider.custom.section.connection")}</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <TextField
+                autofocus={props.autofocus ?? true}
+                label={language.t("provider.custom.field.name.label")}
+                placeholder={language.t("provider.custom.field.name.placeholder")}
+                value={form.name}
+                onChange={(v) => setField("name", v)}
+                validationState={form.err.name ? "invalid" : undefined}
+                error={form.err.name}
+              />
+              <TextField
+                label={language.t("provider.custom.field.providerID.label")}
+                placeholder={language.t("provider.custom.field.providerID.placeholder")}
+                description={language.t("provider.custom.field.providerID.description")}
+                value={form.providerID}
+                onChange={(v) => setField("providerID", v)}
+                validationState={form.err.providerID ? "invalid" : undefined}
+                error={form.err.providerID}
+              />
+            </div>
+            <TextField
+              label={language.t("provider.custom.field.baseURL.label")}
+              placeholder={language.t("provider.custom.field.baseURL.placeholder")}
+              value={form.baseURL}
+              onChange={(v) => setField("baseURL", v)}
+              validationState={form.err.baseURL ? "invalid" : undefined}
+              error={form.err.baseURL}
             />
-            {language.t("provider.custom.headers.label")}
-          </button>
-          <Show when={advancedOpen()}>
-            <div class="mt-3 flex flex-col gap-3">
-              <For each={form.headers}>
-                {(h, i) => (
-                  <div class="flex gap-2 items-start" data-row={h.row}>
-                    <div class="flex-1">
-                      <TextField
-                        label={language.t("provider.custom.headers.key.label")}
-                        hideLabel
-                        placeholder={language.t("provider.custom.headers.key.placeholder")}
-                        value={h.key}
-                        onChange={(v) => setHeader(i(), "key", v)}
-                        validationState={h.err.key ? "invalid" : undefined}
-                        error={h.err.key}
-                      />
-                    </div>
-                    <div class="flex-1">
-                      <TextField
-                        label={language.t("provider.custom.headers.value.label")}
-                        hideLabel
-                        placeholder={language.t("provider.custom.headers.value.placeholder")}
-                        value={h.value}
-                        onChange={(v) => setHeader(i(), "value", v)}
-                        validationState={h.err.value ? "invalid" : undefined}
-                        error={h.err.value}
-                      />
-                    </div>
-                    <IconButton
-                      type="button"
-                      icon={<Icon name="trash" />}
-                      variant="ghost"
-                      class="mt-1.5"
-                      onClick={() => removeHeader(i())}
-                      disabled={form.headers.length <= 1}
-                      aria-label={language.t("provider.custom.headers.remove")}
-                    />
-                  </div>
-                )}
-              </For>
+            <TextField
+              label={language.t("provider.custom.field.apiKey.label")}
+              placeholder={language.t("provider.custom.field.apiKey.placeholder")}
+              description={
+                editing()
+                  ? language.t("provider.custom.field.apiKey.editDescription")
+                  : language.t("provider.custom.field.apiKey.description")
+              }
+              value={form.apiKey}
+              onChange={(v) => setField("apiKey", v)}
+            />
+          </section>
+
+          <section class="flex flex-col gap-3 border-t border-border-weak-base pt-5">
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</h3>
               <Button
                 type="button"
                 size="small"
-                variant="ghost"
-                icon="plus-small"
-                onClick={addHeader}
-                class="self-start"
+                variant="outline"
+                icon="refresh"
+                disabled={!form.baseURL.trim() || probeMutation.isPending}
+                onClick={() => probeMutation.mutate()}
               >
-                {language.t("provider.custom.headers.add")}
+                {probeMutation.isPending
+                  ? language.t("provider.custom.models.fetching")
+                  : language.t("provider.custom.models.fetch")}
               </Button>
             </div>
-          </Show>
-        </section>
-      </div>
+
+            <For each={form.models}>
+              {(m, i) => (
+                <div class="flex gap-2 items-start" data-row={m.row}>
+                  <div class="flex-[2]">
+                    <TextField
+                      label={language.t("provider.custom.models.id.label")}
+                      hideLabel
+                      placeholder={language.t("provider.custom.models.id.placeholder")}
+                      value={m.id}
+                      onChange={(v) => setModel(i(), "id", v)}
+                      validationState={m.err.id ? "invalid" : undefined}
+                      error={m.err.id}
+                    />
+                  </div>
+                  <div class="flex-1">
+                    <TextField
+                      label={language.t("provider.custom.models.name.label")}
+                      hideLabel
+                      placeholder={language.t("provider.custom.models.name.placeholder")}
+                      value={m.name}
+                      onChange={(v) => setModel(i(), "name", v)}
+                    />
+                  </div>
+                  <IconButton
+                    type="button"
+                    icon={<Icon name="trash" />}
+                    variant="ghost"
+                    class="mt-1.5"
+                    onClick={() => removeModel(i())}
+                    disabled={form.models.length <= 1}
+                    aria-label={language.t("provider.custom.models.remove")}
+                  />
+                </div>
+              )}
+            </For>
+
+            <Show when={probe.open}>
+              <div class="flex flex-col gap-2 rounded-[8px] border border-border-weak-base p-2.5">
+                <div class="flex items-center gap-2">
+                  <Icon name="magnifying-glass" class="size-4 shrink-0 text-text-weak" />
+                  <input
+                    type="text"
+                    class="h-7 min-w-0 flex-1 bg-transparent text-14-regular text-text-base outline-none placeholder:text-text-weak"
+                    placeholder={language.t("provider.custom.models.search")}
+                    value={probe.query}
+                    onInput={(e) => setProbe("query", e.currentTarget.value)}
+                  />
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="contrast"
+                    disabled={probe.selected.length === 0}
+                    onClick={applyProbeModels}
+                  >
+                    {language.t("provider.custom.models.apply", { count: probe.selected.length })}
+                  </Button>
+                </div>
+                <ScrollView class="max-h-48">
+                  <For each={probeMatches()}>
+                    {(model) => (
+                      <label
+                        class="flex cursor-pointer items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-14-regular text-text-base hover:bg-v2-background-bg-layer-02"
+                        classList={{ "opacity-50": model.added }}
+                      >
+                        <input
+                          type="checkbox"
+                          class="size-3.5 accent-current"
+                          checked={probe.selected.includes(model.id)}
+                          disabled={model.added}
+                          onChange={() => toggleProbeModel(model.id)}
+                        />
+                        <span class="min-w-0 flex-1 truncate">{model.id}</span>
+                        <Show when={model.name && model.name !== model.id}>
+                          <span class="min-w-0 flex-1 truncate text-text-weak">{model.name}</span>
+                        </Show>
+                        <Show when={model.added}>
+                          <span class="text-12-regular text-text-weak">
+                            {language.t("provider.custom.models.added")}
+                          </span>
+                        </Show>
+                      </label>
+                    )}
+                  </For>
+                  <Show when={probeMatches.length === 0}>
+                    <div class="px-2 py-3 text-center text-14-regular text-text-weak">
+                      {language.t("provider.custom.models.none")}
+                    </div>
+                  </Show>
+                </ScrollView>
+              </div>
+            </Show>
+            <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addModel} class="self-start">
+              {language.t("provider.custom.models.add")}
+            </Button>
+          </section>
+
+          <section class="border-t border-border-weak-base pt-5">
+            <button
+              type="button"
+              class="flex w-full items-center gap-1.5 text-12-medium text-text-weak hover:text-text-base"
+              onClick={() => setAdvancedOpen((open) => !open)}
+            >
+              <Icon
+                name="chevron-down"
+                class="size-3.5 shrink-0 transition-transform"
+                classList={{ "-rotate-90": !advancedOpen() }}
+              />
+              {language.t("provider.custom.headers.label")}
+            </button>
+            <Show when={advancedOpen()}>
+              <div class="mt-3 flex flex-col gap-3">
+                <For each={form.headers}>
+                  {(h, i) => (
+                    <div class="flex gap-2 items-start" data-row={h.row}>
+                      <div class="flex-1">
+                        <TextField
+                          label={language.t("provider.custom.headers.key.label")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.headers.key.placeholder")}
+                          value={h.key}
+                          onChange={(v) => setHeader(i(), "key", v)}
+                          validationState={h.err.key ? "invalid" : undefined}
+                          error={h.err.key}
+                        />
+                      </div>
+                      <div class="flex-1">
+                        <TextField
+                          label={language.t("provider.custom.headers.value.label")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.headers.value.placeholder")}
+                          value={h.value}
+                          onChange={(v) => setHeader(i(), "value", v)}
+                          validationState={h.err.value ? "invalid" : undefined}
+                          error={h.err.value}
+                        />
+                      </div>
+                      <IconButton
+                        type="button"
+                        icon={<Icon name="trash" />}
+                        variant="ghost"
+                        class="mt-1.5"
+                        onClick={() => removeHeader(i())}
+                        disabled={form.headers.length <= 1}
+                        aria-label={language.t("provider.custom.headers.remove")}
+                      />
+                    </div>
+                  )}
+                </For>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="ghost"
+                  icon="plus-small"
+                  onClick={addHeader}
+                  class="self-start"
+                >
+                  {language.t("provider.custom.headers.add")}
+                </Button>
+              </div>
+            </Show>
+          </section>
+        </div>
+      </ScrollView>
 
       <div class="flex shrink-0 items-center justify-end gap-2 border-t border-border-weak-base px-2.5 py-3">
         <Button type="submit" size="normal" variant="contrast" disabled={saveMutation.isPending}>
@@ -549,20 +580,13 @@ export async function listCustomProviders(sdk: ReturnType<typeof useServerSDK>) 
   return custom
 }
 
-function DialogCustomProvider(props: {
-  initial?: CustomProviderInitial
-  onSaved?: (providerID: string) => void
-}) {
+function DialogCustomProvider(props: { initial?: CustomProviderInitial; onSaved?: (providerID: string) => void }) {
   const language = useLanguage()
   const title = () =>
     props.initial?.providerID ? language.t("provider.custom.edit.title") : language.t("provider.custom.title")
 
   return (
-    <Dialog
-      fit
-      size="large"
-      containerClass="!max-h-[min(calc(100vh_-_16px),720px)] !w-[min(calc(100vw_-_16px),560px)]"
-    >
+    <Dialog fit size="large" containerClass="!max-h-[min(calc(100vh_-_16px),720px)] !w-[min(calc(100vw_-_16px),560px)]">
       <DialogHeader closeLabel={language.t("common.close")}>
         <div class="flex min-w-0 items-center gap-3">
           <CustomManagedProviderIcon class="size-5 shrink-0" />
@@ -584,11 +608,7 @@ export function showCustomProviderEditor(input: {
   input.dialog.show(() => <DialogCustomProvider initial={input.initial} onSaved={input.onSaved} />)
 }
 
-export function CustomProviderActions(props: {
-  providerID: string
-  name: string
-  onChanged?: () => void
-}) {
+export function CustomProviderActions(props: { providerID: string; name: string; onChanged?: () => void }) {
   const dialog = useDialog()
   const language = useLanguage()
   const serverSdk = useServerSDK()
@@ -623,11 +643,7 @@ export function CustomProviderActions(props: {
       data.location.integration.invalidate()
       data.location.provider.invalidate()
       data.location.model.invalidate()
-      await Promise.all([
-        data.location.integration.sync(),
-        data.location.provider.sync(),
-        data.location.model.sync(),
-      ])
+      await Promise.all([data.location.integration.sync(), data.location.provider.sync(), data.location.model.sync()])
       props.onChanged?.()
       showToast({
         variant: "success",

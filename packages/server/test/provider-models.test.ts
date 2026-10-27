@@ -1,6 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Context, Effect, Layer } from "effect"
+import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { probeModels } from "@opencode/core/provider-probe"
+import { SdkPlugins } from "@opencode/core/plugin/sdk"
+import { Plugin } from "@opencode/plugin/effect"
+import { createRoutes } from "../src/routes"
+import { it } from "../../core/test/lib/effect"
 
 const probe = (input: Parameters<typeof probeModels>[0]) => Effect.runPromise(probeModels(input))
 
@@ -71,4 +79,56 @@ describe("probeModels", () => {
   test("rejects a base url that is not http(s)", async () => {
     expect(probe({ baseURL: "ftp://example.com" })).rejects.toThrow("http:// or https://")
   })
+})
+
+// SiCode: the form calls this over HTTP, not by importing the function — cover the wire path the
+// renderer actually takes, including the 400 the handler maps probe failures to.
+describe("POST /api/provider/models", () => {
+  it.live("returns the probe result over the wire and maps failures to a 400 with the endpoint's message", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(() =>
+        fs.promises.mkdtemp(path.join(os.tmpdir(), "opencode-provider-models-route-")),
+      )
+      const context = yield* Layer.build(
+        createRoutes({
+          password: "secret",
+          database: { path: ":memory:" },
+          models: { fetch: false },
+          fs: { filewatcher: false },
+          config: { directory, project: false, content: "{}" },
+        }).pipe(Layer.provide(HttpServer.layerServices)),
+      )
+      // Route middleware waits for plugin activation; register a completing one so requests flow.
+      yield* Context.get(context, SdkPlugins.Service).register(Plugin.define({ id: "noop", effect: () => Effect.void }))
+      const handler = Context.get(context, HttpRouter.HttpRouter)
+        .asHttpEffect()
+        .pipe(HttpEffect.toWebHandlerWith(context))
+      const post = (body: Record<string, unknown>) =>
+        Effect.promise(() =>
+          handler(
+            new Request("http://opencode.local/api/provider/models", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                authorization: `Basic ${btoa("opencode:secret")}`,
+              },
+              body: JSON.stringify(body),
+            }),
+          ),
+        )
+
+      const ok = yield* post({ baseURL: `${base}/v1`, apiKey: "secret" })
+      expect(ok.status).toBe(200)
+      expect(yield* Effect.promise(() => ok.json())).toEqual({
+        models: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner", name: "DeepSeek Reasoner" }, { id: "echo" }],
+      })
+
+      const bad = yield* post({ baseURL: `${base}/v1` })
+      expect(bad.status).toBe(400)
+      expect(yield* Effect.promise(() => bad.json())).toMatchObject({
+        _tag: "InvalidRequestError",
+        message: expect.stringContaining("Invalid API key"),
+      })
+    }),
+  )
 })
