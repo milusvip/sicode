@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { EXPLORE_BUDGET_PROMPT, EXPLORE_SOFT_PROMPT } from "../src/session/runner/explore-budget.js"
+import { FAILURE_RESEARCH_PROMPT } from "../src/session/runner/failure-streak.js"
 import { LOOP_NUDGE_PROMPT, LOOP_STOP_PROMPT } from "../src/session/runner/loop-detection.js"
 import { MAX_STEPS_PROMPT } from "../src/session/runner/max-steps.js"
 import { NARRATE_PROMPT } from "../src/session/runner/narrate.js"
@@ -10,6 +11,7 @@ const quiet: SteerInput = {
   loopStopped: false,
   exploreHard: false,
   loopNudged: false,
+  failureNudged: false,
   narrate: false,
   exploreSoft: false,
 }
@@ -46,8 +48,16 @@ describe("selectSteer", () => {
   })
 
   test("a fresh loop is nudged, and keeps tools", () => {
-    expect(steer({ loopNudged: true, narrate: true, exploreSoft: true })).toEqual({
+    expect(steer({ loopNudged: true, failureNudged: true, narrate: true, exploreSoft: true })).toEqual({
       prompt: LOOP_NUDGE_PROMPT,
+      role: "system",
+      stop: false,
+    })
+  })
+
+  test("a failure streak is nudged toward research when no loop is in play", () => {
+    expect(steer({ failureNudged: true, narrate: true, exploreSoft: true })).toEqual({
+      prompt: FAILURE_RESEARCH_PROMPT,
       role: "system",
       stop: false,
     })

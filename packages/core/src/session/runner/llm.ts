@@ -33,6 +33,11 @@ import { Plugin } from "../../plugin.js"
 import { NARRATE_EVERY_STEPS } from "./narrate.js"
 import { EXPLORE_HARD_STEPS, EXPLORE_SOFT_STEPS, readOnlySteps } from "./explore-budget.js"
 import { detectLoop } from "./loop-detection.js"
+import {
+  detectFailureStreak,
+  FAILURE_STREAK_EVERY,
+  FAILURE_STREAK_FIRST,
+} from "./failure-streak.js"
 import { selectSteer } from "./steer.js"
 import { completionFingerprint, completionGatePrompt, detectPendingTodos } from "./completion-gate.js"
 
@@ -89,6 +94,9 @@ const layer = Layer.effect(
       // SiCode: todo fingerprints already gated this turn. The completion gate fires once per open
       // todo set, so a model that insists the todos are stale is not reminded a second time.
       const completionNudged = new Set<string>()
+      // SiCode: whole-turn failed tool calls at the time the research nudge last fired. The trigger
+      // is the trailing-window density (objective, variant-proof), this paces the re-nudges.
+      const failureNudged = { at: 0 }
       let entering = true
       const promotable = input.promotable ?? "input"
       if (!force && !continuing) {
@@ -217,7 +225,7 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step, loopNudged, completionNudged)
+        continuing = yield* runStep(next.context, step, loopNudged, completionNudged, failureNudged)
         step++
         force = false
         entering = false
@@ -239,6 +247,7 @@ const layer = Layer.effect(
       step: number,
       loopNudged: Set<string>,
       completionNudged: Set<string>,
+      failureNudged: { at: number },
     ) {
       const sessionID = first.session.id
       let assistantMessageID = SessionMessage.ID.create()
@@ -273,8 +282,16 @@ const layer = Layer.effect(
         const loopStop = loop !== null && loopNudged.has(loop.fingerprint)
         const loopNudge = loop !== null && !loopStop
         if (loopNudge) loopNudged.add(loop.fingerprint)
+        // SiCode: the framework counts tool failures the model would rather rebrand as variants.
+        // Window density is the trigger; the monotonic whole-turn count only paces the re-nudges.
+        const failures = stepLimitReached ? null : detectFailureStreak(loaded.messages)
+        const failureNudge =
+          failures !== null &&
+          failures.recent >= FAILURE_STREAK_FIRST &&
+          failures.total - failureNudged.at >= FAILURE_STREAK_EVERY
+        if (failureNudge) failureNudged.at = failures.total
         // One steering message replaces the tail, most specific first.
-        const steer = selectSteer({ stepLimitReached, loopStopped: loopStop, exploreHard, loopNudged: loopNudge, narrate, exploreSoft })
+        const steer = selectSteer({ stepLimitReached, loopStopped: loopStop, exploreHard, loopNudged: loopNudge, failureNudged: failureNudge, narrate, exploreSoft })
         const transcript = SessionModelRequest.baseTranscript({
           agent: loaded.agent.info,
           model: loaded.model,
