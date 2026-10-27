@@ -1261,6 +1261,12 @@ function ChainFileRow(props: { file: ApplyPatchFileGroup; pending: boolean }) {
           changes={{ additions: props.file.additions, deletions: props.file.deletions }}
         />
       </span>
+      {/* SiCode: the card header used to carry this action; a chain row keeps it, revealed on hover
+          so a column of file rows stays quiet. `FileRowOpenFile` stops the click, so opening the
+          sidebar does not also toggle the diff. */}
+      <span data-slot="chain-file-open">
+        <FileRowOpenFile path={props.file.path} />
+      </span>
       <span data-slot="chain-file-arrow">
         <Icon name="chevron-right" size="small" />
       </span>

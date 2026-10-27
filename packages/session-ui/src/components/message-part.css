@@ -2051,6 +2051,10 @@
       align-items: center;
       flex: 0 0 auto;
       margin-inline-start: auto;
+      /* `auto` collapses to zero once the path fills the row, which glued the numbers straight onto
+         the file name and read as `...long.ts+48`. The padding is the floor under that margin: it
+         costs 6px of path width, not legibility. */
+      padding-inline-start: 6px;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
       color: var(--v2-text-text-faint);
@@ -2061,6 +2065,32 @@
      start on — with a hair of block padding so the first hunk line is not glued to the header. */
   [data-slot="accordion-content"] > [data-slot="accordion-body"] {
     padding-block: 2px;
+  }
+
+  /* The sidebar action the card header carried. A chain row has no room for a permanent button, so
+     it fades in on hover/focus and keeps its slot reserved (`opacity`, not `display`) — otherwise
+     the stat column would jump 20px every time the pointer entered the row. When the host exposes
+     no `openFile`, `FileRowOpenFile` renders nothing and the empty slot collapses. */
+  [data-slot="chain-file-open"] {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-inline-start: 2px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  [data-slot="accordion-trigger"]:hover [data-slot="chain-file-open"],
+  [data-slot="accordion-trigger"]:focus-visible [data-slot="chain-file-open"],
+  [data-slot="accordion-trigger"] [data-slot="chain-file-open"]:focus-within {
+    opacity: 1;
   }
 
   /* Matches the read row's chevron: a chevron-right that rests right, turns down when open, and only
