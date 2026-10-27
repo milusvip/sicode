@@ -88,9 +88,10 @@ const decodeErrorDetails = Schema.decodeUnknownOption(
 
 /**
  * SiCode: the snapshot-backed file list is git-only (`Snapshot.enabled` checks `vcs.type`), so a
- * session in a plain directory changed files and left nothing at the end of its turn. `edit` and
- * `patch` report their own `metadata.files`; `write` keeps only the permission preview there, so its
- * diff comes from the input it was called with. The result is what stands in for a missing snapshot.
+ * session in a plain directory changed files and left nothing at the end of its turn. `write`,
+ * `edit` and `patch` all report their own `metadata.files`. The input-derived preview below only
+ * covers writes recorded before `write` returned that field — those cannot tell a create from an
+ * overwrite, so they are read as additions.
  */
 function toolFileChanges(message: SessionMessageAssistant): FileDiffInfo[] {
   return message.content.flatMap((content) => {

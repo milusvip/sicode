@@ -1743,8 +1743,9 @@ describe("current session timeline rows", () => {
   })
 
   test("lists a turn's files from the file tools when no snapshot covers them", () => {
-    // No git worktree means no snapshot, so the paths and diffs come from the tools themselves:
-    // `edit` reports them, `write` only keeps the permission preview, so its diff comes from input.
+    // No git worktree means no snapshot, so the paths and diffs come from the tools themselves.
+    // `edit` and `write` report `metadata.files`; this write predates that field, so its diff is
+    // rebuilt from the input and can only read as an addition.
     const patch = "--- a.md\n+++ b.md\n+a\n+b\n"
     // Annotated, not `satisfies`: the two tool parts carry different metadata, and inference would
     // widen the empty one to `{ files?: undefined }`, which is not a `JsonValue` record.
@@ -1809,6 +1810,55 @@ describe("current session timeline rows", () => {
             status: "added",
           },
         ],
+      }),
+    ])
+  })
+
+  test("takes a write's reported diff over the one rebuilt from its input", () => {
+    // An overwrite must read as `modified` with the lines that changed, not as a new file holding
+    // every line. The tool reports that; the input alone cannot say it.
+    const patch = "--- notes/plan.md\n+++ notes/plan.md\n-a\n+b\n"
+    const reported = { file: "notes/plan.md", patch, additions: 1, deletions: 1, status: "modified" as const }
+    const source: SessionMessageInfo[] = [
+      { id: "msg_u", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_a",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          {
+            type: "tool",
+            id: "tool_write",
+            name: "write",
+            state: {
+              status: "completed",
+              input: { path: "notes/plan.md", content: "b\n" },
+              content: [{ type: "text", text: "ok" }],
+              metadata: { files: [reported] },
+            },
+            time: { created: 2, ran: 3, completed: 4 },
+          },
+        ],
+        time: { created: 2, completed: 5 },
+      },
+      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 6 } },
+    ]
+
+    const rows = createTimelineProjection({
+      sessionMessages: source,
+      status: { type: "idle" },
+      reasoningMode: "compact",
+      turnDiffs: true,
+    }).rows
+
+    expect(rows.filter((row) => Predicate.isTagged(row, "TurnDiff"))).toEqual([
+      new TimelineRow.TurnDiff({
+        userMessageID: "msg_u",
+        messageID: "msg_idle",
+        from: "msg_u",
+        files: ["notes/plan.md"],
+        diffs: [reported],
       }),
     ])
   })

@@ -9,6 +9,7 @@ export * as WriteTool from "./write.js"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { ToolFailure } from "@opencode/ai/effect"
 import { Effect, Schema } from "effect"
+import { FileDiff } from "@opencode/schema/file-diff"
 import { Bom } from "@opencode/util/bom"
 import { Environment } from "../../environment/index.js"
 import { FileMutation } from "../../file-mutation.js"
@@ -33,6 +34,10 @@ export const Output = Schema.Struct({
   target: Schema.String,
   resource: Schema.String,
   existed: Schema.Boolean,
+  // SiCode: the write card and the end-of-turn file list read this. Without it both had to rebuild a
+  // patch from `input.content`, which cannot tell an overwrite from a create. Optional so writes
+  // recorded before this field still decode.
+  files: Schema.optionalKey(Schema.Array(FileDiff.Info)),
 })
 export type Output = typeof Output.Type
 
@@ -92,16 +97,26 @@ export const Plugin = {
               })
               const result = yield* fileMutation.writeTextPreservingBom({ target, content: input.content })
               const bom = (yield* FileMutation.readText(environment.files, target.absolute)).bom
-              if (yield* formatter.file(target.absolute)) {
-                yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)
-              }
-              return result
+              const formatted = (yield* formatter.file(target.absolute))
+                ? yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)
+                : (yield* FileMutation.readText(environment.files, target.absolute)).text
+              // SiCode: report the diff the way `edit` does — against the formatted result, so the
+              // card and the turn's file list show the file's final content and an overwrite reads as
+              // `modified` instead of `added`. `preview` above stays the approval-time diff.
+              return {
+                ...result,
+                files: [fileDiff(target.resource, current?.text ?? "", formatted, current ? "modified" : "added")],
+              } satisfies Output
             }).pipe(
               // SiCode: hold the same per-path transaction lock edit and patch take. Without it a
               // write can land between an edit's read and its write, and the edit then commits a
               // result computed from the stale content, silently dropping this write.
               fileMutation.withLock([FileAccess.resolvePath(location.directory, input.path)]),
-              Effect.map((output) => ({ output, content: toModelContent(output) })),
+              Effect.map((output) => ({
+                output,
+                content: toModelContent(output),
+                metadata: { files: output.files },
+              })),
               Effect.mapError((error) => new ToolFailure({ message: `Unable to write ${input.path}`, error })),
             ),
         }),

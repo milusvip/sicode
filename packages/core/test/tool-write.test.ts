@@ -110,16 +110,16 @@ describe("WriteTool", () => {
         Effect.gen(function* () {
           expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["write", "execute"])
           const settled = yield* executeTool(registry, call({ path: "src/new.txt", content: "created" }))
-          expect(settled).toEqual({
-            status: "completed",
-            output: {
-              operation: "write",
-              target: path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt"),
-              resource: "src/new.txt",
-              existed: false,
-            },
-            content: [{ type: "text", text: "Created file successfully: src/new.txt" }],
+          expect(settled.status).toBe("completed")
+          expect(settled.content).toEqual([{ type: "text", text: "Created file successfully: src/new.txt" }])
+          expect(settled.output).toMatchObject({
+            operation: "write",
+            target: path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt"),
+            resource: "src/new.txt",
+            existed: false,
+            files: [{ file: "src/new.txt", status: "added", additions: 1, deletions: 0 }],
           })
+          expect(settled.metadata?.files?.[0]?.patch).toContain("+created")
           expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "src", "new.txt"), "utf8"))).toBe(
             "created",
           )
@@ -156,10 +156,13 @@ describe("WriteTool", () => {
         })
       return withTool(tmp.path, fixture, (registry) =>
         Effect.gen(function* () {
-          expect(yield* executeTool(registry, call({ path: "formatted.txt", content: "format me" }))).toMatchObject({
-            status: "completed",
-          })
+          const settled = yield* executeTool(registry, call({ path: "formatted.txt", content: "format me" }))
+          expect(settled).toMatchObject({ status: "completed" })
           expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("FORMAT ME")
+          // The reported diff follows the formatted bytes, not the text the model passed in.
+          expect(settled.metadata).toMatchObject({
+            files: [{ file: "formatted.txt", patch: expect.stringContaining("+FORMAT ME\n") }],
+          })
         }),
       )
     }),
@@ -180,6 +183,11 @@ describe("WriteTool", () => {
             if (settled.status !== "completed") return
             expect(settled.content).toEqual([{ type: "text", text: "Wrote file successfully: existing.txt" }])
             expect(settled.output).toMatchObject({ resource: "existing.txt", existed: true })
+            // The card and the end-of-turn file list read this: an overwrite is `modified`, not an
+            // addition, so the row reports the lines that changed rather than the whole file.
+            expect(settled.metadata).toMatchObject({
+              files: [{ file: "existing.txt", status: "modified", additions: 1, deletions: 1 }],
+            })
             expect(fixture.assertions[0]?.metadata).toMatchObject({
               files: [
                 {
