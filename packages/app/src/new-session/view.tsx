@@ -14,6 +14,7 @@ import {
   type PromptProjectController,
 } from "@/new-session/project/selector"
 import { useLanguage } from "@/runtime/i18n/language"
+import { useData } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useProviders } from "@/providers/catalog/providers"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/new-session/layout"
@@ -39,6 +40,15 @@ export function NewSessionView(props: {
   project: PromptProjectController
   workspace: NewSessionWorkspaceController
 }) {
+  const sdk = useWorkspaceLocation()
+  const data = useData()
+
+  // Git-ness arrives with the Location's VCS sync. Until it does, "not visible" says nothing about the
+  // folder, and the fallback used to claim "no Git" for a repository it had not looked at yet.
+  const gitPending = createMemo(
+    () => !props.workspace.bar.visible() && !data.location.vcs.info({ directory: sdk().directory }),
+  )
+
   const [onboarding, setOnboarding, , onboardingReady] = persisted(
     Persist.global("workspace-onboarding"),
     WorkspaceOnboardingSchema,
@@ -73,28 +83,42 @@ export function NewSessionView(props: {
                 <div class="flex min-h-7 min-w-0 flex-row flex-wrap items-center justify-center gap-0 text-v2-text-text-faint">
                   <PromptProjectSelector controller={props.project} placement="bottom" />
                   <Show
-                    when={props.workspace.bar.visible()}
+                    when={gitPending()}
                     fallback={
-                      <PromptGitStatus
-                        branch={props.workspace.bar.branch()}
-                        noGit={!props.workspace.project.git()}
-                        class="ms-1"
-                      />
+                      <Show
+                        when={props.workspace.bar.visible()}
+                        fallback={
+                          <PromptGitStatus
+                            branch={props.workspace.bar.branch()}
+                            noGit={!props.workspace.project.git()}
+                            class="ms-1"
+                          />
+                        }
+                      >
+                        <PromptWorkspaceSelector
+                          value={props.workspace.selection.value()}
+                          projectRoot={props.workspace.project.root()}
+                          workspaces={props.workspace.project.workspaces()}
+                          branches={props.workspace.project.branches()}
+                          branch={props.workspace.bar.branch()}
+                          onboarding={onboardingReady() && !onboarding.used}
+                          onChange={select}
+                          onCreate={props.workspace.selection.create}
+                          onSearch={props.workspace.project.searchBranches}
+                          onDone={props.composer.restoreFocus}
+                          onViewAll={props.workspace.project.openAll}
+                        />
+                      </Show>
                     }
                   >
-                    <PromptWorkspaceSelector
-                      value={props.workspace.selection.value()}
-                      projectRoot={props.workspace.project.root()}
-                      workspaces={props.workspace.project.workspaces()}
-                      branches={props.workspace.project.branches()}
-                      branch={props.workspace.bar.branch()}
-                      onboarding={onboardingReady() && !onboarding.used}
-                      onChange={select}
-                      onCreate={props.workspace.selection.create}
-                      onSearch={props.workspace.project.searchBranches}
-                      onDone={props.composer.restoreFocus}
-                      onViewAll={props.workspace.project.openAll}
-                    />
+                    <span
+                      data-slot="new-session-git-pending"
+                      aria-hidden="true"
+                      class="ms-1 flex h-6 items-center gap-1.5 rounded-full bg-v2-background-bg-layer-02 px-2.5"
+                    >
+                      <span class="size-3.5 shrink-0 animate-pulse rounded-[3px] bg-v2-overlay-simple-overlay-hover" />
+                      <span class="h-2.5 w-10 animate-pulse rounded-full bg-v2-overlay-simple-overlay-hover" />
+                    </span>
                   </Show>
                 </div>
               </Show>

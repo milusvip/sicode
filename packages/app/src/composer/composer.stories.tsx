@@ -59,6 +59,7 @@ function ComposerStory(props: {
   alternate?: "queue" | "steer"
   manySuggestions?: boolean
   suggestionBoundary?: () => HTMLElement | undefined
+  loading?: boolean
 }) {
   const [draft, setDraft] = createStore<ComposerPersistedState>({
     prompt: props.prompt ?? [{ type: "text", content: "", start: 0, end: 0 }],
@@ -217,7 +218,7 @@ function ComposerStory(props: {
 
   const model = {
     ...editor,
-    model: { selection: modelSelection, paid: true, loading: false },
+    model: { selection: modelSelection, paid: true, loading: !!props.loading },
   } satisfies ComposerModel
 
   onMount(() => {
@@ -321,6 +322,10 @@ export const BrowserElementComment = {
 }
 
 export const ModelAndVariant = { render: () => <ComposerStory prompt={text("Compare both variants")} /> }
+
+export const ModelControlPending = {
+  render: () => <ComposerStory loading prompt={text("The catalog lands after the first request")} />,
+}
 
 export const SlashSuggestions = { render: () => <ComposerStory suggestions="command" /> }
 

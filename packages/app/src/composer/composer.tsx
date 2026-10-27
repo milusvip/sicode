@@ -31,7 +31,6 @@ export function Composer(props: {
         borderUnderlay={props.borderUnderlay}
         readOnly={props.readOnly}
         class={props.class}
-        modelControlsVisible={!props.model.model.loading}
         attachKeybind={command.keybindParts("file.attach")}
         attachShortcut={command.keybind("file.attach")}
         alternateKeybind={[formatKeybind("mod", language.t), "↵"]}
@@ -87,7 +86,7 @@ function ComposerModelControl(props: {
   )
 
   return (
-    <Show when={!props.loading}>
+    <Show when={!props.loading} fallback={<ComposerModelControlPending />}>
       <Tooltip
         inactive={mobile()}
         placement="top"
@@ -138,5 +137,24 @@ function ComposerModelControl(props: {
         </Show>
       </Tooltip>
     </Show>
+  )
+}
+
+/**
+ * A Location's first request pays for its instance boot, so the model control has no name to show
+ * for a second or more on a cold start. Reserving the button's footprint with a pulsing placeholder
+ * keeps the toolbar from growing a control out of nothing once the catalog lands.
+ */
+function ComposerModelControlPending() {
+  return (
+    <div
+      data-action="composer-model"
+      data-control-type="pending"
+      aria-hidden="true"
+      class="flex h-7 min-w-0 items-center gap-1.5 px-2"
+    >
+      <span class="size-4 shrink-0 animate-pulse rounded-[4px] bg-v2-overlay-simple-overlay-hover" />
+      <span class="h-2.5 w-24 animate-pulse rounded-full bg-v2-overlay-simple-overlay-hover" />
+    </div>
   )
 }
