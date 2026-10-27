@@ -1779,7 +1779,7 @@ describe("ShellTool", () => {
               description: stallCommand,
               metadata: { source: "shell", shellID, state: "running" },
             })
-            const text = typeof payload?.text === "string" ? payload.text : ""
+            const text = payload && "text" in payload && typeof payload.text === "string" ? payload.text : ""
             expect(text).toContain("no new output")
             expect(text).toContain("mark-stall")
             expect(text).toContain(`kill set to "${shellID}"`)
