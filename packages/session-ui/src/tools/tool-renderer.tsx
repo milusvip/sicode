@@ -1231,17 +1231,12 @@ export function CurrentFileToolGroup(props: {
   )
 }
 
-/** The row's leading verb, keyed by the file's kind so the JSX has no ternary ladder. */
-const FILE_ACTION = {
-  add: "ui.patch.action.created",
-  update: "ui.patch.action.updated",
-  delete: "ui.patch.action.deleted",
-} as const satisfies Record<ApplyPatchFileGroup["type"], string>
-
 /** SiCode: the chain-language file row — same slot vocabulary as the shell and reasoning rows. */
 function ChainFileRow(props: { file: ApplyPatchFileGroup; pending: boolean }) {
   const i18n = useI18n()
-  const action = () => FILE_ACTION[props.file.type]
+  // SiCode: same verb + kind mapping as the end-of-turn `FileChangeTriggerHeader`, so both places
+  // read and tint the action identically (layout stays the chain row's; only colors follow).
+  const action = () => fileChangeAction(props.file.type)
 
   return (
     <div data-component="tool-trigger" data-slot="chain-file-row">
@@ -1256,7 +1251,9 @@ function ChainFileRow(props: { file: ApplyPatchFileGroup; pending: boolean }) {
         <div data-slot="basic-tool-tool-info">
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">
-              <span data-slot="basic-tool-tool-title">{i18n.t(action())}</span>
+              <span data-slot="basic-tool-tool-title" data-type={action().kind}>
+                {i18n.t(action().key)}
+              </span>
               <span data-slot="basic-tool-tool-subtitle" class="tool-path">
                 {`${displayDirectory(props.file.path)}${getFilename(props.file.path)}`}
               </span>

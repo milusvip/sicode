@@ -2071,8 +2071,25 @@
 
     [data-slot="basic-tool-tool-title"] {
       flex-shrink: 0;
-      color: var(--v2-text-text-muted);
+      color: var(--icon-diff-modified-base);
       white-space: nowrap;
+
+      /* SiCode: verb tinted by change kind — the exact tokens the end-of-turn「更改的文件」list
+         uses (`apply-patch-change`), so the same edit reads the same color in the chain. */
+      &[data-type="added"] {
+        color: var(--icon-diff-add-base);
+      }
+
+      &[data-type="removed"] {
+        color: var(--icon-diff-delete-base);
+      }
+    }
+
+    /* SiCode: the path rides one step brighter than the chain's muted subtitles (a read row's path
+     stays muted) — same body contrast the end-of-turn filename uses, so a changed file pops
+     without touching the row's layout. */
+    [data-slot="basic-tool-tool-subtitle"] {
+      color: var(--v2-text-text-base);
     }
 
     [data-slot="basic-tool-tool-indicator"] {
