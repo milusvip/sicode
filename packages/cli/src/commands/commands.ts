@@ -534,6 +534,10 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       description: "Reload configuration",
       globalFlags: ServerFlags,
     }),
+    // SiCode: `.sicode` is ours, and nothing else creates it. See commands/handlers/init.ts.
+    Spec.make("init", {
+      description: "Write a starting .sicode/structure.md from what this repository already says about itself",
+    }),
     Spec.make("pair", {
       description: "Print one-time links to connect a browser or app",
       params: {
