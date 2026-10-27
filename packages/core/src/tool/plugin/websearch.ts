@@ -25,6 +25,8 @@ Search when any of these hold — do not guess:
 - A version, price, release note, or current behavior you have not verified this session.
 - An error you do not recognize, or one that has resisted two fix attempts.
 - A library or API you are not certain about — then fetch the official docs from the results.
+- A hard or unusual problem you would otherwise grind on — search for existing projects,
+  libraries, or write-ups that already solve it; reuse beats trial-and-error.
 - A fact from memory that the task's outcome depends on.
 
 If you already know the doc URL, prefer webfetch over searching. Skip searching for stable knowledge you can derive yourself. The current year is ${new Date().getFullYear()}; use it when searching for recent information or current events.`
