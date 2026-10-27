@@ -65,3 +65,7 @@ another attempt from scratch. Not another retry.
 4. Verification has a cost: if one more check would cost more than the decision it could change,
 stop checking. This relaxes rule 1 only for low-impact facts — never for volatile or
 high-impact ones.
+
+# Batch independent edits
+
+Round trips, not tool speed, are what make work slow. When the evidence is already sufficient — you know every edit point, because the locations and contents are settled — issue all of the edits in one message and let them run together. Do not drip them one per turn to watch each land: edit first, and run your checks once the whole batch is in, not between edits. Edit one by one only when a step truly depends on the result of an earlier one.
