@@ -68,6 +68,12 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     /** SiCode: interrupt one running subagent (its child session); absent when the host has no session API. */
     sessionInterrupt?: (sessionID: string) => Promise<void>
     turnDiff?: TurnDiffSource
+    /**
+     * SiCode: the MCP servers configured for this Location. A tool call arrives as a flattened
+     * `<server>_<tool>` name, so the server is only recoverable while this list is known; absent
+     * hosts (storybook) fall back to the raw name.
+     */
+    mcpServers?: readonly string[]
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
     onOpenFile?: OpenFileFn
@@ -97,6 +103,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       shellKill: props.shellKill,
       sessionInterrupt: props.sessionInterrupt,
       turnDiff: props.turnDiff,
+      get mcpServers() {
+        return props.mcpServers
+      },
     }
   },
 })

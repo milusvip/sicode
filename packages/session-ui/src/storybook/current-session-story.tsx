@@ -12,6 +12,11 @@ import { CURRENT_SESSION_ID, STORY_TIME } from "./current-session-fixtures"
 export function CurrentSessionProviders(props: {
   document: SessionDocument
   backgroundCompaction?: boolean
+  /**
+   * SiCode: the MCP servers behind the flattened `<server>_<tool>` call names. Absent unless a story
+   * asks for it, so the fixtures keep showing whatever name they were written with.
+   */
+  mcpServers?: readonly string[]
   children: JSX.Element
 }) {
   return (
@@ -68,6 +73,7 @@ export function CurrentSessionProviders(props: {
         session_diff: { [CURRENT_SESSION_ID]: props.document.diffs },
       }}
       turnDiff={{ get: () => props.document.diffs, load: () => {} }}
+      mcpServers={props.mcpServers}
     >
       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
     </DataProvider>

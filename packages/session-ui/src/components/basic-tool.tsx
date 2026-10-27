@@ -18,6 +18,8 @@ import { Collapsible } from "@opencode/ui/collapsible"
 import { Icon, type IconProps } from "@opencode/ui/icon"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+import { useData } from "../context/data"
+import { mcpToolIdentity } from "../tools/mcp-tool"
 
 export type TriggerTitle = {
   title: string
@@ -419,13 +421,22 @@ export function GenericTool(props: {
   input?: Record<string, unknown>
 }) {
   const i18n = useI18n()
+  const data = useData()
+  // SiCode: name an MCP call the way Cursor does, with the server as its directory and the tool
+  // inside it, instead of the flattened `server_tool` the registry hands over.
+  const mcp = createMemo(() => mcpToolIdentity(props.tool, data.mcpServers))
+  const toolName = () => {
+    const identity = mcp()
+
+    return identity ? `${identity.server} / ${identity.tool}` : props.tool
+  }
 
   return (
     <BasicTool
       icon="mcp"
       status={props.status}
       trigger={{
-        title: i18n.t("ui.basicTool.called", { tool: props.tool }),
+        title: i18n.t("ui.basicTool.called", { tool: toolName() }),
         subtitle: label(props.input),
         args: args(props.input),
       }}

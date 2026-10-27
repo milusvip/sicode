@@ -1746,7 +1746,9 @@ describe("current session timeline rows", () => {
     // No git worktree means no snapshot, so the paths and diffs come from the tools themselves:
     // `edit` reports them, `write` only keeps the permission preview, so its diff comes from input.
     const patch = "--- a.md\n+++ b.md\n+a\n+b\n"
-    const source = [
+    // Annotated, not `satisfies`: the two tool parts carry different metadata, and inference would
+    // widen the empty one to `{ files?: undefined }`, which is not a `JsonValue` record.
+    const source: SessionMessageInfo[] = [
       { id: "msg_u", type: "user", text: "go", time: { created: 1 } },
       {
         id: "msg_a",
@@ -1782,7 +1784,7 @@ describe("current session timeline rows", () => {
         time: { created: 2, completed: 8 },
       },
       { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 9 } },
-    ] satisfies SessionMessageInfo[]
+    ]
 
     const rows = createTimelineProjection({
       sessionMessages: source,

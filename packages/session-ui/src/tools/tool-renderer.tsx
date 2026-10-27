@@ -26,6 +26,7 @@ import { type SessionSummary, useData } from "../context"
 import { useFileComponent } from "@opencode/ui/context/file"
 import { type UiI18n, useI18n } from "@opencode/ui/context/i18n"
 import { BasicTool, GenericTool } from "../components/basic-tool"
+import { mcpToolIdentity } from "./mcp-tool"
 import { FileIcon } from "@opencode/ui/file-icon"
 import { Icon } from "@opencode/ui/icon"
 import { ToolErrorCard } from "../components/tool-error-card"
@@ -346,7 +347,14 @@ function currentSkillName(tool: SessionMessageAssistantTool) {
 }
 
 // Context group labels name each tool once; detailed subtitles belong to the tool rows.
-function toolTitle(tool: SessionMessageAssistantTool, i18n: UiI18n) {
+// SiCode: an MCP call is titled by its server only — the process head is a list of directories,
+// and naming every tool would push the duration out of the row. `servers` is the Location's MCP
+// roster, the only way back from the flattened `<server>_<tool>` name.
+function toolTitle(tool: SessionMessageAssistantTool, i18n: UiI18n, servers?: readonly string[]) {
+  const mcp = mcpToolIdentity(tool.name, servers)
+
+  if (mcp) return mcp.server
+
   switch (tool.name) {
     case "read":
       return i18n.t("ui.tool.read")
@@ -489,6 +497,7 @@ export function CurrentContextToolGroup(props: {
   patchGroupKey?: (tools: SessionMessageAssistantTool[]) => string
 }) {
   const i18n = useI18n()
+  const data = useData()
   const tools = createMemo(() => props.parts.filter((part) => part.type === "tool"))
   const [now, setNow] = createSignal(Date.now())
 
@@ -516,7 +525,7 @@ export function CurrentContextToolGroup(props: {
         props.parts.flatMap((part) => {
           if (part.type !== "tool" && part.type !== "shell") return []
 
-          return [part.type === "tool" ? toolTitle(part, i18n) : i18n.t("ui.tool.shell")]
+          return [part.type === "tool" ? toolTitle(part, i18n, data.mcpServers) : i18n.t("ui.tool.shell")]
         }),
       ),
     ]
@@ -1727,6 +1736,12 @@ export function ToolDisplay(
   const errorSubtitle = createMemo(() => toolErrorSubtitle(props, i18n))
   const error = createMemo(() => toolDisplayError(props, i18n.t("ui.toolErrorCard.failed")))
   const render = createMemo(() => ToolRegistry.render(props.tool) ?? GenericTool)
+  // SiCode: a failed MCP call keeps the same `server / tool` name its row carries.
+  const mcpTitle = createMemo(() => {
+    const identity = mcpToolIdentity(props.tool, data.mcpServers)
+
+    return identity ? `${identity.server} / ${identity.tool}` : undefined
+  })
 
   return (
     <Show when={!hideQuestion()}>
@@ -1753,7 +1768,7 @@ export function ToolDisplay(
                   title={
                     props.tool === "websearch"
                       ? webSearchProviderLabel(toolMetadata(props.metadata).provider, i18n)
-                      : undefined
+                      : mcpTitle()
                   }
                   defaultOpen={props.defaultOpen}
                   open={props.open}

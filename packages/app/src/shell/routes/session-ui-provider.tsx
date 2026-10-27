@@ -93,6 +93,12 @@ export function SessionUIProvider(
       ?.flatMap((entry) => (entry.type === "document" && entry.info.experimental ? [entry.info.experimental] : []))
       .at(-1)?.background_compaction === true
 
+  // SiCode: MCP tools reach the transcript as `<server>_<tool>`, so the roster is what lets a row
+  // name its server instead of echoing the flattened call name.
+  const mcpServers = createMemo(
+    () => data.location.mcp.server.list({ directory: directory() })?.map((server) => server.name) ?? [],
+  )
+
   // Turn diffs live in the tab's in-memory state, so they outlast timeline remounts and go when the tab closes.
   const turnDiffs = () => {
     const id = params.id
@@ -142,6 +148,7 @@ export function SessionUIProvider(
         get: (input) => turnDiffs()?.get(input),
         load: (input) => turnDiffs()?.load(input, () => serverSDK.api.session.diff(input)),
       }}
+      mcpServers={mcpServers()}
       onNavigateToSession={navigateToSession}
       onSessionHref={href}
       // Routed through the file extension's link handler, so the host never names a panel key itself.

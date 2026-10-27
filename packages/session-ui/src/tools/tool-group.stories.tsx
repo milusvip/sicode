@@ -38,6 +38,36 @@ export const MixedTools = {
   },
 }
 
+/**
+ * SiCode: an MCP call only carries `<server>_<tool>`. The head names each server once, the rows show
+ * the server as the directory the tool sits in — Cursor's reading of the same call.
+ */
+export const McpCalls = {
+  render: () => {
+    const [open, setOpen] = createSignal(true)
+    const tools = [
+      storyTool(
+        "mcp_mail_send",
+        "agent-mail_SendMessage",
+        "completed",
+        { to: "team@example.com", subject: "Weekly notes" },
+        { output: "Queued" },
+      ),
+      storyTool("mcp_mail_read", "agent-mail_ReadMessage", "completed", { id: "msg_18" }, { output: "Two replies" }),
+      storyTool("mcp_figma", "figma_get_file", "completed", { fileKey: "AbC123" }, { output: "Frame tree" }),
+      storyTool("mcp_shell", "shell", "completed", { command: "printf ok" }, { output: "ok" }),
+    ]
+
+    return (
+      <section style={{ width: "100%", "max-width": "720px", padding: "24px" }}>
+        <CurrentSessionProviders document={storyDocument(tools)} mcpServers={["agent-mail", "figma"]}>
+          <CurrentContextToolGroup parts={tools} busy={false} open={open()} onOpenChange={setOpen} />
+        </CurrentSessionProviders>
+      </section>
+    )
+  },
+}
+
 export const NoticesOnly = {
   render: () => {
     const [open, setOpen] = createStore({ tools: false, notices: false })
