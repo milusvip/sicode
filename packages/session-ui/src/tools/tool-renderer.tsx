@@ -1745,7 +1745,7 @@ export function ToolDisplay(
 
   return (
     <Show when={!hideQuestion()}>
-      <div data-component="tool-part-wrapper" data-timeline-part-id={props.id}>
+      <div data-component="tool-part-wrapper" data-timeline-part-id={props.id} data-tool={props.tool}>
         <Switch>
           <Match when={error()}>
             {(error) => {

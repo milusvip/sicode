@@ -1822,6 +1822,46 @@
   }
 }
 
+/* SiCode: a question is excluded from the process shell (projection.ts groups it standalone), so
+   without a panel the answered Q&A floats bare on the page background while the shells around it
+   are cards. Give it the shell's panel language: same border, radius, and fills, trigger padding
+   matched so the 19px glyph column of the trigger icon and the Q&A rows stay on one line. */
+[data-component="tool-part-wrapper"][data-tool="question"] {
+  margin-block-end: 8px;
+
+  > [data-component="collapsible"].tool-collapsible {
+    border: 1px solid var(--v2-border-border-weak-base, color-mix(in srgb, currentColor 14%, transparent));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 45%, transparent);
+
+    > [data-slot="collapsible-trigger"] {
+      min-height: 26px;
+      /* 5px left mirrors the process-shell trigger so both icon columns line up. */
+      padding: 3px 8px 3px 5px;
+      /* Inner radius = outer 10px - 1px border, so the header fill follows the panel corners. */
+      border-radius: 9px;
+      background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
+      box-shadow: inset 0 0 0 1px transparent;
+      transition:
+        background-color 120ms ease,
+        box-shadow 120ms ease;
+    }
+
+    > [data-slot="collapsible-trigger"]:hover {
+      box-shadow: inset 0 0 0 1px var(--v2-border-border-strong, rgba(255, 255, 255, 0.2));
+    }
+
+    > [data-slot="collapsible-content"][data-expanded] {
+      padding-bottom: 2px;
+    }
+  }
+
+  /* Room between the Q&A rows and the card's rim; left stays 0 to keep the glyph column. */
+  [data-component="question-answers"] {
+    padding: 0 10px 6px 0;
+  }
+}
+
 [data-component="edit-tool"],
 [data-component="write-tool"],
 [data-component="apply-patch-tool"] {
