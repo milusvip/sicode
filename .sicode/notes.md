@@ -79,7 +79,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 粘贴登录：`SiteCookies` → Ipc `BrowserPane.setCookies` → `chromium.ts`；Cookie 在 pane 内存分区，重开即失效
 - 系统浏览器打开、添加到会话在 ⋯ 菜单；搜索引擎在 `address.ts` 的 `SEARCH_ENGINES`
 
-## 过程壳 / 时间线
+## 过程壳与时间线
 
 
 - 竖线：`message-part.css` 的 `[data-slot="context-tool-group-item"]:not(:last-child)::after`；过程展开且 grouped 才有；相关 overflow 要 `visible`
@@ -238,7 +238,27 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 窄窗口（700px 视口 ≈ 350px 行内容）下统计列会贴死文件名：`[chain-tool-meta]` 的 `margin-inline-start: auto` 在有剩余空间时撑开、耗尽时归零，于是渲染成 `...long.ts+48`。修法是给它加 `padding-inline-start: 6px` 当下限——行宽不变（797px 前后一致），只是从路径那里让出 6px。
 - **story 环境截不到侧栏按钮**：story 的 provider 不提供 `openFile`，`FileRowOpenFile` 直接不渲染。验证办法是在真实 DOM 位置用 CDP 注入一个同尺寸（20×20）节点量间距，再 `document.body.style.zoom = "2"` 放大截图看视觉。别指望 hover 截图——`aria-expanded` 为 false 时箭头本身也是 `opacity: 0`。
 
-## 默认 UI 字体
+- 过程壳展开动画现由 data-animating 门控（tool-renderer.tsx change() 设置，240ms 自清除；message-part.css 选择器同步）：只在用户点击折叠/展开时播放，会话打开/失败回合默认展开/流式自动展开均不播。
+- 会话打开文字跳动根因（2026-10-25）：virtualizer.tsx 冷挂载 visibility:hidden 保护仅限 pinned 会话，非 pinned（滚动停在中间）冷首开裸奔——行高先按 60px 估算渲染、ResizeObserver 实测后逐行纠正，可见区文字整体下移。修复：coldMount(=!cache) 广义门控 reveal，拆 coldRevealPending（reveal）/coldPending（pinned bottom-settle）。已 tsc 通过。
+- 指令更新通知（packages/session-ui/src/timeline/session-timeline-row.tsx `notice()`）：system 消息 metadata.notice=="instructions" + instructionSources 由 message-updater.ts:151 从 session.instructions.updated 事件生成；InstructionState.prepare 在 runner/llm.ts:224 每个 step 边界重读指令源，core/git-status 快照一变就发事件，所以通知总贴在刚结束的助手回复下面（时间线=事件日志，按时间点追加）。
+- SiCode 改动：`notice()` 过滤 `core/*` 前缀的源（git-status/date/environment 是给模型的内部上下文，不是给用户看的），全 core 的 delta 返回 undefined 不渲染通知卡片；混合源只显示用户级（AGENTS.md 等）；同时覆盖旧格式 description "Instructions updated: " 前缀分支。模型侧上下文更新不受影响（system 消息仍进时间线与请求）。
+- 勿改回：return undefined 时 grouped 路径会建空 part 但 `Show when={content()}` 渲染为空，与 model-switched 先例一致；不能让它落到 `message.description ?? message.text` 兜底，否则会把裸文本 "Instructions updated: core/git-status" 打出来。
+- 过程容器里的文件/编辑行是"卡片规则"渲染的：`message-part.css` 的 `[data-component="apply-patch-tool"] [data-slot="accordion-item"]` 有 `margin-inline: -5px -8px; width: auto; border/radius/background; overflow: hidden`，这是给回合末尾文件列表调的（卡片要顶到列表边缘），触发区再用 `padding-inline: 5px 8px` 把图标列补回来（1523 行）。放进过程链条时外拉会超出 shell 边框：实测卡片 145..958，shell 144..956，链条行 150..951 → 右侧 2px 压在圆角上，展开的 diff 一起溢出，右侧 ±统计和箭头贴在边框。
+- 修复（提交 3a85ad530b）：`[data-component="collapsed-tool-group"][data-process-shell]` 下把 item 复位成链条内容盒（width auto / margin-inline 0 / border 0 / radius 0 / background transparent），trigger `padding-inline: 0`，图标列与 shell/思考行同轴（实测 x=149.6 一致，diff 149.6..950.5 完全在容器内）。
+- 测量方法（本机没装 playwright 浏览器）：storybook `bun run --cwd packages/storybook storybook`（根 node_modules 缺 `storybook-solidjs-vite` 时用 mklink /J 从 packages/storybook/node_modules 接一个）+ CentBrowser `--headless --remote-debugging-port=9444` + CDP `Runtime.evaluate` 取 getBoundingClientRect / CSS.getMatchedStylesForNode，比猜 CSS 快得多。
+- 已知不一致（未改）：过程链条分支的 `fileOpen` 用裸 key `patch:${path}`（session-timeline-row.tsx:299-302），而分组分支用 `${row().group.key}:file:${path}`（:383）——同一文件在多轮/多个过程容器间共享展开状态。
+- 链上编辑行的颜色口径（7706cc3c2f）：用户明确「布局别动，只要颜色醒目」——否掉把链行换成结束卡片样式/复用 patch 渲染器的方案。ChainFileRow 复用 `fileChangeAction`（与 `FileChangeTriggerHeader` 同源映射），title 挂 `data-type=added/removed/modified`，CSS 用 `--icon-diff-{add,delete,modified}-base` 着色（与回合末「更改的文件」同 token），路径从 `text-muted` 提到 `text-base`。注意 `--icon-diff-*` 是 legacy token，只跟 prefers-color-scheme 不跟应用内配色切换。
+- **系统提示词新增「Check before you commit」四条（15f93ba805）**：治"闷头干不查资料"。讨论定稿原则：要通用结构信号不要场景清单（枚举版本/报错只会让模型在枚举项才想起查）；"记忆只是假设"说法不对，改"memory is a prior, not evidence"（记忆是合法可错来源，先验/证据之别才自洽）；用户拍板 4 条上限——元规则超 4-5 条会互相权衡变笨。7 个 system-prompt/*.txt（按 provider 家族选）都追加同一段，英文（周边全英文，中文块稀释注意力）。内容：①不确定就查+稳定可推导的别重复查 ②动手前找现成的+至少比一个备选+一行说明为什么 ③同策略败两次换路 ④验证有成本。**重启 sidecar 生效**。
+- 「Check before you commit」二稿（726b5527ba，替换 15f93ba805）：用户亲自改的版本。三处收紧——①易变事实门槛明确化："稳定或可推导的直接做，但没查过的易变事实不许断言"；②"败两次"定义精确为"同工具+同参数，或同一思路"；③规则 4 显式声明只对低影响事实放宽规则 1，易变/高影响事实永不放宽。7 个 txt 全量替换，仍是重启 sidecar 生效。
+- **web 工具描述补触发场景（8be447379b）**：查证 Cursor 的搜索时机结论=纯模型自判，无框架硬触发器；它做的三件事是工具调优（1.4 轻量模型调优 websearch）、去审批摩擦（CLI autoAcceptWebSearch，默认关）、@docs 预索引。可抄的只有工具描述引导：websearch description 列 4 个触发场景（未验证的版本/价格/现状、不认识或扛过两次修复的报错、没把握的库/API→接 webfetch 官方文档、结果依赖的记忆事实）+ 已知 URL 优先 webfetch；webfetch 加"答案在已知地址就抓"（官方文档/changelog/README/websearch 结果页）。与系统提示词「Check before you commit」分工：规则管该不该查，工具描述管到点想得起来（模型每次工具列表都会读到）。纯 description 字符串改动，重启 sidecar 生效。
+- **自主找参考项目（b1179d4976）**：用户截图实证——手动让它搜"deepseek 自动注册项目参考"，它立刻搜到 fork 项目换路线（auth-api 移动端 API 绕 WAF），证明能力在、触发缺。三处引导都没覆盖"难点找参考"：规则 2 被理解成只翻仓库、规则 3 的 research 太笼统、websearch 触发全是事实/报错类。改法（不加新规则，守 4 条上限）：规则 2 点名 "mature libraries and prior art on the web (search for projects that solve the same problem)"；规则 3 的 "research or change methods" 改成 "search the web for how others solved it — an existing project or library usually beats another attempt from scratch"；websearch 加第 5 个触发 "hard or unusual problem you would otherwise grind on — reuse beats trial-and-error"。重启 sidecar 生效。若仍压不住，后手=主循环检测连败 N 次注入"去搜"提醒（框架级确定性行为）。
+- **搜索时机三档梯子（c6d35ba14f）**：用户提醒"触发不能太晚"。T0=任务入口（陌生地界：仓库无类似在跑代码+无验证过的做法→先搜再写，15-30s）；T1=第2次失败（规则3）；T2=硬兜底（框架检测连续3次工具失败，变体也算，注入"去搜现成方案"，未实施）。代价论证：一次搜索<一次失败尝试（1-3min），太早不亏；过度触发由规则1"稳定可推导不搜"+规则4"验证有成本"压着。把 websearch 第5触发从主观的"hard or unusual problem"改成操作性条件（仓库无类似代码+无已证明思路），主观难度判断恰是模型最差的。
+- **T2 硬兜底落地（59d55ef5c3）**：主循环级失败连击检测。新文件 `session/runner/failure-streak.ts`：`detectFailureStreak` 纯函数扫本回合 trailing 工具调用（user 消息截断），failure=error 状态（排除 aborted=用户拒绝/中断）+ shell completed 结果的 `metadata.exit!==0` 或 `timeout===true`（**shell 非零退出不是 error 状态**，测试反复跑不过这种最常见磨人信号在 metadata 里）。触发=最近 12 次调用（FAILURE_STREAK_WINDOW）里 ≥4 败（FIRST）；重提醒节奏=全回合单调计数距上次 nudge ≥3（EVERY），状态存 `failureNudged={at}` 对象（number 不能按引用传）。接入 `selectSteer` 优先级：loopNudge 之后 narrate 之前，role=system 不停回合。注入文案：别再试变体→websearch 找现成方案→已搜过就换角度/换路/问用户，一行说明为什么。llm.ts 混并行会话的 final-answer-gate 未提交功能（runStep 调用行同线交织），用「cp 备份→git show HEAD 重置→重打我的 5 处→add→还原」拆分提交——比 hunk 拆分稳。steer.test/failure-streak.test 全过，session-runner.test 有 1 个 compaction 失败是并行存量（stash 验证过与本次无关）。
+- **推送 main-sicode 到 GitHub（首次建远端分支）**：三件事。①SSH 22 被代理 fake-IP（198.18.x）断连，~/.ssh/config 的 github.com 改走 ssh.github.com:443（认证 milusvip 成功）。②pre-push 钩子跑全仓 check 失败——stats/app 有嵌套 vite 7.3.6（package.json 钉的）vs 根 8.2.2，nitro() 返回 vite8 类型插件喂给 vite7 校验的 plugins 数组；照上一行 solidStart 的先例加 `as PluginOption` 修掉（stats/app + console/app 两处）。③发现 7f627972fc 曾整文件 git add edit.ts 卷入并行会话未提交的 batch-encoding 功能（batch-encoding.ts 是 untracked，推上去必坏构建）——push 前 reset --soft 拆出重提为 640479fd96。**教训：并行会话活跃期，git add 整文件前必须 git diff 检查该文件是否含他人改动**。
+- 链行悬浮底色改过（2026-10-28）：原来是 layer-02 满色 100%（暗色合成 ≈46），比过程头（layer-01 100%=36）和编辑卡（≈39）都亮，hover 一行像选中条。现在 --chain-row-hover = layer-01 70%（合成 ≈34，落在面板 45%≈28 和头 100%=36 之间），定义在 message-part.css 的 context-tool-group-list 和 chain-file-group 的 hover 回退两处，图标底座共用同一变量。
+- 窄窗口适配（2026-10-28）：回合末尾变更清单的动词（更新/新建，apply-patch-change）在窄窗下被压成一列竖字——CJK 任意字符可断行，而它没有 nowrap 也没 shrink-0；flex 挤压时路径还没到底、动词先塌。修复：shared 作用域 [accordion][data-scope=apply-patch] 的 apply-patch-change 补 white-space:nowrap + flex-shrink:0（链条内作用域本来就有 shrink-0，壳外那份漏了）。挤压全交给路径（directory rtl-ellipsis → filename ellipsis 的收缩链本来就是对的）。右端 open-file/抓手列 shrink-0，极端窄时被 item 的 overflow:hidden 裁掉，可接受。
+
+## 字体与排版
 
 
 
@@ -249,15 +269,22 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - ?????? IBM Plex Mono ????????? UI ????????????????`index.css` ?? Plex Regular/Text/Medium ??????? Text ???????
 - ?????????`SteppedSlider`??????????? `appearance.tsx`??? 12?18??? 15??? `appearance.fontSize` ?? `applyFontSizeTokens` ?? `--font-size-*`
 
+- 会话面字号/字重的唯一调节点是 packages/ui/src/styles/theme.css（:root 的 --font-size-small/-x-small/--font-weight-regular）；组件层 CSS 一律应引用 var()，勿硬编码 px。
+- 2026-10-25 起 token 值为 small=14px、x-small=12px、regular=460（针对 Windows Chromium 下思源黑体可变字体小字号发虚的问题调大），14 个会话面 CSS 已从硬编码 13px/11px/440 切到 token。
+- packages/app/src/index.css 里 IBM Plex Mono 的 @font-face（weight 400/440 两段）是字体注册，不是文本样式。
+- 终端默认字体 JetBrainsMono Nerd Font Mono 定义在 packages/app/src/settings/model.tsx（bundled woff2）。
+- 对照组 WorkBuddy（本机安装目录实测）：无内置 webfont，UI 走系统栈 PingFang SC/微软雅黑（--sc-ui-font-family，--sc-content-font-family 同栈带 emoji 兜底），等宽 ui-monospace/Menlo/Consolas、部分组件 Source Code Pro；有用户可调的字体大小滑块（--sc-font-scale）。
+- 2026-10-25 深夜：用户嫌思源黑体不如 WorkBuddy 好看，--font-family-sans 已改为 WorkBuddy 同序的系统栈（-apple-system/PingFang SC/微软雅黑优先，Noto 系降到末位兜底）。Windows 上 UI/正文实际渲染=微软雅黑；weight 460 在雅黑下回落 Regular 400（雅黑只有 300/400/700），medium 500 同理回落 400。IBM Plex Mono 等宽栈未动。bundled @fontsource Noto 仍在 index.css 里注册，作为无雅黑机器的兜底。
+
 ## 全局右键菜单
-
-
 
 - `packages/app/src/shell/context-menu/`，挂在 `app.tsx`；原生 `electron-context-menu` 留给 webview，别删
 - 用 Kobalte DropdownMenu 程序化打开；开着再右键要先关再开，且不能有退场动画
 - ???????????? `packages/app/src/shell/ui-inspect/`?? app DOM ? ?? ? `composer.context.add` note?origin `ui`????? Electron `webContents.inspectElement`
 - ???`context-menu.tsx` ? `view.inspectElement` ? `startUiInspect()`????? `app.tsx`?`UiInspectComposerBridge` ?? session/draft ? `ComposerPersistenceProvider` ?
 - F12 /???????????? `view.toggleDevTools`
+- 右键菜单扩了三件事（2026-10-28）：①右键消息气泡（user-message-text / text-part-body，closest + innerText 保换行）无选区时给「复制」整条消息，有选区仍是选区复制；②右键 <img> 给「复制图片」（fetch → 非 PNG 用 canvas 转 PNG → navigator.clipboard.write(ClipboardItem)）和「复制图片地址」（写 src）；③层级顺序 link → image → 文本组。i18n 新键 contextMenu.copyImage / copyImageAddress（en/zh/zht）。关键坑：Electron 44 主进程删了 clipboard.writeImage，新 API clipboard.write(ClipboardItem[]) 但 ClipboardItem 构造器只在渲染进程可导出——所以写图不穿 IPC，直接渲染进程 W3C 异步剪贴板（菜单点击即用户激活）；fetch 被 CORS 挡时静默失败，地址项仍可用。模型改动全在 app/src/shell/context-menu/{model,context-menu,icons}.tsx + model.test.ts（9 测试过，app/desktop typecheck 干净）。
+- 选区悬浮菜单 + Cookie 登录态识别（2026-10-28）：①对话区拖选出现 复制/引用 小条（app/src/shell/selection-menu/{controller,bridge,popup}.tsx）：mouseup 检测选区，anchorNode 在 [data-timeline-key] 内且非可编辑才显示，锚在选区上方（top<80 翻到下方），scroll/Esc/点外隐藏，bar 上 pointerdown preventDefault 保选区；「引用」复用 ui-inspect 的 note 通道——SelectionQuoteBridge 挂在 session/new-session 路由的 ComposerPersistenceProvider 里，NoteContextItem origin=quote、icon=speech-bubble（图标目录没有 quote，未知名会回退成 plus 的坑），chip 出现在输入框上方。i18n 键 session.quote（en/zh/zht）。②Cookie 粘贴登录：setCookies 写入+reload 后等载入（10s 上限），读两个信号——粘贴的 cookie 名是否仍可读（被站点拒绝通常会被清掉）、页面是否还有 input[type=password]——输出 {cookies, login:{state: likely|unclear|unlikely, kept, pasted}}，ipc/chain/connection/panel 全链路，toast 副标题显示「登录态已生效/无法确认/疑似未登录」。i18n cookies.login.*（en/zh/zht，其余语言回退英文）。
 
 ## 对话区这几块的美化
 
@@ -270,7 +297,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 沙盒坑：`.preview-shell` 里改完 CSS 再热构建会挂在 `packages/ui/src/styles/index.css` 的 `@import "katex/dist/katex.min.css"`（root 没有 katex，只有 `packages/ui/node_modules` 有）。所以沙盒只能吃到已生成的缓存 CSS；要重新构建得先在 root 装 katex 或换个入口
 - ?????`AssistantTextContent` ? `duration`?`message/message-content.tsx`??? `Math.round(ms/1000)`??? `formatElapsed`?`timeline/work-shell.tsx`?? `Math.floor`??? `turnDurationMs` ? 371.x ??????6m 11s???6 ?? 12 ????????? floor?? `<1s` ????????????????????????
 
-## 项目记忆
+## 项目记忆与召回
 
 
 
@@ -289,6 +316,17 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **`tool/plugin/history.ts`（SiCode 自研，2026-10-25）**：压缩后回溯压缩前的原文。读 `SessionStore.messages()` 全量（不限 seq），`boundaryOf` 取**最后一条 status=completed 的 compaction** 的索引作为边界，之前的消息经 `SessionRecentText.messageToText` 转文本后做关键词匹配（query 按空白/逗号/分号切词，任一命中即算命中），不给 query 返回最近 limit 段；单段超 1500 字符保留头+尾。返回 marker 形如 `N of M archived exchanges, from before the last compaction`。注册点 `plugin/internal.ts` 三处：插件表、`SessionStore.Service`、`SessionStore.node`；`session/` 内核零改动。边界必须是**最后**一条 compaction 而不是第一条——SiCode 的摘要是全量覆盖而非增量，取第一条会漏掉中间段（测试里踩过：期望 `[middle]`，实际 `[old, middle]` 且实际行为才对）。
 - **`tool-output.ts` 截断策略（2026-10-25 改）**：`TAIL_SHARE = 0.4`，head 先取 60% 行预算 + 全量字节预算，tail 再取剩余行/字节预算且不回头吃 head；marker 形如 `[showing lines 1-1200 and 2202-3001 of 3001; full output saved to …]`。含 `file` part（图片）的结果走 `boundedHead`，只留头部以保住图文原顺序。默认限额 `MAX_LINES=2000` / `MAX_BYTES=50KiB`。
 - 验证纪律：这类截断改动**不要用「让模型跑大输出」的 E2E 去证**——模型会在 shell 里用变量/管道自己过滤，`metadata.truncated=false`，截断层根本没跑（2026-10-25 实际踩到）。要用服务层确定性测试：`test/tool-output.test.ts` 里直接调 `ToolOutput.Service.truncate`，默认限额 + 3001 行样本。
+
+- SiCode 有三套「索引」，都不叫索引也都没有向量：① `project-memory`（`packages/core/src/session/project-memory.ts`）从 compaction 摘要的三个固定小节提取 fact，KV 存 `project-memory:${directory}`，上限 200 条 × 400 字，`recall` 是它的入口；② `history`（`packages/core/src/tool/plugin/history.ts`）只读 compaction boundary 之前的归档原文；③ `explore-budget`（`packages/core/src/session/runner/explore-budget.ts`）不是检索，是闸门——连续只读步数 12 步催状态、24 步硬停，`READ_ONLY_TOOLS` 里含 recall/webfetch/websearch，即"查"也算消耗。
+- 上向量的门槛没有到：200 × 400 = 最多 80KB 全在内存，全量扫描比建索引便宜。真要升级的顺序是 FTS5（`bun:sqlite` 自带，零新依赖，BM25 + 前缀 + 短语）→ 跨会话 history → 最后才考虑向量，且必须混合（纯语义在标识符上漏）。
+- **不要给代码库建向量索引**：`filesystem/trigram.bun.ts` 已经是 FTS5 trigram 候选索引（8232 文件 / 56MB：10s 建、15MB 盘、5-85ms 查询 vs 全量 rg 3.5-4.4s），且只做「候选超集」，正确性仍交给 ripgrep 重跑。再加一层 embedding 同步，冲突成本超过收益。（`959d565d62`）
+- `search()` 原来的切词是 `split(/[\s,;]+/)`，中文没有词边界 → 无空格查询是单 token → 只能撞「整串恰好是原文连续子串」。实测：`长 diff 底部` 命中、`长diff底部` 落空、`收起栏在底部`（语序变化）落空。**修法不是向量，是二元窗口**：精确通道先跑且不变（逐字命中不能被模糊分重排），0 命中才跑 bigram，覆盖率 0.5 过线；纯拉丁与单字 query 直接跳过 fallback（`ab` 这种窗口几乎命中一切）。（`959d565d62`）
+- **同源缺陷还在 `history.ts:104`**：同样的 `split(/[\s,;]+/)` + `terms.some(term => lower.includes(term))`。它搜的是长段原文，不能照搬 coverage 阈值（长文本偶然 bigram 太多），要么 AND 语义（全部窗口命中）要么用「相邻窗口链」判定。未修。
+- 回归 fixture：`packages/core/src/session/project-memory.test.ts` 两条 `SiCode:` 测试；肉眼验证用 `bun packages/core/script/project-memory-demo.ts <summary.md> "<query>"`（第二个参数默认 `浏览器 工具栏`）。
+- `history` 的匹配缺陷已修（`784d318310`），但修的不是中文，是**英文多词假阳性**：原实现 `terms.some(...)` + `.slice(-limit)`，多个词里命中任意一个就算匹配，所以 `ssl certificate error` 会返回一段只共享 `error`（讲 provider 配置）的旧对话，而 `toModelContent` 报「1 of 6 archived exchanges」——调用方分不出强弱匹配，会把错答案当答案。这是**静默错答**，比 miss 危险。改成**半数词覆盖**（`Math.ceil(terms.length / 2)`）：1 词=全部词（与旧行为完全一致）、2 词仍需 1、3 词需 2。
+- **中文无空格在 history 里不修，是判断不是遗漏**：① AND 语义要求所有二元组命中，而跨词边界的窗口（「书错」）中文里不存在 → 永远 miss，等价于现状；② coverage 阈值在 recall 能用是因为 fact ≤400 字短句，history 搜 ≤1500 字长段落，偶然撞的二元组太多，0.5 会变成「什么都召回」；③ 真要解决得用**邻近度**（「证书」与「错误」相距 N 字内），另一套数据结构。④ history 的 miss 是**响亮**的（输出 *"No archived exchange matches that… try another word"*，模型会换词重试），代价一次工具调用，可控。
+- 匹配逻辑原先埋在 `Plugin.execute` 闭包里，**零测试覆盖**（`test/plugin/history.test.ts` 原有 9 条全是 archive 边界与输出文案，没有一个 query 用例）。因此这次顺带提成导出的 `search(archived, query, limit)`，和同文件的 `archiveOf` / `clip` / `toModelContent` 风格一致，并补 6 条测试（`packages/core/test/plugin/history.test.ts` 的 `history search` 组）。**教训：一条逻辑一旦在闭包里，就等于默认它不会被测。**
+- 阈值行为边界（写测试时容易踩）：`search(archive, "reasoning 配置", 5)` 只命中 `reasoning` 也返回——因为 2 词时 `needed = 1`。想验证「多词拒绝」必须用 **3 词以上**的 query，2 词永远测不出差异。
 
 ## 工具执行并行
 
@@ -563,36 +601,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **grep 结果排序已加「文件名命中优先 + 测试降权」（2026-10-26）**：`packages/core/src/tool/plugin/grep.ts` 的 `toModelContent` content 模式排序从「纯命中数降序」改成「rank 优先、命中数次之」——rank 0=实现文件且文件名命中 pattern（`nameStem(file).includes(patternStem)`，pattern 含正则元字符则跳过该信号）、rank 1=其他实现文件、rank 2=测试/夹具文件（`isTestPath` 匹配 `__tests__`/`test`/`tests`/`spec`/`__mocks__`/`__fixtures__` 及 `*.test.*`/`*.spec.*`）。预览标题「Files by hit count」改「Files by relevance」。`toModelContent` 签名加了 `pattern` 参数。count/files_with_matches 模式不变（走独立分支）。测试 `tool-search.test.ts` 加 `ranks files by filename hit first, demotes tests`。
 - 修正旧笔记「裸 rg 输出、无排序」：命中数排序和截断引导其实早已有（`truncatedNote` 写「narrow with path or include」），本轮只补了文件名命中 + 测试降权两档。
 
-## 字体与排版
-
-
-
-- 会话面字号/字重的唯一调节点是 packages/ui/src/styles/theme.css（:root 的 --font-size-small/-x-small/--font-weight-regular）；组件层 CSS 一律应引用 var()，勿硬编码 px。
-- 2026-10-25 起 token 值为 small=14px、x-small=12px、regular=460（针对 Windows Chromium 下思源黑体可变字体小字号发虚的问题调大），14 个会话面 CSS 已从硬编码 13px/11px/440 切到 token。
-- packages/app/src/index.css 里 IBM Plex Mono 的 @font-face（weight 400/440 两段）是字体注册，不是文本样式。
-- 终端默认字体 JetBrainsMono Nerd Font Mono 定义在 packages/app/src/settings/model.tsx（bundled woff2）。
-- 对照组 WorkBuddy（本机安装目录实测）：无内置 webfont，UI 走系统栈 PingFang SC/微软雅黑（--sc-ui-font-family，--sc-content-font-family 同栈带 emoji 兜底），等宽 ui-monospace/Menlo/Consolas、部分组件 Source Code Pro；有用户可调的字体大小滑块（--sc-font-scale）。
-- 2026-10-25 深夜：用户嫌思源黑体不如 WorkBuddy 好看，--font-family-sans 已改为 WorkBuddy 同序的系统栈（-apple-system/PingFang SC/微软雅黑优先，Noto 系降到末位兜底）。Windows 上 UI/正文实际渲染=微软雅黑；weight 460 在雅黑下回落 Regular 400（雅黑只有 300/400/700），medium 500 同理回落 400。IBM Plex Mono 等宽栈未动。bundled @fontsource Noto 仍在 index.css 里注册，作为无雅黑机器的兜底。
-
-## 过程壳与时间线
-
-- 过程壳展开动画现由 data-animating 门控（tool-renderer.tsx change() 设置，240ms 自清除；message-part.css 选择器同步）：只在用户点击折叠/展开时播放，会话打开/失败回合默认展开/流式自动展开均不播。
-- 会话打开文字跳动根因（2026-10-25）：virtualizer.tsx 冷挂载 visibility:hidden 保护仅限 pinned 会话，非 pinned（滚动停在中间）冷首开裸奔——行高先按 60px 估算渲染、ResizeObserver 实测后逐行纠正，可见区文字整体下移。修复：coldMount(=!cache) 广义门控 reveal，拆 coldRevealPending（reveal）/coldPending（pinned bottom-settle）。已 tsc 通过。
-- 指令更新通知（packages/session-ui/src/timeline/session-timeline-row.tsx `notice()`）：system 消息 metadata.notice=="instructions" + instructionSources 由 message-updater.ts:151 从 session.instructions.updated 事件生成；InstructionState.prepare 在 runner/llm.ts:224 每个 step 边界重读指令源，core/git-status 快照一变就发事件，所以通知总贴在刚结束的助手回复下面（时间线=事件日志，按时间点追加）。
-- SiCode 改动：`notice()` 过滤 `core/*` 前缀的源（git-status/date/environment 是给模型的内部上下文，不是给用户看的），全 core 的 delta 返回 undefined 不渲染通知卡片；混合源只显示用户级（AGENTS.md 等）；同时覆盖旧格式 description "Instructions updated: " 前缀分支。模型侧上下文更新不受影响（system 消息仍进时间线与请求）。
-- 勿改回：return undefined 时 grouped 路径会建空 part 但 `Show when={content()}` 渲染为空，与 model-switched 先例一致；不能让它落到 `message.description ?? message.text` 兜底，否则会把裸文本 "Instructions updated: core/git-status" 打出来。
-- 过程容器里的文件/编辑行是"卡片规则"渲染的：`message-part.css` 的 `[data-component="apply-patch-tool"] [data-slot="accordion-item"]` 有 `margin-inline: -5px -8px; width: auto; border/radius/background; overflow: hidden`，这是给回合末尾文件列表调的（卡片要顶到列表边缘），触发区再用 `padding-inline: 5px 8px` 把图标列补回来（1523 行）。放进过程链条时外拉会超出 shell 边框：实测卡片 145..958，shell 144..956，链条行 150..951 → 右侧 2px 压在圆角上，展开的 diff 一起溢出，右侧 ±统计和箭头贴在边框。
-- 修复（提交 3a85ad530b）：`[data-component="collapsed-tool-group"][data-process-shell]` 下把 item 复位成链条内容盒（width auto / margin-inline 0 / border 0 / radius 0 / background transparent），trigger `padding-inline: 0`，图标列与 shell/思考行同轴（实测 x=149.6 一致，diff 149.6..950.5 完全在容器内）。
-- 测量方法（本机没装 playwright 浏览器）：storybook `bun run --cwd packages/storybook storybook`（根 node_modules 缺 `storybook-solidjs-vite` 时用 mklink /J 从 packages/storybook/node_modules 接一个）+ CentBrowser `--headless --remote-debugging-port=9444` + CDP `Runtime.evaluate` 取 getBoundingClientRect / CSS.getMatchedStylesForNode，比猜 CSS 快得多。
-- 已知不一致（未改）：过程链条分支的 `fileOpen` 用裸 key `patch:${path}`（session-timeline-row.tsx:299-302），而分组分支用 `${row().group.key}:file:${path}`（:383）——同一文件在多轮/多个过程容器间共享展开状态。
-- 链上编辑行的颜色口径（7706cc3c2f）：用户明确「布局别动，只要颜色醒目」——否掉把链行换成结束卡片样式/复用 patch 渲染器的方案。ChainFileRow 复用 `fileChangeAction`（与 `FileChangeTriggerHeader` 同源映射），title 挂 `data-type=added/removed/modified`，CSS 用 `--icon-diff-{add,delete,modified}-base` 着色（与回合末「更改的文件」同 token），路径从 `text-muted` 提到 `text-base`。注意 `--icon-diff-*` 是 legacy token，只跟 prefers-color-scheme 不跟应用内配色切换。
-- **系统提示词新增「Check before you commit」四条（15f93ba805）**：治"闷头干不查资料"。讨论定稿原则：要通用结构信号不要场景清单（枚举版本/报错只会让模型在枚举项才想起查）；"记忆只是假设"说法不对，改"memory is a prior, not evidence"（记忆是合法可错来源，先验/证据之别才自洽）；用户拍板 4 条上限——元规则超 4-5 条会互相权衡变笨。7 个 system-prompt/*.txt（按 provider 家族选）都追加同一段，英文（周边全英文，中文块稀释注意力）。内容：①不确定就查+稳定可推导的别重复查 ②动手前找现成的+至少比一个备选+一行说明为什么 ③同策略败两次换路 ④验证有成本。**重启 sidecar 生效**。
-- 「Check before you commit」二稿（726b5527ba，替换 15f93ba805）：用户亲自改的版本。三处收紧——①易变事实门槛明确化："稳定或可推导的直接做，但没查过的易变事实不许断言"；②"败两次"定义精确为"同工具+同参数，或同一思路"；③规则 4 显式声明只对低影响事实放宽规则 1，易变/高影响事实永不放宽。7 个 txt 全量替换，仍是重启 sidecar 生效。
-- **web 工具描述补触发场景（8be447379b）**：查证 Cursor 的搜索时机结论=纯模型自判，无框架硬触发器；它做的三件事是工具调优（1.4 轻量模型调优 websearch）、去审批摩擦（CLI autoAcceptWebSearch，默认关）、@docs 预索引。可抄的只有工具描述引导：websearch description 列 4 个触发场景（未验证的版本/价格/现状、不认识或扛过两次修复的报错、没把握的库/API→接 webfetch 官方文档、结果依赖的记忆事实）+ 已知 URL 优先 webfetch；webfetch 加"答案在已知地址就抓"（官方文档/changelog/README/websearch 结果页）。与系统提示词「Check before you commit」分工：规则管该不该查，工具描述管到点想得起来（模型每次工具列表都会读到）。纯 description 字符串改动，重启 sidecar 生效。
-- **自主找参考项目（b1179d4976）**：用户截图实证——手动让它搜"deepseek 自动注册项目参考"，它立刻搜到 fork 项目换路线（auth-api 移动端 API 绕 WAF），证明能力在、触发缺。三处引导都没覆盖"难点找参考"：规则 2 被理解成只翻仓库、规则 3 的 research 太笼统、websearch 触发全是事实/报错类。改法（不加新规则，守 4 条上限）：规则 2 点名 "mature libraries and prior art on the web (search for projects that solve the same problem)"；规则 3 的 "research or change methods" 改成 "search the web for how others solved it — an existing project or library usually beats another attempt from scratch"；websearch 加第 5 个触发 "hard or unusual problem you would otherwise grind on — reuse beats trial-and-error"。重启 sidecar 生效。若仍压不住，后手=主循环检测连败 N 次注入"去搜"提醒（框架级确定性行为）。
-- **搜索时机三档梯子（c6d35ba14f）**：用户提醒"触发不能太晚"。T0=任务入口（陌生地界：仓库无类似在跑代码+无验证过的做法→先搜再写，15-30s）；T1=第2次失败（规则3）；T2=硬兜底（框架检测连续3次工具失败，变体也算，注入"去搜现成方案"，未实施）。代价论证：一次搜索<一次失败尝试（1-3min），太早不亏；过度触发由规则1"稳定可推导不搜"+规则4"验证有成本"压着。把 websearch 第5触发从主观的"hard or unusual problem"改成操作性条件（仓库无类似代码+无已证明思路），主观难度判断恰是模型最差的。
-- **T2 硬兜底落地（59d55ef5c3）**：主循环级失败连击检测。新文件 `session/runner/failure-streak.ts`：`detectFailureStreak` 纯函数扫本回合 trailing 工具调用（user 消息截断），failure=error 状态（排除 aborted=用户拒绝/中断）+ shell completed 结果的 `metadata.exit!==0` 或 `timeout===true`（**shell 非零退出不是 error 状态**，测试反复跑不过这种最常见磨人信号在 metadata 里）。触发=最近 12 次调用（FAILURE_STREAK_WINDOW）里 ≥4 败（FIRST）；重提醒节奏=全回合单调计数距上次 nudge ≥3（EVERY），状态存 `failureNudged={at}` 对象（number 不能按引用传）。接入 `selectSteer` 优先级：loopNudge 之后 narrate 之前，role=system 不停回合。注入文案：别再试变体→websearch 找现成方案→已搜过就换角度/换路/问用户，一行说明为什么。llm.ts 混并行会话的 final-answer-gate 未提交功能（runStep 调用行同线交织），用「cp 备份→git show HEAD 重置→重打我的 5 处→add→还原」拆分提交——比 hunk 拆分稳。steer.test/failure-streak.test 全过，session-runner.test 有 1 个 compaction 失败是并行存量（stash 验证过与本次无关）。
-
 ## shell 输出编码
 
 
@@ -621,7 +629,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 上游同步
 
-
 - 上游 remote `sst/opencode`（dev 分支），分叉基线 `76fd05ff45`（2026-10-22）。策略（用户拍板）：**不整体 merge，列清单按需摘取**。流程：① `git fetch upstream dev` 后 `git log --oneline 76fd05ff45..upstream/dev`，按内核修复/新功能/桌面端 UI/文档 CI 分类列清单并标注影响面；② 用户挑选；③ 没碰我们分叉文件（i18n/图标/桌面壳/SiCode 功能）的直接 cherry-pick，碰了就手工移植并保留 `// SiCode:` 注释；涉及依赖的移植完 `bun install --linker=hoisted`，再跑 `bun run check` 和相关包测试。完整流程在根 `UPSTREAM.md`（README 同步一节链接它）。
 - 2026-10-26 那次 upstream/dev 整体合并**已回滚**（`merge/upstream-2026-10-26` 停在 4b4aab66f6，即合并前的 0133662a23 之后若干提交）。合并本身当时是打通的，留档供以后按需摘取：cf2b4a89d5 解掉 174 处冲突，app/session-ui/gui-extensions/core/desktop tsc 全绿；测试 app 892 pass、session-ui 343 pass、gui-extensions 256 pass，core 官方入口 5828 pass / 89 fail 且失败均为环境性（ripgrep 下载被测试框架禁网拦截、MCP 本地 OAuth 回环、recorded 测试超时，合并前基线同样失败）。
 - 那次合并的手工回插清单（再合并时会重新遇到）：`diff.ts` 取上游数字 seq + 保留我们的 prompt 语义（数组改名 `promptBounds` 避免与函数重名）；`llm.ts` 的 steer / narrate / loop 全量回插；`session-header-actions` 清死代码（上游删了 terminalPlacement / dock API）；tab-nav 双侧菜单合并；browser 的 ⌘L 地址栏聚焦按新 ipc/connection/pane 结构回插；`SiteCookies` 回插 `panel.tsx`。stash pop 的冲突解法：message-content 的 meta 合成为 `MetaItem[]` + elapsed 追加项、ui i18n 双侧键都保留。
@@ -634,6 +641,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - `packages/desktop/scripts/windows-installer.test.ts` 是真实集成测试：会调 `getMakeNsisPath` 取 NSIS 工具链并编译脚本，其中一条用例要启动 `reg.exe` 改卸载注册表。在启用了程序黑名单的受限环境里那条必然 `EPERM uv_spawn 'reg.exe'`，属于环境限制，不能当代码回归。
 - 摘带测试的上游提交时，要检查测试里有没有硬编码「工具名/能力枚举」数组。`packages/core/test/location-layer.test.ts` 的 blocked/allowed location 用例就列全了工具清单，摘入上游版本会把我们的 `history`、`recall` 覆盖掉，测试立刻失败（`c17ae01645` 补回两处清单并加了 `// SiCode:` 注释）。同类风险点：任何断言 `tools.map(t => t.name)`、权限预设列表、provider 列表的测试。
 - 位置靠后的提交（`git rev-list --count base..<commit>` 大于 600）明显更好摘：`6135e07fae`(639)、`0ca7885f26`(640)、`dc21f528ac`(642) 三条全部 automerge 无冲突，而同批中位置 183 以后的 server 改动、位置 427 的 desktop 诊断改动都在我们改过的区域里。
+- 2026-10-27 上游 `dae4077a96` 把全局 `extension` 改叫 `plugin`：`packages/gui-extensions/` 整包变成 `packages/gui-plugins/`（旧目录消失），`packages/app/src/runtime/extension/` 变成 `runtime/plugin/`，共 928 个 rename、1179 文件。我们二开的 `gui-extensions/src/debug/*`（约 +335）和 `gui-extensions/src/browser/*` 必须整体搬到新路径，所有 `@opencode/gui-extensions` import 也要改。这是「跟到底」或「永远不跟」的二选一：不跟的话，以后任何 import `@opencode/gui-plugins` 的 app/desktop 提交都摘不了。
+- 上游 `51e4de1da6`（`put dev builds back on the shared service and database`）完整回退了 `8ee9351be9`，dev 构建重新用共享 service 和数据库。当时搁置那条的判断（local 频道不受影响、依赖 3 条链）因此被证实；以后不必再评估它。
 
 ## 会话审查 / 压缩
 
@@ -717,6 +726,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 注意：本机 dev 的渲染层是 electron-vite 预打包的 `/assets/main.js`（inline style 注入），CSS/tsx 改完 HMR 不一定推进页面，需要整页重载甚至等 watcher 重建；CDP 排查时先确认页面里跑的是不是新规则。多个窗口连 9333 时，`/json` 第一项不一定是应用窗口（可能是 .sicode 下的 demo 页），要按 url=localhost:5173 挑。
 - 存量测试失败 3 个（stash 验证过与本次无关）：search-results.test.ts 两个（项目头像/排名）、timeline controller-projection 一个（steer）。
 
+- 三处布局回归都来自 `08cb2c99ed0` 的 TRAE 式侧栏改版：侧栏从「透明 + 64px 尾随内边距」换成「layer-01 面板 + 0.5px 右分隔线 + 24px 尾随内边距」，而内容列仍是按旧的透明侧栏算的。修于 `73966553a6`。
+- 内容列：`.settings-content` 上游 `max-width: 720px`，外层 `.settings` 限宽 `1048` 且被 `margin-inline-end: auto` 顶到左边——1280 窗口下右侧空 152px。现在 `.settings` 取 100%，列宽由内容列自己管（880 + `margin-inline: auto`），宽屏时两侧对半分。
+- 内容列内边距：`.settings-screen .settings-tab-header { padding: 48px 0 0 }` 和 `.settings-tab-body { padding-inline: 0 }` 上游就是 0，以前没有分隔线所以看不出来；侧栏有了边线后标题和卡片直接压线。改成左右 32px（`packages/app/src/settings/settings.css:63` 附近）。
+- 侧栏导航：`.settings-nav { width: 240px }` 原本正好等于「328 - 24 起始 - 64 尾随」的内容宽；尾随改成 24 后内容宽变 288，导航仍是 240，选中胶囊离面板右缘差 48px。改成 `width: 100%`（移动端断点本来就是 100%，现在两边一致）。
+- 设置页没有 storybook fixture：`SettingsNavigation` 依赖 `useSettingsSurface`（router + layout + servers），`SettingsSearch` 还依赖 command/global，静态复刻脚手架很容易失效。要目测就起桌面端。
+
 ## artifact 侧边预览
 
 
@@ -732,15 +747,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 检测层从「只认 write」扩到「write + edit」：`artifact.ts` 的 `latestHtmlChange(messages)`（原 latestHtmlArtifact/htmlArtifactsForTurn 已删）。write 带 content（抽屉快照），edit 的 content 为 undefined——文件已落盘，pane 直接 reload 磁盘，无需快照。
 - ArtifactPanel 语义：**只有 write 能打开新页面**；edit 仅刷新 `opened` 集合里已开过的 path（防止模型编辑某个无关 html 时莫名弹浏览器）。400ms trailing 防抖合并连续步骤（demo 分步构建时不会每步闪一次）。
 - 模型分步写 demo 属正常行为（write 是整文件覆盖，每次都是完整重写）；以前每步触发一次打开/刷新 = 体感「一直闪」，且模型若改用 edit 微调则面板完全不刷新（旧 bug，已修）。
-
-## 设置页
-
-
-- 三处布局回归都来自 `08cb2c99ed0` 的 TRAE 式侧栏改版：侧栏从「透明 + 64px 尾随内边距」换成「layer-01 面板 + 0.5px 右分隔线 + 24px 尾随内边距」，而内容列仍是按旧的透明侧栏算的。修于 `73966553a6`。
-- 内容列：`.settings-content` 上游 `max-width: 720px`，外层 `.settings` 限宽 `1048` 且被 `margin-inline-end: auto` 顶到左边——1280 窗口下右侧空 152px。现在 `.settings` 取 100%，列宽由内容列自己管（880 + `margin-inline: auto`），宽屏时两侧对半分。
-- 内容列内边距：`.settings-screen .settings-tab-header { padding: 48px 0 0 }` 和 `.settings-tab-body { padding-inline: 0 }` 上游就是 0，以前没有分隔线所以看不出来；侧栏有了边线后标题和卡片直接压线。改成左右 32px（`packages/app/src/settings/settings.css:63` 附近）。
-- 侧栏导航：`.settings-nav { width: 240px }` 原本正好等于「328 - 24 起始 - 64 尾随」的内容宽；尾随改成 24 后内容宽变 288，导航仍是 240，选中胶囊离面板右缘差 48px。改成 `width: 100%`（移动端断点本来就是 100%，现在两边一致）。
-- 设置页没有 storybook fixture：`SettingsNavigation` 依赖 `useSettingsSurface`（router + layout + servers），`SettingsSearch` 还依赖 command/global，静态复刻脚手架很容易失效。要目测就起桌面端。
 
 ## 模型与变体
 
@@ -761,20 +767,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 「问」已落地：`schema/src/agent.ts` 默认权限追加 13 条 shell ask 规则（rm -rf/-fr/-r、sudo rm -rf、rmdir、git push --force/-f、git reset --hard、git clean -f、del /f、del /s、format）——放 `allow *` 之后由 findLast 覆盖。单文件 `rm` 故意保持 allow（日常清理，弹窗成本 > 收益）。
 - 规则命中已实测：`Wildcard.match` 13/13 命中目标命令、4/4 不误伤 `rm tmp.txt`/`git status`/`del tmp.txt`。注意 `resource` 是 shell 解析后的**单条子命令全文**（`shell.ts:161` 传 `parsed.commands[].resource`），不是整条 shell 字符串。
 - 客户端链条自动复活：请求一产生 → `session-permission-dock` 弹窗；`destructiveConfirm`（默认 true）在 `auto-approve.ts:154` 阻止破坏性命令被自动接受。
-
-## 项目记忆与召回
-
-
-- SiCode 有三套「索引」，都不叫索引也都没有向量：① `project-memory`（`packages/core/src/session/project-memory.ts`）从 compaction 摘要的三个固定小节提取 fact，KV 存 `project-memory:${directory}`，上限 200 条 × 400 字，`recall` 是它的入口；② `history`（`packages/core/src/tool/plugin/history.ts`）只读 compaction boundary 之前的归档原文；③ `explore-budget`（`packages/core/src/session/runner/explore-budget.ts`）不是检索，是闸门——连续只读步数 12 步催状态、24 步硬停，`READ_ONLY_TOOLS` 里含 recall/webfetch/websearch，即"查"也算消耗。
-- 上向量的门槛没有到：200 × 400 = 最多 80KB 全在内存，全量扫描比建索引便宜。真要升级的顺序是 FTS5（`bun:sqlite` 自带，零新依赖，BM25 + 前缀 + 短语）→ 跨会话 history → 最后才考虑向量，且必须混合（纯语义在标识符上漏）。
-- **不要给代码库建向量索引**：`filesystem/trigram.bun.ts` 已经是 FTS5 trigram 候选索引（8232 文件 / 56MB：10s 建、15MB 盘、5-85ms 查询 vs 全量 rg 3.5-4.4s），且只做「候选超集」，正确性仍交给 ripgrep 重跑。再加一层 embedding 同步，冲突成本超过收益。（`959d565d62`）
-- `search()` 原来的切词是 `split(/[\s,;]+/)`，中文没有词边界 → 无空格查询是单 token → 只能撞「整串恰好是原文连续子串」。实测：`长 diff 底部` 命中、`长diff底部` 落空、`收起栏在底部`（语序变化）落空。**修法不是向量，是二元窗口**：精确通道先跑且不变（逐字命中不能被模糊分重排），0 命中才跑 bigram，覆盖率 0.5 过线；纯拉丁与单字 query 直接跳过 fallback（`ab` 这种窗口几乎命中一切）。（`959d565d62`）
-- **同源缺陷还在 `history.ts:104`**：同样的 `split(/[\s,;]+/)` + `terms.some(term => lower.includes(term))`。它搜的是长段原文，不能照搬 coverage 阈值（长文本偶然 bigram 太多），要么 AND 语义（全部窗口命中）要么用「相邻窗口链」判定。未修。
-- 回归 fixture：`packages/core/src/session/project-memory.test.ts` 两条 `SiCode:` 测试；肉眼验证用 `bun packages/core/script/project-memory-demo.ts <summary.md> "<query>"`（第二个参数默认 `浏览器 工具栏`）。
-- `history` 的匹配缺陷已修（`784d318310`），但修的不是中文，是**英文多词假阳性**：原实现 `terms.some(...)` + `.slice(-limit)`，多个词里命中任意一个就算匹配，所以 `ssl certificate error` 会返回一段只共享 `error`（讲 provider 配置）的旧对话，而 `toModelContent` 报「1 of 6 archived exchanges」——调用方分不出强弱匹配，会把错答案当答案。这是**静默错答**，比 miss 危险。改成**半数词覆盖**（`Math.ceil(terms.length / 2)`）：1 词=全部词（与旧行为完全一致）、2 词仍需 1、3 词需 2。
-- **中文无空格在 history 里不修，是判断不是遗漏**：① AND 语义要求所有二元组命中，而跨词边界的窗口（「书错」）中文里不存在 → 永远 miss，等价于现状；② coverage 阈值在 recall 能用是因为 fact ≤400 字短句，history 搜 ≤1500 字长段落，偶然撞的二元组太多，0.5 会变成「什么都召回」；③ 真要解决得用**邻近度**（「证书」与「错误」相距 N 字内），另一套数据结构。④ history 的 miss 是**响亮**的（输出 *"No archived exchange matches that… try another word"*，模型会换词重试），代价一次工具调用，可控。
-- 匹配逻辑原先埋在 `Plugin.execute` 闭包里，**零测试覆盖**（`test/plugin/history.test.ts` 原有 9 条全是 archive 边界与输出文案，没有一个 query 用例）。因此这次顺带提成导出的 `search(archived, query, limit)`，和同文件的 `archiveOf` / `clip` / `toModelContent` 风格一致，并补 6 条测试（`packages/core/test/plugin/history.test.ts` 的 `history search` 组）。**教训：一条逻辑一旦在闭包里，就等于默认它不会被测。**
-- 阈值行为边界（写测试时容易踩）：`search(archive, "reasoning 配置", 5)` 只命中 `reasoning` 也返回——因为 2 词时 `needed = 1`。想验证「多词拒绝」必须用 **3 词以上**的 query，2 词永远测不出差异。
 
 ## 上下文注入
 
@@ -855,3 +847,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 验证：alias 路径 resolve+spawn 实测 7.6.9（Bun spawn 对 alias 可用）；装实体版后 `which` 直接命中。
 - per-user 实体安装（免管理员）：GitHub releases ZIP（105MB）解压到 `%LOCALAPPDATA%\Programs\PowerShell\7`，追加进 HKCU Path。winget 不行——MSIX 已占 `Microsoft.PowerShell` manifest 名额拒绝装 MSI，`--scope machine` 要管理员。
 - 注意：已运行进程不会自动看到新 PATH，重启 SiCode（dev.bat）后 server 进程生效；alias 修复不依赖 PATH，同样重启后即用。
+
+## 项目地图
+
+- 注入端：`packages/core/src/config/plugin/project-map.ts` 把 `.sicode/structure.md` 全文和 `.sicode/notes.md` 的 `## ` 标题清单拼进每个请求。notes 只给标题是刻意的——全文约 28KB，每请求重放比模型自己按需读那一节更贵；地图全文注入则是划算的，它省掉「先读一遍再动手」的往返（约 1.3k tokens）。
+- 生成端：`packages/cli/src/commands/handlers/init.ts`，命令是 `opencode init`（bin 名仍是 `opencode`，见 `packages/cli/package.json` 的 bin）。它从 cwd 往上找 `.git`/`package.json`/`Cargo.toml`/`go.mod`/`pyproject.toml` 定项目根，扫一级目录（跳过 node_modules、dist、隐藏目录等）、`package.json` 里 dev/build/test/check/lint 开头的脚本、README 第一段散文，产出带 TODO 的骨架；文件已存在就提示并退出，不覆盖。
+- 有意不给「目录职责」「改动该去哪」下结论：静态扫描猜错比留 TODO 更糟，模型会当真。这两节留给 agent 或人填。
+- `.sicode/` 只读不建是长期状态：`ConfigDiscovery` 的 `projectDirectories = [".sicode", ".opencode"]` 只用于发现，全仓没有任何地方 mkdir 它，所以新项目里那套注入不会生效，除非跑一次 init 或手工写文件。
+- 生成入口只有一个：core 的内置斜杠命令 `/init`（`packages/core/src/config/plugin/command.ts`，注册在配置命令之前，用户自建 `init` 可覆盖）。它把「读代码写 `.sicode/structure.md`」整件事交给模型，prompt 里约束篇幅（一页）、排除易过期内容（文件清单/行数/TODO/版本号）、要求已存在时就地改进。桌面端在 composer 打 `/init` 即触发，命令经 `GET /api/command` 暴露，app 侧无需改动。
+- 曾经写过一个 CLI 版 `opencode init`（静态扫描目录 + package.json 脚本 + README 首段，1 秒出骨架），已撤销（`a7aa342ec3`）。撤销理由：桌面端用户不该被要求开终端；两个同名不同行为的入口会让人猜用哪个。静态扫描的价值不足以维护第二份模板。

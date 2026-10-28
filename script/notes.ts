@@ -219,19 +219,35 @@ export function verify() {
 }
 
 /** Fold every dated twin into one section per area, keeping the first position and dropping repeated bullets. */
-export function merge() {
+/** Reads repeated `--alias "from=to"` pairs, so differently named sections of one subject can be joined. */
+function aliases(rest: string[]) {
+  const map = new Map<string, string>()
+  for (let at = 0; at < rest.length; at++) {
+    if (rest[at] !== "--alias") continue
+    const pair = rest[at + 1]
+    if (!pair) throw new Error('--alias needs "from=to"')
+    const split = pair.indexOf("=")
+    if (split <= 0) throw new Error(`--alias needs "from=to", got: ${pair}`)
+    map.set(areaOf(pair.slice(0, split)), areaOf(pair.slice(split + 1)))
+  }
+  return map
+}
+
+export function merge(aliases: ReadonlyMap<string, string> = new Map()) {
   const changed = edit((text) => {
     const { head, sections } = parse(text)
     const merged: Section[] = []
     const index = new Map<string, Section>()
 
     for (const section of sections) {
-      const existing = index.get(section.area)
+      // One hop only: a chain would make the result depend on the order the sections happen to appear in.
+      const area = aliases.get(section.area) ?? section.area
+      const existing = index.get(area)
       if (!existing) {
         // Even a section with no twin loses its date: the file is read by area, and a date in the title makes the
         // same area look like two.
-        const copy = { ...section, title: section.area, lines: [...section.lines] }
-        index.set(section.area, copy)
+        const copy = { ...section, area, title: area, lines: [...section.lines] }
+        index.set(area, copy)
         merged.push(copy)
         continue
       }
@@ -279,9 +295,9 @@ if (command === "add") {
 } else if (command === "verify") {
   verify()
 } else if (command === "merge") {
-  merge()
+  merge(aliases(rest))
 } else {
-  console.log("usage: bun script/notes.ts <add --area NAME|list|verify|merge>")
+  console.log('usage: bun script/notes.ts <add --area NAME|list|verify|merge [--alias "from=to"]...>')
   process.exitCode = 1
 }
 }
