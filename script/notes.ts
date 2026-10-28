@@ -256,6 +256,8 @@ export function merge(aliases: ReadonlyMap<string, string> = new Map()) {
         if (existing.lines.some((kept) => kept.trim() === line.trim())) continue
         existing.lines.push(line)
       }
+      // One separator, not one per absorbed section: the trailing blank line each section carried would stack up.
+      while (existing.lines.length > 0 && !existing.lines[existing.lines.length - 1]!.trim()) existing.lines.pop()
       existing.lines.push("")
     }
 
