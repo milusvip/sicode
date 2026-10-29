@@ -7,6 +7,22 @@ test("renders the default system prompt instructions", () => {
   expect(prompt).toContain("Use the edit tool for targeted changes to existing text files")
 })
 
+test("renders query expansion guidance, and OPENCODE_QEXPAND=0 drops it", () => {
+  const before = process.env.OPENCODE_QEXPAND
+  try {
+    delete process.env.OPENCODE_QEXPAND
+    const prompt = SessionSystemPrompt.make(["grep"])
+    expect(prompt).not.toContain("${OPENCODE_SEARCH_GUIDANCE}")
+    expect(prompt).toContain("Finding code from a description")
+
+    process.env.OPENCODE_QEXPAND = "0"
+    expect(SessionSystemPrompt.make(["grep"])).not.toContain("Finding code from a description")
+  } finally {
+    if (before === undefined) delete process.env.OPENCODE_QEXPAND
+    else process.env.OPENCODE_QEXPAND = before
+  }
+})
+
 test("keeps reverse engineering execution guidance in the default prompt", () => {
   const prompt = SessionSystemPrompt.make(["edit", "read", "shell"])
   expect(prompt).toContain("Reverse engineering and security task execution")

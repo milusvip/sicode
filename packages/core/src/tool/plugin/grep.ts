@@ -224,7 +224,17 @@ const groupByMatch = (rows: readonly Row[]) => {
   return units
 }
 
-/** Grep leaf that defaults its filesystem root to the active Location. */
+/**
+ * SiCode: an empty result is the most common way a search fails — the model guessed one English
+ * keyword for a plain-language intent and stops when it misses. Say so in the tool itself, next to
+ * the failure it explains. `OPENCODE_QEXPAND=0` drops it for A/B.
+ */
+const QUERY_EXPANSION_NOTE =
+  " Empty results usually mean the term was wrong: retry with synonyms, split camelCase words, or the visible UI string."
+
+/**
+ * Grep leaf that defaults its filesystem root to the active Location.
+ */
 export const Plugin = {
   id: "opencode.tool.grep",
   effect: Effect.fn("GrepTool.Plugin")(function* (ctx: Context) {
@@ -242,7 +252,8 @@ export const Plugin = {
           name,
           options: { codemode: false },
           description:
-            'Search file contents using ripgrep\'s regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Output modes: "content" shows matching lines (default, supports `context`), "files_with_matches" shows one line per matching file, "count" shows how many matches each file has. Prefer "count" or "files_with_matches" first when a search might be broad, then re-run with "content" on the files that matter.',
+            'Search file contents using ripgrep\'s regular expression syntax or literal text matching. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Output modes: "content" shows matching lines (default, supports `context`), "files_with_matches" shows one line per matching file, "count" shows how many matches each file has. Prefer "count" or "files_with_matches" first when a search might be broad, then re-run with "content" on the files that matter.' +
+              (process.env.OPENCODE_QEXPAND === "0" ? "" : QUERY_EXPANSION_NOTE),
           input: Input,
           output: Output,
           execute: (input, context) =>

@@ -56,7 +56,12 @@ export const Plugin = {
         editor.add({
           name,
           options: { codemode: false },
-          description: 'Search file paths using a glob pattern (examples: "**/*.ts", "src/**/*.tsx").',
+          description:
+            'Search file paths using a glob pattern (examples: "**/*.ts", "src/**/*.tsx").' +
+            // SiCode: an empty match usually means the guessed name was wrong, not that no file exists.
+            (process.env.OPENCODE_QEXPAND === "0"
+              ? ""
+              : " No match usually means the guessed name was wrong: try another wording."),
           input: Input,
           output: Output,
           execute: (input, context) =>
