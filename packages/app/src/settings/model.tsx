@@ -57,12 +57,12 @@ export const terminalDefault = "JetBrainsMono Nerd Font Mono"
 const monoFallback =
   '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace, "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC"'
 
-// SiCode: system-first, mirroring the reference client. English and Chinese come from two faces on
-// purpose: the system Latin (Helvetica, Arial) renders crisper at UI sizes than a CJK face's Latin.
-// YaHei UI is deliberately absent — it is a different font file from "Microsoft YaHei" and Windows
-// resolves it first, which is what drifted the UI away from the reference look.
+// SiCode: was Source Han Sans-first for cross-platform consistency; user found its Windows
+// Chromium rendering less crisp than workbuddy's, so the stack now mirrors workbuddy's
+// system-first order — mac gets PingFang, Windows gets Microsoft YaHei, bundled Noto only as
+// last-resort fallback (Linux / machines without YaHei).
 const sansFallback =
-  '-apple-system, BlinkMacSystemFont, "PingFang SC", Helvetica, Arial, "Microsoft YaHei", "微软雅黑", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif'
+  '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif'
 
 const terminalFallback =
   '"JetBrainsMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'

@@ -1,17 +1,15 @@
 :root {
-  /* SiCode: system-first, mirroring workbuddy — mac gets PingFang, Windows gets Microsoft YaHei.
-     The bundled Noto variable face is only the last resort (Linux, or a machine without YaHei):
-     at UI sizes its Windows Chromium rendering read visibly thinner than the system CJK face.
-     Helvetica/Arial carry Latin on mac ahead of the CJK face, exactly as workbuddy does; YaHei UI
-     is deliberately absent — it is a different font file from "Microsoft YaHei" and Windows
-     resolves it first, which is what drifted the UI away from the reference look.
+  /* SiCode: was Source Han Sans-first for cross-platform consistency; user found its Windows
+     Chromium rendering less crisp than workbuddy's, so the stack now mirrors workbuddy's
+     system-first order — mac gets PingFang, Windows gets Microsoft YaHei, bundled Noto only
+     as last-resort fallback (Linux / machines without YaHei).
      This must stay byte-identical to `sansFallback` in packages/app/src/settings/model.tsx: that
      effect writes the same variable inline on :root whenever settings load, so a stack that
      differs here is dead CSS and the two silently drift apart. Change both or neither. */
   --font-family-sans:
-    -apple-system, BlinkMacSystemFont, "PingFang SC", Helvetica, Arial, "Microsoft YaHei",
-    "微软雅黑", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC",
-    "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif;
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC",
+    ui-sans-serif, system-ui, sans-serif;
   --font-family-sans--font-feature-settings: normal;
   /* SiCode: real mono faces come BEFORE the CJK ones. Fallback is per-glyph, so CJK still resolves
      through the generic `monospace` to the system CJK face (Consolas has no CJK), but when the
