@@ -39,8 +39,8 @@
 
 <div class="no" style="background:#fff8c5;border-color:#d4a72c66">
   <b>v4 修订（用户定调：面向用户的能力直接做好，不推第三方 MCP）：</b><br>
-  <b>① 语义层改为原生内建</b>：第三方 MCP 的工具描述是通用文案、不在我们的提示词体系里——adoption 差正是两份独立证据指出的死穴。原生工具才能：贴合场景的描述 + system.txt 指引 + grep 空结果自动注入建议。<br>
-  <b>② 本地 embedding 模型请回来</b>：原生方案不能要求用户再办一个 embedding API key，按需下载的本地量化小模型是唯一开箱即用的 embedding 源（v3 砍它的前提「交给 MCP」已不成立）。<br>
+  <b>① 检索能力一律原生内建</b>：不推第三方 MCP——第三方工具描述是通用文案、不在我们的提示词体系里，adoption 差正是两份独立证据指出的死穴。原生工具才能：贴合场景的描述 + system.txt 指引 + grep 空结果自动注入建议。<br>
+  <b>② 语义层（本地 embedding）砍掉</b>：本地模型是负收益——标识符任务实测 −4pp，概念题 +41% 只来自论文、非本仓任务；还要为它背 25~400MB 下载与查询时的短促内存占用，不值。embedding 与「不用本地模型、不常驻内存」的定调冲突，直接不立项。<br>
   <b>③ CodeGraph 验证角色变更</b>：从「给用户的替代品」降为「自研前的设计参考 + 基线对照」，仍然做，半天。<br>
   <b>④ 结构层直接立项</b>：与验证并行，验证结果修正设计。
 </div>
@@ -128,8 +128,8 @@
   <ul>
     <li><b>来源</b>：<code>D:\软件丨工具\cursor逆向专区\文档\</code> —— Cursor-本地Trigram索引存储结构 / Cursor-本地检索与索引全链路（对真实仓库 + crepectl 实测，非博客二手信息）</li>
     <li><b>抄能力最小清单（逆向文档原文）</b>：① commit 级文件倒排（可选，加速用）② 工具执行时 ripgrep <b>并搜 unsaved editors</b>（必须，「刚写的就能搜到」）③ 返回 path+line+text（必须）④ <b>不要</b>为 grep 实现 Merkle/向量合并（不要）</li>
-    <li><b>adoption 手法（Cursor 亲测）</b>：语义与正则分工具、不自动混排；语义不可用时错误信息明确引导「改用 Grep/Glob/Read」；output_mode 默认 content 但用工具描述教模型自选——我们的三层工具分工描述照此设计</li>
-    <li><b>三条管道别揉一起</b>（逆向图）：本地文本倒排（Crepe）/ Merkle 云端增量 / 语义向量检索是三条独立管道——我们的方案同样：trigram、repo map 调用边、语义向量各管各的，不合并</li>
+    <li><b>adoption 手法（Cursor 亲测）</b>：Cursor 把语义与正则分成不同工具、不自动混排；我们无语义层，对应的做法是 grep/glob/read 三层工具分工明确、output_mode 默认 content 但用工具描述教模型自选——照此设计</li>
+    <li><b>三条管道别揉一起</b>（逆向图）：本地文本倒排（Crepe）/ Merkle 云端增量 / 语义向量检索是三条独立管道——我们只做前两类（trigram 倒排、repo map 调用边），语义向量检索明确不做，其余不合并</li>
   </ul>
 </div>
 
@@ -138,7 +138,6 @@
   <ul>
     <li>本机装 <b>CodeGraph</b>（<code>npx @colbymchenry/codegraph</code>）——<b>v4 角色变更：不是给用户的替代品，是我们自研前的设计参考</b></li>
     <li>拿黄金问题集跑它的 callers/impact/context，产出两份东西：① 我们结构层的基线对照数据 ② 它「哪里好用哪里不好用」的清单（直接修正 3a 设计）</li>
-    <li>claude-context / ChunkHound 同理：内部对照语义层效果，<b>不写进用户文档</b>——用户要的是开箱即用，不是装四个第三方</li>
   </ul>
 </div>
 
@@ -156,30 +155,10 @@
 <h2>落地注意（v2 新增）</h2>
 <div class="card">
   <ul>
-    <li><b>增量策略统一（v6 明确）</b>：不做后台 watcher 守护进程（CodeGraph 那种，资源代价不值）。1a 零索引；1b/3a 沿用 repo map 现有 mtime+size 懒失效（冷启 5.8s/热 0.39s，已验证）；trigram 与向量层用 <b>commit 锚定式</b>——索引锚 git commit、未提交改动叠加其上、仅大漂移时重建（Cursor 官方机制），非 git 仓库查询时按 mtime 懒检查。本仓全量重建也才 ~7s（逆向实测同量级），增量压力天然小</li>
+    <li><b>增量策略统一（v6 明确）</b>：不做后台 watcher 守护进程（CodeGraph 那种，资源代价不值）。1a 零索引；1b/3a 沿用 repo map 现有 mtime+size 懒失效（冷启 5.8s/热 0.39s，已验证）；trigram 用 <b>commit 锚定式</b>——索引锚 git commit、未提交改动叠加其上、仅大漂移时重建（Cursor 官方机制），非 git 仓库查询时按 mtime 懒检查。本仓全量重建也才 ~7s（逆向实测同量级），增量压力天然小</li>
     <li><b>与现有 hint 机制的关系</b>：查询扩展指引走 system.txt 静态区 + 工具描述，<b>不新增 hint 注入点</b>——context.ts 已有 context-hints/clarify-hint/design-hint 三个，不再挤</li>
     <li><b>并行会话冲突</b>：prompt 文件正被其他会话改，落地前先 git status 确认，改完立即提交不留在工作区</li>
     <li><b>回滚开关</b>：1a 用 OPENCODE_QEXPAND=0；阶段二子代理用 agent 配置开关；每个能力独立可关</li>
-  </ul>
-</div>
-
-<h2>阶段四：语义层原生内建（挂闸门：1a/1b 数据说话后才立项）</h2>
-
-<div class="card" style="border-left:4px solid #8250df">
-  <h3>codebase_search 原生工具 + 分档 embedding <span class="badge">概念型查询：+41%（独立论文）</span></h3>
-  <ul>
-    <li><b>v5 修订：体积分档，不再一口吃 600MB</b>——<br>
-      ① <b>默认档：25~90MB 小模型</b>（MiniLM/bge-small 级，4-bit），首次启用时下载，低配机也无感<br>
-      ② <b>可选档：350~400MB</b>（Qwen3-Embedding-0.6B 4-bit，独立基准最强的开源系），设置里手动开启，给重度用户<br>
-      ③ <b>零下载档</b>：用户 provider 若提供 embedding API 直接用（不下载任何模型）<br>
-      （v4 按 int8 算的 600MB 说多了，4-bit 实际 ~350-400MB；但默认档直接下探到 90MB 以内）</li>
-    <li><b>整层后置一个闸门</b>：语义层兜的是「1a+1b 都救不了的纯概念查询」——若那两层做完步数已达标，向量层的边际收益可能只有几个点，为它背 90MB 也要值回。先上 1a/1b 测数据，缺口大才做这层</li>
-    <li><b>存储</b>：sqlite-vec（贴现有 SQLite 生态）</li>
-    <li><b>分块</b>：tree-sitter AST 分块（repo map 设施复用），内容哈希增量</li>
-    <li><b>工具契约</b>：返回 path + 行号范围 + 相关性理由，<b>不塞正文</b>；描述写清分工——「知道符号名用 grep，只能描述现象用这个」</li>
-    <li><b>adoption 三保险</b>：① system.txt 指引 ② grep 连续空结果时自动建议 ③ 工具描述自带触发场景</li>
-    <li><b>内存纪律（用户核心关切，v6 定稿：占磁盘不占内存）</b>：① 索引层全程 mmap（照抄 Cursor）——OS 按需分页、可回收，常驻内存 0；② 语义模型<b>文件躺磁盘、不常驻</b>——查询时短促加载（1~2 秒）→ 嵌入 → 立即卸载，低频查询完全可接受，换来平时内存占用 0；③ 向量预计算躺 sqlite-vec（磁盘），查询只嵌入那一句中文；④ 索引后台低优先级、可暂停；⑤ provider 有 embedding API 的走 API（零模型零加载）。<b>任何状态下常驻内存为 0</b></li>
-    <li><b>诚实预期</b>：概念型查询 +41%，标识符任务反而 −4pp——第四层兜底不是默认主力，混合排序（词法 + 向量 RRF）保底</li>
   </ul>
 </div>
 
@@ -191,36 +170,35 @@
   <tr><td class="big">1b</td><td>BM25F 分字段加权</td><td>词法命中率 +20%（Cody 内部口径）</td><td>半猜半搜命中率</td></tr>
   <tr><td class="big">二</td><td>搜索子代理</td><td>轮数下降 + 长会话稳定性（无独立数字）</td><td>上下文污染</td></tr>
   <tr><td class="big">三</td><td>调用边/impact + trigram（自研）</td><td>对标 CodeGraph 量级：结构任务步数 −34%</td><td>结构定位 + 大仓库延迟</td></tr>
-  <tr><td class="big">四</td><td>语义层原生（codebase_search）</td><td>概念题 +41%／标识符题 −4pp（双尾，混合排序保底）</td><td>重度概念查询</td></tr>
 </table>
 
 <div class="verdict">
-  <b>叠加预期（诚实版）：</b>六个动作不是乘法。1a+1b 联手作用于「找文件」，动作 0/三 作用于「追调用链」，子代理作用于「会话稳定性」，阶段四兜底「纯概念查询」——互相独立可叠加。
+  <b>叠加预期（诚实版）：</b>五个动作不是乘法。1a+1b 联手作用于「找文件」，动作 0/三 作用于「追调用链」，子代理作用于「会话稳定性」——互相独立可叠加。
   合理的验收线：<b>改码型任务探索/edit 比 8:1 → 4:1 以内；黄金问题集 recall@5 从当前水平（待测基线）提升 30% 以上</b>。达不到就逐层查因，而不是堆下一层。
 </div>
 
 <div class="no">
-  <b>明确不做（写下来防止反复，v4 更新）：</b>
-  向量数据库选 LanceDB（sqlite-vec 贴现有 SQLite 生态，一个就够）·
+  <b>明确不做（写下来防止反复，v6 更新）：</b>
+  语义层 / 本地 embedding / sqlite-vec（标识符任务实测 −4pp、概念题 +41% 只来自论文非本仓任务，还要背 25~400MB 下载与短促内存占用，负收益）·
+  向量数据库 LanceDB ·
   跨仓库与 commit 历史索引（Augment 的企业场景，单仓用户用不上）·
   RL 训练检索模型（无训练能力）·
-  云端索引（本地优先是产品卖点）·
-  语义层默认开启（标识符任务实测负收益，首次使用引导 + 可关闭）
+  云端索引（本地优先是产品卖点）
 </div>
 
 <h2>兼容性：开箱即用与全模型适配（硬约束）</h2>
 <div class="card">
   <ul>
-    <li><b>开箱即用分层</b>：前四层（指引/加权/结构/子代理）100% 开箱，零用户动作；语义层默认档仅 25~90MB 下载（可选档 350~400MB、零下载档用 provider API），首次启用时后台下载进度可见。安装包不预埋模型</li>
-    <li><b>embedding 与对话模型解耦</b>：向量检索跑在本地小模型上，与用户用什么对话模型（DeepSeek 免费档/Kimi/任何）无关——免费 provider 不提供 embedding API 也不影响完整体验。这是本地模型方案的真正优点</li>
-    <li><b>不依赖模型自觉的两条保险</b>：BM25F 建议由代码逻辑触发（grep 空结果 → 自动注入），语义建议同理——弱模型不照做指引也躲不过；强模型额外受益于提示词指引</li>
+    <li><b>开箱即用</b>：全部动作（指引/加权/结构/子代理）100% 开箱，零下载、零用户动作、零模型——纯词法 + 结构 + 隔离搜索，全程免费本地。</li>
+    <li><b>与对话模型解耦</b>：没有任何本地模型，检索不碰 embedding，与用户用什么对话模型（DeepSeek 免费档/Kimi/任何）完全无关。</li>
+    <li><b>不依赖模型自觉的两条保险</b>：BM25F 建议由代码逻辑触发（grep 空结果 → 自动注入），结构建议同理——弱模型不照做指引也躲不过；强模型额外受益于提示词指引</li>
     <li><b>工具协议零特殊处理</b>：新工具走 opencode 现有 OpenAI-compatible tool calling 通道，DeepSeek function calling 标准支持</li>
     <li><b>预期差如实登记</b>：同一指引强模型照做度高、免费档低——A/B 按模型分档测，「自动注入」比「提示词恳求」重要</li>
   </ul>
 </div>
 
 <div class="goal" style="margin-top:8px">
-  <b>一句话方案：</b>四层原生全做——词法（查询扩展 + BM25F）、结构（调用边/impact，CodeGraph 只当内部参考）、隔离搜索子代理、语义（codebase_search + 按需下载的本地 embedding + sqlite-vec）；每层独立可验收、独立可回滚，全程免费本地开箱即用。
+  <b>一句话方案：</b>三层原生全做——词法（查询扩展 + BM25F）、结构（调用边/impact，CodeGraph 只当内部参考）、隔离搜索子代理；每层独立可验收、独立可回滚，零模型、零下载、开箱即用。
 </div>
 
 </div>
