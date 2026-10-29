@@ -27,12 +27,14 @@ describe("Ripgrep", () => {
             ),
           )
           const ripgrep = yield* Ripgrep.Service
-          const files = yield* ripgrep.glob({
-            cwd: tmp.path,
-            pattern: "**/*.ts",
-            limit,
-            ...(hidden === undefined ? {} : { hidden }),
-          })
+          const files = yield* ripgrep
+            .glob({
+              cwd: tmp.path,
+              pattern: "**/*.ts",
+              limit,
+              ...(hidden === undefined ? {} : { hidden }),
+            })
+            .pipe(Effect.map((swept) => swept.entries))
 
           expect(files.map((item) => item.path).sort()).toEqual(
             (hidden ? [".hidden.ts", ".hidden/nested.ts", "src/.hidden.ts", "src/visible.ts"] : ["src/visible.ts"]).map(
@@ -53,7 +55,9 @@ describe("Ripgrep", () => {
           yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "src", "match.ts"), "needle\n"))
 
           const ripgrep = yield* Ripgrep.Service
-          const result = yield* ripgrep.glob({ cwd: tmp.path, pattern: "**/*.ts", limit: 10 })
+          const result = yield* ripgrep
+            .glob({ cwd: tmp.path, pattern: "**/*.ts", limit: 10 })
+            .pipe(Effect.map((swept) => swept.entries))
           expect(result.map((item) => item.path)).toEqual([RelativePath.make("src/match.ts")])
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -70,12 +74,14 @@ describe("Ripgrep", () => {
           yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "src", "skip.txt"), "needle\n"))
 
           const ripgrep = yield* Ripgrep.Service
-          const result = yield* ripgrep.grep({
-            cwd: tmp.path,
-            pattern: "needle",
-            include: "*.ts",
-            limit: 10,
-          })
+          const result = yield* ripgrep
+            .grep({
+              cwd: tmp.path,
+              pattern: "needle",
+              include: "*.ts",
+              limit: 10,
+            })
+            .pipe(Effect.map((swept) => swept.rows))
           expect(result).toHaveLength(1)
           expect(result[0]?.kind).toBe("match")
           expect(result[0]?.match.entry.path).toBe(RelativePath.make("src/match.ts"))
@@ -130,7 +136,9 @@ describe("Ripgrep", () => {
           })
           expect(observed).toEqual(limited.map((item) => item.path))
 
-          const matches = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "config", limit: 10 })
+          const matches = yield* ripgrep
+            .grep({ cwd: tmp.path, pattern: "needle", include: "config", limit: 10 })
+            .pipe(Effect.map((swept) => swept.rows))
           expect(matches.map((item) => item.match.entry.path)).toContain(RelativePath.make(".opencode/config"))
           expect(matches.map((item) => item.match.entry.path)).not.toContain(RelativePath.make(".git/config"))
         }),
@@ -172,11 +180,13 @@ describe("Ripgrep", () => {
           )
 
           const ripgrep = yield* Ripgrep.Service
-          const matches = yield* ripgrep.grep({
-            cwd: tmp.path,
-            pattern: "Cloudflare",
-            limit: 10,
-          })
+          const matches = yield* ripgrep
+            .grep({
+              cwd: tmp.path,
+              pattern: "Cloudflare",
+              limit: 10,
+            })
+            .pipe(Effect.map((swept) => swept.rows))
 
           expect(matches).toHaveLength(1)
           expect(matches[0]?.match.entry.path).toBe(RelativePath.make("generated.ts"))
@@ -198,11 +208,49 @@ describe("Ripgrep", () => {
           )
 
           const ripgrep = yield* Ripgrep.Service
-          const rows = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", context: 1, limit: 10 })
+          const rows = yield* ripgrep
+            .grep({ cwd: tmp.path, pattern: "needle", context: 1, limit: 10 })
+            .pipe(Effect.map((swept) => swept.rows))
 
           expect(rows.map((row) => row.kind)).toEqual(["context", "match", "context"])
           expect(rows.map((row) => row.match.line)).toEqual([2, 3, 4])
           expect(rows[1]?.match.text.trim()).toBe("needle")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("reports a scan that finished inside its budget as not timed out", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "a.ts"), "needle\n"))
+
+          const ripgrep = yield* Ripgrep.Service
+          const swept = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", limit: 10, timeoutMs: 30_000 })
+
+          expect(swept.timedOut).toBe(false)
+          expect(swept.rows).toHaveLength(1)
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  // SiCode: a deadline used to fail the whole search, which threw away every row ripgrep had
+  // already emitted — 30 seconds of scanning and then nothing for the model to reason about.
+  it.live("returns a partial answer instead of failing when the deadline passes", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "a.ts"), "needle\n"))
+
+          const ripgrep = yield* Ripgrep.Service
+          const swept = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", limit: 10, timeoutMs: 1 })
+
+          expect(swept.timedOut).toBe(true)
+          expect(Array.isArray(swept.rows)).toBe(true)
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),

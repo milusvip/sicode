@@ -28,8 +28,8 @@ const ripgrepStub = (entry: string, onFind: (input: Ripgrep.FindInput) => void) 
             yield* input.onEntry(FileSystem.Entry.make({ path: RelativePath.make(entry), type: "file" }))
           return []
         }),
-      glob: () => Effect.succeed([]),
-      grep: () => Effect.succeed([]),
+      glob: () => Effect.succeed({ entries: [], timedOut: false }),
+      grep: () => Effect.succeed({ rows: [], timedOut: false }),
     }),
   )
 
@@ -298,8 +298,8 @@ describe("FileSystemSearch", () => {
                   if (input.onEntry) yield* input.onEntry(entry)
                   return [entry]
                 }),
-              glob: () => Effect.succeed([]),
-              grep: () => Effect.succeed([]),
+              glob: () => Effect.succeed({ entries: [], timedOut: false }),
+              grep: () => Effect.succeed({ rows: [], timedOut: false }),
             }),
           ),
         ),
@@ -361,8 +361,8 @@ describe("FileSystemSearch", () => {
                   if (scans > 1) yield* Deferred.succeed(second, undefined)
                   return [entry]
                 }),
-              glob: () => Effect.succeed([]),
-              grep: () => Effect.succeed([]),
+              glob: () => Effect.succeed({ entries: [], timedOut: false }),
+              grep: () => Effect.succeed({ rows: [], timedOut: false }),
             }),
           ),
         ),

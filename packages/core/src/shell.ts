@@ -25,6 +25,26 @@ import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
 import { Decode } from "@opencode/util/decode"
 
+/**
+ * SiCode: put the ripgrep this process already ships on the shell's PATH.
+ *
+ * Without it the model cannot use `rg` at all — it sees "command not found" and reaches for
+ * `Get-ChildItem -Recurse`, which walks the filesystem one directory handle at a time. A name
+ * search that `rg --files` answers in a second then takes the better part of a minute.
+ *
+ * Windows carries the variable as `Path` and resolves it case-insensitively, so appending a second
+ * `PATH` key would leave both in the environment and keep whichever the child read first. A `PATH`
+ * that is absent entirely means the environment is supplied elsewhere (a hosted driver resolves its
+ * own binaries), and inventing one here would hide every other tool from the shell.
+ */
+const withSearchBin = (env: Record<string, string | undefined>, bin?: string) => {
+  if (!bin) return env
+  const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH")
+  if (key === undefined) return env
+  const current = env[key]
+  return { ...env, [key]: current === undefined || current === "" ? bin : `${bin}${path.delimiter}${current}` }
+}
+
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
 }) {}
@@ -145,7 +165,7 @@ const layer = () =>
 
       const outputDir = path.join(global.data, DIRECTORY, location.project.id)
       const { mkdir, unlink } = yield* Effect.promise(() => import("fs/promises"))
-      const { createWriteStream, createReadStream } = yield* Effect.promise(() => import("fs"))
+      const { createWriteStream, createReadStream, existsSync } = yield* Effect.promise(() => import("fs"))
       yield* Effect.promise(() => mkdir(outputDir, { recursive: true }))
 
       yield* Effect.addFinalizer(() =>
@@ -289,16 +309,24 @@ const layer = () =>
           location.workspaceID !== undefined
             ? undefined
             : ((Schema.is(SessionSchema.ID)(sessionID) ? yield* environments.get(sessionID) : undefined) ?? process.env)
+        // Resolving the binary through RipgrepBinary would download a release the first time a shell
+        // opens, so this only advertises one that is already on disk.
+        const searchBin = existsSync(path.join(global.bin, process.platform === "win32" ? "rg.exe" : "rg"))
+          ? global.bin
+          : undefined
         const invocation: ShellCreateBefore = {
           command: input.command,
           cwd: input.cwd ?? location.directory,
           timeout: input.timeout ?? 0,
           shell: input.shell ?? (yield* shell.resolve({ priority: "config" })),
-          env: {
-            ...baseEnv,
-            TERM: "xterm-256color",
-            OPENCODE_TERMINAL: "1",
-          },
+          env: withSearchBin(
+            {
+              ...baseEnv,
+              TERM: "xterm-256color",
+              OPENCODE_TERMINAL: "1",
+            },
+            searchBin,
+          ),
         }
         yield* hooks.trigger("shell", "create.before", invocation)
         if (before) yield* before(invocation)

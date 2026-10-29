@@ -31,13 +31,17 @@ export const Output = Schema.Array(FileSystem.Entry)
 type EncodedOutput = typeof Output.Encoded
 
 /** Format raw search results into the concise line-oriented output models expect. */
-export const toModelContent = (entries: EncodedOutput, truncated = false) => {
+export const toModelContent = (entries: EncodedOutput, truncated = false, timedOut?: string) => {
   const lines = entries.length === 0 ? ["No files found"] : entries.map((item) => item.path)
   if (truncated)
     lines.push(
       "",
       `(Results are truncated: showing first ${entries.length} results. Consider using a more specific path or pattern.)`,
     )
+  // SiCode: distinguish "this tree has no match" from "the scan never finished". The first means
+  // try another name; the second means narrow the root, and the model cannot tell them apart
+  // from an empty list.
+  if (timedOut !== undefined) lines.push("", `(${timedOut})`)
   return lines.join("\n")
 }
 
@@ -95,41 +99,45 @@ export const Plugin = {
                 )
               const root = target.absolute
               const limit = input.limit ?? FileSystem.DEFAULT_SEARCH_LIMIT
-              const entries = yield* ripgrep
+              const swept = yield* ripgrep
                 .glob({
                   cwd: root,
                   pattern: input.pattern,
                   hidden: input.hidden,
                   limit: limit + 1,
+                  // SiCode: a name search over an unindexed tree is the one that most often runs
+                  // long, so it degrades to a partial list instead of failing outright.
+                  timeoutMs: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
                 })
                 .pipe(
-                  Effect.timeoutOrElse({
-                    duration: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
-                    orElse: () =>
-                      Effect.fail(
-                        new ToolFailure({
-                          message: `Search timed out after ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000} seconds. Consider using a more specific path or pattern.`,
-                        }),
-                      ),
-                  }),
-                  Effect.map((result) =>
-                    result.map((entry) =>
+                  Effect.map((result) => ({
+                    entries: result.entries.map((entry) =>
                       FileSystem.Entry.make({
                         ...entry,
                         path: RelativePath.make(path.relative(location.directory, path.resolve(root, entry.path))),
                       }),
                     ),
-                  ),
+                    timedOut: result.timedOut,
+                  })),
                 )
-              return { entries: entries.slice(0, limit), truncated: entries.length > limit }
+              return {
+                entries: swept.entries.slice(0, limit),
+                truncated: swept.entries.length > limit,
+                timedOut: swept.timedOut,
+              }
             }).pipe(
               Effect.map((result) => ({
                 output: result.entries,
                 content: toModelContent(
                   result.entries.map((entry) => ({ ...entry, path: path.resolve(location.directory, entry.path) })),
                   result.truncated,
+                  result.timedOut
+                    ? `Search stopped at the ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000}s budget after ` +
+                      `${result.entries.length} path${result.entries.length === 1 ? "" : "s"}; this tree is too large to scan whole. ` +
+                      `Narrow it with \`path\`, or search the contents instead with \`grep\` and an \`include\` filter.`
+                    : undefined,
                 ),
-                metadata: { count: result.entries.length, truncated: result.truncated },
+                metadata: { count: result.entries.length, truncated: result.truncated, timedOut: result.timedOut },
               })),
               Effect.mapError((error) =>
                 error instanceof ToolFailure

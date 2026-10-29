@@ -339,19 +339,14 @@ export const Plugin = {
                     mode: mode === "files_with_matches" ? "files" : mode,
                     // One row past the page is what tells us whether anything remains.
                     limit: wanted + 1,
+                    // SiCode: the deadline lives inside ripgrep so a slow sweep keeps what it already
+                    // found. Failing the whole search threw away 30 seconds of scanning and left the
+                    // model re-guessing a path with no evidence.
+                    timeoutMs: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
                   })
                   .pipe(
-                    Effect.timeoutOrElse({
-                      duration: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
-                      orElse: () =>
-                        Effect.fail(
-                          new ToolFailure({
-                            message: `Search timed out after ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000} seconds. Consider using a more specific path or pattern.`,
-                          }),
-                        ),
-                    }),
-                    Effect.map((result) =>
-                      result.map((row) => ({
+                    Effect.map((result) => ({
+                      rows: result.rows.map((row) => ({
                         kind: row.kind,
                         match: FileSystem.Match.make({
                           ...row.match,
@@ -361,10 +356,11 @@ export const Plugin = {
                           }),
                         }),
                       })),
-                    ),
+                      timedOut: result.timedOut,
+                    })),
                   )
               let rows: Ripgrep.GrepRow[] = []
-              // SiCode: in-process literal match. For a small candidate set of literal content
+              let timedOut = false              // SiCode: in-process literal match. For a small candidate set of literal content
               // (or files) searches without context, reading the candidates and scanning in
               // memory skips the ~150ms ripgrep process startup, cutting a rare-symbol search
               // from ~200ms to ~30ms. Regex, count mode, context, and oversized candidate sets
@@ -398,12 +394,17 @@ export const Plugin = {
                 ]
               } else if (chunks) {
                 for (const chunk of chunks) {
-                  rows.push(...(yield* sweep(chunk)))
+                  const swept = yield* sweep(chunk)
+                  rows.push(...swept.rows)
+                  // Stopping at the page is a decision; running out of time is a fact worth reporting.
+                  timedOut ||= swept.timedOut
                   const counted = mode === "content" ? groupByMatch(rows).length : rows.length
                   if (counted > wanted) break
                 }
               } else {
-                rows = [...(yield* sweep())]
+                const swept = yield* sweep()
+                rows = [...swept.rows]
+                timedOut ||= swept.timedOut
               }
               // Content pages break on matches; the other modes are already one row per file.
               const units = mode === "content" ? groupByMatch(rows) : rows.map((row) => [row])
@@ -418,6 +419,7 @@ export const Plugin = {
                 prefiltered: chunks !== undefined,
                 // A single-file grep that hit nothing has nowhere better to point the model.
                 scoped: type === "file",
+                timedOut,
               }
             }).pipe(
               Effect.flatMap((result) =>
@@ -441,6 +443,15 @@ export const Plugin = {
                     const file = yield* toolOutput.save(Buffer.from(rendered.spill, "utf8"), ".txt")
                     content += `\n\n[Full results saved to ${file}; read it to see the ${rendered.hidden} hidden lines]`
                   }
+                  // SiCode: a deadline is not a failure. Say plainly that the tree was too large, how
+                  // much was reached, and the one parameter that would make the next attempt cheap —
+                  // otherwise the model reads a short result as "nothing here" and widens the search.
+                  if (result.timedOut)
+                    content +=
+                      `\n\n[Search stopped at the ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000}s budget` +
+                      `${result.total > 0 ? ` after ${result.total} match${result.total === 1 ? "" : "es"}` : " without a match"}` +
+                      `; this tree is too large to scan whole. Narrow it with \`path\` (a subdirectory) or` +
+                      ` \`include\` (a file type such as "*.conf"), or search for the file name with \`glob\`.]`
                   // SiCode: an empty result is the moment the model is about to guess again, so it
                   // gets a ranked shortlist instead of another turn spent guessing. Triggered by
                   // the code rather than by a hint the model has to remember to ask for, and only
@@ -459,6 +470,7 @@ export const Plugin = {
                     metadata: {
                       matches: result.total,
                       truncated: result.truncated,
+                      timedOut: result.timedOut,
                       mode: input.mode ?? "content",
                       prefiltered: result.prefiltered,
                     },

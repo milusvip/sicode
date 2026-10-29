@@ -108,7 +108,7 @@ describe("search tools", () => {
               expect(result.output).toEqual(
                 expect.arrayContaining(expected.map((file) => ({ path: path.normalize(file), type: "file" }))),
               )
-              expect(result.metadata).toEqual({ count: expected.length, truncated: false })
+              expect(result.metadata).toEqual({ count: expected.length, truncated: false, timedOut: false })
               expect(result.content).toHaveLength(1)
               expect(result.content?.[0]?.type === "text" ? result.content[0].text.split("\n").sort() : []).toEqual(
                 expected.map((file) => path.join(tmp.path, file)).sort(),
@@ -137,10 +137,11 @@ describe("search tools", () => {
               const glob = yield* executeTool(registry, call("glob", { pattern: "*" }))
               const grep = yield* executeTool(registry, call("grep", { pattern: "needle" }))
 
-              expect(glob.metadata).toEqual({ count: FileSystem.DEFAULT_SEARCH_LIMIT, truncated: true })
+              expect(glob.metadata).toEqual({ count: FileSystem.DEFAULT_SEARCH_LIMIT, truncated: true, timedOut: false })
               expect(grep.metadata).toEqual({
                 matches: FileSystem.DEFAULT_SEARCH_LIMIT,
                 truncated: true,
+                timedOut: false,
                 mode: "content",
                 prefiltered: false,
               })
@@ -264,7 +265,7 @@ describe("search tools", () => {
               expect(text).not.toContain("alpha")
               // Context is presentation only; machine output stays matches-only.
               expect(result.output).toHaveLength(1)
-              expect(result.metadata).toEqual({ matches: 1, truncated: false, mode: "content", prefiltered: false })
+              expect(result.metadata).toEqual({ matches: 1, truncated: false, timedOut: false, mode: "content", prefiltered: false })
             }),
           ),
         ),
@@ -322,7 +323,7 @@ describe("search tools", () => {
               expect(text.indexOf("many.txt: 3")).toBeLessThan(text.indexOf("one.txt: 1"))
               expect(result.output).toHaveLength(2)
               // 一页代表 4 条命中，而不是 2 行
-              expect(result.metadata).toEqual({ matches: 4, truncated: false, mode: "count", prefiltered: false })
+              expect(result.metadata).toEqual({ matches: 4, truncated: false, timedOut: false, mode: "count", prefiltered: false })
             }),
           ),
         ),
@@ -354,7 +355,7 @@ describe("search tools", () => {
               expect(text).toContain("a.txt:1: needle here")
               expect(text).toContain("b.txt:2: needle there")
               expect(result.output).toHaveLength(2)
-              expect(result.metadata).toEqual({ matches: 2, truncated: false, mode: "files_with_matches", prefiltered: false })
+              expect(result.metadata).toEqual({ matches: 2, truncated: false, timedOut: false, mode: "files_with_matches", prefiltered: false })
             }),
           ),
         ),
@@ -379,7 +380,7 @@ describe("search tools", () => {
               const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
               expect(result.output).toMatchObject([{ line: 2, text: "needle2\n" }])
               expect(text).toContain("showing 2-2 of at least 3")
-              expect(result.metadata).toEqual({ matches: 1, truncated: true, mode: "content", prefiltered: false })
+              expect(result.metadata).toEqual({ matches: 1, truncated: true, timedOut: false, mode: "content", prefiltered: false })
             }),
           ),
         ),
@@ -694,6 +695,7 @@ describe("two-stage grep prefilter", () => {
             expect(literal.metadata).toEqual({
               matches: 2,
               truncated: false,
+              timedOut: false,
               mode: "content",
               prefiltered: true,
             })

@@ -68,6 +68,8 @@ export interface GlobInput {
   readonly hidden?: boolean
   readonly follow?: boolean
   readonly signal?: AbortSignal
+  /** SiCode: stop at this deadline and keep the paths already found. */
+  readonly timeoutMs?: number
 }
 
 export interface GrepInput {
@@ -85,6 +87,11 @@ export interface GrepInput {
   /** Row shape: per-line content (default), one row per matching file, or one row per file with its match count. */
   readonly mode?: "content" | "files" | "count"
   readonly signal?: AbortSignal
+  /**
+   * SiCode: stop scanning at this deadline and return the rows found so far. A scan that is cut short
+   * is still an answer; before this, a slow search produced nothing at all.
+   */
+  readonly timeoutMs?: number
 }
 
 /** A grep output row: a match, or a context line pulled in around one. */
@@ -95,8 +102,12 @@ export interface GrepRow {
 
 export interface Interface {
   readonly find: (input: FindInput) => Effect.Effect<readonly Entry[], Error>
-  readonly glob: (input: GlobInput) => Effect.Effect<readonly Entry[], Error>
-  readonly grep: (input: GrepInput) => Effect.Effect<readonly GrepRow[], Error | InvalidPatternError>
+  readonly glob: (
+    input: GlobInput,
+  ) => Effect.Effect<{ readonly entries: readonly Entry[]; readonly timedOut: boolean }, Error>
+  readonly grep: (
+    input: GrepInput,
+  ) => Effect.Effect<{ readonly rows: readonly GrepRow[]; readonly timedOut: boolean }, Error | InvalidPatternError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Ripgrep") {}
@@ -118,6 +129,9 @@ const layer = Layer.effect(
     const environment = yield* Environment.Service
     const binary = yield* RipgrepBinary.Service
 
+    /** Rows observed so far and whether a deadline cut the scan short. */
+    type RunResult<A> = { readonly rows: A[]; readonly timedOut: boolean }
+
     const run = <A>(input: {
       readonly cwd: string
       readonly args: string[]
@@ -126,7 +140,9 @@ const layer = Layer.effect(
       readonly parse: (line: string) => Effect.Effect<A | undefined, Error>
       readonly pattern?: string
       readonly onItem?: (item: A) => Effect.Effect<void>
-    }) => {
+      /** SiCode: cut the scan at a deadline but keep what it already found. */
+      readonly timeoutMs?: number
+    }): Effect.Effect<RunResult<A>, Error | InvalidPatternError> => {
       const program = Effect.scoped(
         Effect.gen(function* () {
           // Hosted environments will resolve rg through their driver image; the spawner is the execution seam.
@@ -138,20 +154,38 @@ const layer = Layer.effect(
             Effect.forkScoped,
           )
           let observed = 0
-          const rows = yield* Stream.decodeText(handle.stdout).pipe(
+          // SiCode: a deadline interrupts the collector, and the interruption used to take every
+          // decoded row with it — a 30-second search then answered nothing. The buffer outlives the
+          // interruption, so running out of time degrades into a partial answer instead.
+          const buffer: A[] = []
+          const pump = Stream.decodeText(handle.stdout).pipe(
             Stream.splitLines,
             Stream.filter((line) => line.length > 0),
             Stream.mapEffect(input.parse),
             Stream.filter((row): row is A => row !== undefined),
             Stream.tap((row) => {
+              buffer.push(row)
               if (!input.onItem || observed++ >= input.limit) return Effect.void
               return input.onItem(row)
             }),
             Stream.take(input.limit + 1),
             Stream.runCollect,
           )
-          const truncated = rows.length > input.limit
-          if (truncated) return rows.slice(0, input.limit)
+          const collected = yield* (input.timeoutMs === undefined
+            ? pump.pipe(Effect.map((rows): RunResult<A> => ({ rows: [...rows], timedOut: false })))
+            : pump.pipe(
+                Effect.timeoutOption(input.timeoutMs),
+                Effect.map(
+                  (done): RunResult<A> =>
+                    done._tag === "Some"
+                      ? { rows: [...done.value], timedOut: false }
+                      : { rows: buffer.slice(0, input.limit), timedOut: true },
+                ),
+              ))
+          if (collected.timedOut) return collected
+
+          const rows = collected.rows
+          if (rows.length > input.limit) return { rows: rows.slice(0, input.limit), timedOut: false }
 
           const code = yield* handle.exitCode
           const stderr = yield* Fiber.join(stderrFiber)
@@ -161,7 +195,7 @@ const layer = Layer.effect(
           if (code !== 0 && code !== 1 && code !== 2) {
             return yield* failure(stderr.trim() || `ripgrep failed with code ${code}`)
           }
-          return code === 1 ? [] : rows
+          return { rows: code === 1 ? [] : rows, timedOut: false }
         }),
       )
       const abortable = input.signal ? program.pipe(Effect.raceFirst(waitForAbort(input.signal))) : program
@@ -180,6 +214,7 @@ const layer = Layer.effect(
           cwd: input.cwd,
           limit: input.limit,
           signal: input.signal,
+          timeoutMs: input.timeoutMs,
           args: [
             "--no-config",
             "--files",
@@ -193,14 +228,15 @@ const layer = Layer.effect(
           ],
           parse: (line) => Effect.succeed(normalizePath(line)),
         }).pipe(
-          Effect.map((result) =>
-            result.map((relative) =>
+          Effect.map((result) => ({
+            entries: result.rows.map((relative) =>
               Entry.make({
                 path: RelativePath.make(relative),
                 type: "file",
               }),
             ),
-          ),
+            timedOut: result.timedOut,
+          })),
           Effect.catchTag("Ripgrep.InvalidPatternError", (cause) => Effect.fail(failure(cause.message, cause))),
         ),
       find: (input) =>
@@ -228,7 +264,10 @@ const layer = Layer.effect(
             )
           },
           onItem: input.onEntry,
-        }).pipe(Effect.catchTag("Ripgrep.InvalidPatternError", (cause) => Effect.fail(failure(cause.message, cause)))),
+        }).pipe(
+          Effect.map((result) => result.rows),
+          Effect.catchTag("Ripgrep.InvalidPatternError", (cause) => Effect.fail(failure(cause.message, cause))),
+        ),
       grep: (input) => {
         // Count mode answers "how wide is this search?" in one row per matching file, so it skips
         // JSON events entirely and parses rg's plain `path:count` lines.
@@ -238,6 +277,7 @@ const layer = Layer.effect(
             limit: input.limit,
             signal: input.signal,
             pattern: input.pattern,
+            timeoutMs: input.timeoutMs,
             args: [
               "--no-config",
               "--count-matches",
@@ -258,8 +298,8 @@ const layer = Layer.effect(
               return Effect.succeed(`${normalizePath(line.slice(0, index))}:${count}`)
             },
           }).pipe(
-            Effect.map((result) =>
-              result.map((row) => {
+            Effect.map((result) => ({
+              rows: result.rows.map((row) => {
                 const index = row.lastIndexOf(":")
                 return {
                   kind: "match" as const,
@@ -272,7 +312,8 @@ const layer = Layer.effect(
                   }),
                 }
               }),
-            ),
+              timedOut: result.timedOut,
+            })),
           )
         // Files mode emits at most one match per file, so rows map one-to-one onto unique paths.
         const bounded =
@@ -288,6 +329,7 @@ const layer = Layer.effect(
           limit: bounded,
           signal: input.signal,
           pattern: input.pattern,
+          timeoutMs: input.timeoutMs,
           args: [
             "--no-config",
             "--json",
@@ -321,8 +363,8 @@ const layer = Layer.effect(
               }),
             ),
         }).pipe(
-          Effect.map((result) =>
-            result.map((row) => ({
+          Effect.map((result) => ({
+            rows: result.rows.map((row) => ({
               kind: row.kind,
               match: Match.make({
                 entry: Entry.make({
@@ -339,7 +381,8 @@ const layer = Layer.effect(
                 })),
               }),
             })),
-          ),
+            timedOut: result.timedOut,
+          })),
         )
       },
     })
