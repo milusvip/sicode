@@ -333,7 +333,7 @@ describe("current session timeline rows", () => {
     })
   })
 
-  test("omits a grouped reasoning-only row while busy until other content or completion", () => {
+  test("renders a live thought while it streams, then folds it into the compact chip", () => {
     const thought = { type: "reasoning", text: "Thinking", time: { created: 1, completed: 2 } } as const
 
     const rows = (content: SessionMessageAssistant["content"], busy: boolean) =>
@@ -344,15 +344,25 @@ describe("current session timeline rows", () => {
         timelineDetail: timelinePresets[2].value,
       }).rows
 
+    // A streamed thought is the only work on screen, so it renders — its head ticks the newest line,
+    // which is what keeps the shell from sitting empty for the whole first thought.
     expect(rows([{ ...thought, time: { created: 1 } }], true).map((row) => row._tag)).toEqual([
       "UserMessage",
       "WorkShell",
+      "Thinking",
       "WorkShellEnd",
     ])
-    expect(rows([thought], true).map((row) => row._tag)).toEqual(["UserMessage", "WorkShell", "WorkShellEnd"])
+    // Settled, it becomes the compact chip like any other finished thought.
+    expect(rows([thought], true).map((row) => row._tag)).toEqual([
+      "UserMessage",
+      "WorkShell",
+      "AssistantPart",
+      "WorkShellEnd",
+    ])
     expect(rows([thought, { type: "text", text: "" }], true).map((row) => row._tag)).toEqual([
       "UserMessage",
       "WorkShell",
+      "AssistantPart",
       "WorkShellEnd",
     ])
     expect(rows([thought, { type: "text", text: "Answer" }], true).map((row) => row._tag)).toEqual([

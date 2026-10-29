@@ -576,20 +576,15 @@ export namespace Timeline {
       !lastAssistant?.error &&
       !lastAssistant?.retry
 
+    // SiCode: a live thought is rendered wherever thinking is visible at all, not only when it is
+    // laid out separately. While the model thinks there is no other work on screen, and grouping it
+    // away left the shell head alone for the whole first thought — the turn looked stuck. The row's
+    // head is a ticker, so even the collapsed placement keeps reading as alive.
     const thinking =
       streaming &&
-      (detail ? detail.thinking.placement === "separate" : showReasoning) &&
+      (detail ? detail.thinking.placement !== "hidden" : showReasoning) &&
       lastContent?.type === "reasoning" &&
       lastContent.time?.completed === undefined
-
-    const thoughtOnly =
-      streaming &&
-      detail?.thinking.placement === "grouped" &&
-      assistantMessages.every((message) =>
-        message.content.every(
-          (content) => content.type === "reasoning" || !isRenderable(content, showReasoning, detail),
-        ),
-      )
 
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: turnID }))
 
@@ -601,8 +596,6 @@ export namespace Timeline {
     // An assistant message can produce several rows because its content parts are
     // rendered separately. Notices end a segment so none of those rows cross it.
     const appendAssistantSegment = (messages: SessionMessageAssistant[]) => {
-      if (thoughtOnly) return
-
       const refs = messages.flatMap((message, messageIndex) =>
         contentEntries(message)
           .filter(
