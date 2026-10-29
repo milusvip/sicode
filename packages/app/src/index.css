@@ -2,6 +2,7 @@
 @import "@opencode/session-ui/styles";
 @import "@opencode/ui/styles/tokens";
 @import "tw-animate-css";
+/* SiCode: last-resort CJK face for machines without a system one; the stack prefers system first. */
 @import "@fontsource-variable/noto-sans-sc";
 
 @font-face {

@@ -43,8 +43,8 @@ export function projectSettingsKey(scope: ServerScope, projectID: string | undef
 
 export const monoDefault = "IBM Plex Mono"
 
-// SiCode: one family for both scripts, so English and Chinese share 思源黑体's skeleton. The settings
-// placeholder names it because that is the whole default.
+// SiCode: the stack resolves the system CJK face first, so the settings placeholder names the
+// bundled fallback rather than a family the user is expected to have picked.
 export const sansDefault = "思源黑体"
 
 export const terminalDefault = "JetBrainsMono Nerd Font Mono"
@@ -52,16 +52,17 @@ export const terminalDefault = "JetBrainsMono Nerd Font Mono"
 // SiCode: these two stacks are written inline on :root below, so they override the initial values in
 // packages/ui/src/styles/theme.css. Keep the strings byte-identical to --font-family-mono and
 // --font-family-sans there; a mismatch means one of the two is dead CSS.
-// CJK in code/comments falls through to 思源黑体, but the real mono faces stay ahead of it: fallback
-// is per-glyph, so Consolas never steals CJK, and a failed Plex webfont does not hand Latin to the
-// CJK face's proportional glyphs.
+// The real mono faces stay ahead of the CJK ones: fallback is per-glyph, so Consolas never steals
+// CJK, and a failed Plex webfont does not hand Latin to a CJK face's proportional glyphs.
 const monoFallback =
   '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace, "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC"'
 
-// SiCode: one face for both scripts. 思源黑体 also carries Latin, so English must NOT be handed to a
-// separate Latin family first — that is what made mixed Inter/CJK text read as two typefaces.
+// SiCode: system-first, mirroring the reference client. English and Chinese come from two faces on
+// purpose: the system Latin (Helvetica, Arial) renders crisper at UI sizes than a CJK face's Latin.
+// YaHei UI is deliberately absent — it is a different font file from "Microsoft YaHei" and Windows
+// resolves it first, which is what drifted the UI away from the reference look.
 const sansFallback =
-  '"思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
+  '-apple-system, BlinkMacSystemFont, "PingFang SC", Helvetica, Arial, "Microsoft YaHei", "微软雅黑", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif'
 
 const terminalFallback =
   '"JetBrainsMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
