@@ -968,6 +968,13 @@ export const dict = {
   "settings.general.row.destructiveConfirm.title": "Destructive command confirmation",
   "settings.general.row.destructiveConfirm.description":
     "Deletion commands (rm, del, and similar) always ask for confirmation, even with auto-approve on.",
+  "settings.general.row.linkTarget.title": "Open links in",
+  "settings.general.row.linkTarget.description":
+    "Which browser opens links in an answer.",
+  "settings.general.row.linkTarget.system": "System browser",
+  "settings.general.row.linkTarget.browser": "Side browser",
+  "settings.general.row.linkTarget.unavailable":
+    "The side browser is not open for this session — the link opened in your system browser.",
 
   "sound.option.none": "None",
   "sound.option.alert01": "Alert 01",

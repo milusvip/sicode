@@ -21,6 +21,14 @@ test("injects the repo map and tells the model not to read it again", () => {
   expect(body).toContain("do not read `.sicode/structure.md` again")
 })
 
+test("tells the model not to hunt for a map file when the map is generated", () => {
+  const body = render("src/hub.ts: shared(1)", undefined, "generated")
+  expect(body).toContain("# Repo map")
+  // There is no `.sicode/structure.md` in this case, so pointing at one would be misleading.
+  expect(body).not.toContain("structure.md")
+  expect(body).toContain("generated from the sources")
+})
+
 test("lists note areas by title only, never the sections themselves", () => {
   const body = render(undefined, notes)
   expect(body).toContain("- 侧边栏浏览器")

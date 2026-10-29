@@ -46,6 +46,7 @@ import {
 } from "../context/markdown"
 import { createMarkdownImages } from "./markdown-image"
 import { createImagePreview } from "./image-preview"
+import { setupExternalLinks } from "./markdown-external-links"
 import { markSessionLinks, setupSessionLinks } from "./markdown-session-links"
 
 type RenderedBlock =
@@ -712,6 +713,7 @@ export function Markdown(
 
   let copyCleanup: (() => void) | undefined
   let linkCleanup: (() => void) | undefined
+  let externalLinkCleanup: (() => void) | undefined
   let faviconCleanup: (() => void) | undefined
   let sessionLinkCleanup: (() => void) | undefined
   let readImage: ReadMarkdownImage | undefined
@@ -787,6 +789,8 @@ export function Markdown(
 
     if (!linkCleanup) linkCleanup = setupLocalLinks(container, () => markdown?.openLocalFile)
 
+    if (!externalLinkCleanup) externalLinkCleanup = setupExternalLinks(container, () => markdown?.openExternal)
+
     if (!sessionLinkCleanup) sessionLinkCleanup = setupSessionLinks(container, () => markdown?.openSession)
 
     if (!faviconCleanup) faviconCleanup = setupExternalLinkFavicons(container)
@@ -812,6 +816,8 @@ export function Markdown(
     if (copyCleanup) copyCleanup()
 
     if (linkCleanup) linkCleanup()
+
+    if (externalLinkCleanup) externalLinkCleanup()
 
     if (sessionLinkCleanup) sessionLinkCleanup()
 
@@ -960,6 +966,11 @@ function updateBlock(
           .find((name) => name.startsWith("language-"))
           ?.slice(9),
       )
+      // SiCode: this path wraps the parser's own <pre> (history renders and every finished message
+      // re-render), so the gutter has to be added here too — the live path alone would show numbers
+      // only while a block is streaming and lose them the moment it settles.
+      pre.prepend(createLineNumbers())
+      syncLineNumbers(pre, code.textContent ?? "")
       pre.replaceWith(wrapper)
       wrapper.appendChild(pre)
       wrapper.appendChild(createCopyButton(labels))
@@ -1025,6 +1036,7 @@ function updateCodeBlock(
       .slice(keep - stableCount)
       .map(createTokenSpan)
       .forEach((span) => code.appendChild(span))
+    syncLineNumbers(code.closest("pre"), code.textContent ?? "")
     renderedCodeTokens.set(next, {
       language: block.language,
       generation: block.generation,
@@ -1046,6 +1058,8 @@ function updateCodeBlock(
   const codeElement = document.createElement("code")
   codeElement.className = `language-${block.language}`
   ;[...block.stable, ...block.unstable].map(createTokenSpan).forEach((span) => codeElement.appendChild(span))
+  pre.appendChild(createLineNumbers())
+  syncLineNumbers(pre, codeElement.textContent ?? "")
   pre.appendChild(codeElement)
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))
@@ -1072,6 +1086,32 @@ function updateCodeBlock(
 
 function sameToken(left: MarkdownToken, right: MarkdownToken | undefined) {
   return !!right && left[0] === right[0] && left[1] === right[1]
+}
+
+/**
+ * SiCode: a gutter of line numbers for fenced code. It is one text node with newlines rather than a
+ * span per line, so a 300-line block costs one node: the numbers right-align and share the code's
+ * line-height, which is what keeps them on their lines (code blocks do not soft-wrap, so one source
+ * line is always one visual row). The gutter is aria-hidden, stays sticky on horizontal scroll and
+ * is skipped while streaming only when the line count did not change.
+ */
+function createLineNumbers() {
+  const gutter = document.createElement("span")
+  gutter.setAttribute("data-slot", "markdown-code-gutter")
+  gutter.setAttribute("aria-hidden", "true")
+
+  return gutter
+}
+
+function syncLineNumbers(pre: Element | null, text: string) {
+  const gutter = pre?.querySelector('[data-slot="markdown-code-gutter"]')
+
+  if (!(gutter instanceof HTMLElement)) return
+  const count = Math.max(1, text.split("\n").length)
+
+  if (gutter.dataset.count === String(count)) return
+  gutter.dataset.count = String(count)
+  gutter.textContent = Array.from({ length: count }, (_, index) => index + 1).join("\n")
 }
 
 function createTokenSpan(token: MarkdownToken) {

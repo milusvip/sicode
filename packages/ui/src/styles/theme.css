@@ -1,30 +1,31 @@
 :root {
-  /* SiCode: was Source Han Sans-first for cross-platform consistency; user found its Windows
-     Chromium rendering less crisp than workbuddy's, so the stack now mirrors workbuddy's
-     system-first order — mac gets PingFang, Windows gets Microsoft YaHei, bundled Noto only
-     as last-resort fallback (Linux / machines without YaHei). */
+  /* SiCode: one face for both scripts — 思源黑体 covers Latin and CJK, so English and Chinese share
+     one skeleton instead of mixing Inter's Latin with the CJK face. This must stay byte-identical to
+     `sansFallback` in packages/app/src/settings/model.tsx: that effect writes the same variable inline
+     on :root whenever settings load, so a stack that differs here is dead CSS and the two silently
+     drift apart. Change both or neither. */
   --font-family-sans:
-    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
     "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC",
-    ui-sans-serif, system-ui, sans-serif;
+    ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-family-sans--font-feature-settings: normal;
-  /* SiCode: CJK glyphs fall through to the UI default face. Real mono faces come BEFORE the CJK
-     ones — fallback is per-glyph, so CJK still resolves to 思源黑体, but when the bundled IBM Plex
-     webfont fails to load the Latin no longer falls into 思源黑体's proportional glyphs. */
+  /* SiCode: real mono faces come BEFORE the CJK ones. Fallback is per-glyph, so CJK still resolves
+     to 思源黑体 through the generic `monospace` (Consolas has no CJK), but when the bundled IBM Plex
+     webfont fails to load the Latin no longer falls into 思源黑体's proportional glyphs. Must stay
+     byte-identical to `monoFallback` in packages/app/src/settings/model.tsx. */
   --font-family-mono:
     "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace, "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC";
   --font-family-mono--font-feature-settings: normal;
 
-  /* SiCode: sizes/weights tuned up for CJK legibility on Windows — Noto Sans SC Variable renders
-     thin at small sizes in Chromium; workbuddy-comparable readability needs base=15, small=14,
-     x-small=12, regular=460. Chat content (markdown/message-part/session-turn) hangs off base. */
+  /* SiCode: sizes/weights tuned for CJK legibility on Windows. Regular is 400, the face's own default:
+     the earlier 460 only made sense while 思源黑体's Latin was scaled up to 115% inside a mixed stack,
+     and it read heavy for body copy. Chat content (markdown/message-part/session-turn) hangs off base. */
   --font-size-x-small: 12px;
   --font-size-small: 14px;
   --font-size-base: 15px;
   --font-size-large: 16px;
   --font-size-x-large: 20px;
-  --font-weight-regular: 460;
+  --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-bold: 670;
   --line-height-normal: 130%;

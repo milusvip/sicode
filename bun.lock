@@ -299,6 +299,7 @@
         "mime-types": "3.0.2",
         "tree-sitter-bash": "0.25.0",
         "tree-sitter-powershell": "0.25.10",
+        "tree-sitter-wasms": "0.1.13",
         "web-tree-sitter": "0.25.10",
         "which": "6.0.1",
         "zod": "catalog:",
@@ -4966,6 +4967,8 @@
     "tree-sitter-bash": ["tree-sitter-bash@0.25.0", "https://registry.npmmirror.com/tree-sitter-bash/-/tree-sitter-bash-0.25.0.tgz", { "dependencies": { "node-addon-api": "^8.2.1", "node-gyp-build": "^4.8.2" }, "peerDependencies": { "tree-sitter": "^0.25.0" }, "optionalPeers": ["tree-sitter"] }, "sha512-gZtlj9+qFS81qKxpLfD6H0UssQ3QBc/F0nKkPsiFDyfQF2YBqYvglFJUzchrPpVhZe9kLZTrJ9n2J6lmka69Vg=="],
 
     "tree-sitter-powershell": ["tree-sitter-powershell@0.25.10", "https://registry.npmmirror.com/tree-sitter-powershell/-/tree-sitter-powershell-0.25.10.tgz", { "dependencies": { "node-addon-api": "^7.1.0", "node-gyp-build": "^4.8.0" }, "peerDependencies": { "tree-sitter": "^0.25.0" }, "optionalPeers": ["tree-sitter"] }, "sha512-bEt8QoySpGFnU3aa8WedQyNMaN6aTwy/WUbvIVt0JSKF+BbJoSHNHu+wCbhj7xLMsfB0AuffmiJm+B8gzva8Lg=="],
+
+    "tree-sitter-wasms": ["tree-sitter-wasms@0.1.13", "https://registry.npmmirror.com/tree-sitter-wasms/-/tree-sitter-wasms-0.1.13.tgz", { "dependencies": { "tree-sitter-wasms": "^0.1.11" } }, "sha512-wT+cR6DwaIz80/vho3AvSF0N4txuNx/5bcRKoXouOfClpxh/qqrF4URNLQXbbt8MaAxeksZcZd1j8gcGjc+QxQ=="],
 
     "treeverse": ["treeverse@3.0.0", "https://registry.npmmirror.com/treeverse/-/treeverse-3.0.0.tgz", {}, "sha512-gcANaAnd2QDZFmHFEOF4k7uc1J/6a6z3DJMd/QwEyxLoKGiptJRwid582r7QIsFlFMIZ3SnxfS52S4hm2DHkuQ=="],
 

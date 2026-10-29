@@ -276,6 +276,36 @@ Earlier work
     ])
   })
 
+  test("carries the files and todos the checkpoint was built with", () => {
+    const [checkpoint] = toLLMMessages(
+      [
+        SessionMessage.Compaction.make({
+          id: id("compaction"),
+          type: "compaction",
+          status: "completed",
+          reason: "auto",
+          summary: "Earlier work",
+          metadata: {
+            durable: {
+              files: [{ path: "src/a.ts", text: "export const a = 1", truncated: false }],
+              todos: [{ content: "ship it", status: "in_progress" }],
+            },
+          },
+          time: { created },
+        }),
+      ],
+      model,
+    )
+
+    const text = (checkpoint?.content as ReadonlyArray<{ type: string; text?: string }>)[0]?.text ?? ""
+    // The block rides inside the checkpoint, so the step after a compaction can edit without
+    // re-reading the file first.
+    expect(text).toContain('<file path="src/a.ts">')
+    expect(text).toContain("export const a = 1")
+    expect(text).toContain("- [in_progress] ship it")
+    expect(text).toContain("</conversation-checkpoint>")
+  })
+
   test("names the full transcript a checkpoint saved, so the agent can read it back", () => {
     const [checkpoint] = toLLMMessages(
       [

@@ -99,6 +99,7 @@ describe("settings schema", () => {
         terminalPlacement: "side",
         followUpBehavior: "steer",
         destructiveConfirm: true,
+        linkTarget: "system",
       },
       appearance: {
         fontSize: 14,
@@ -190,7 +191,7 @@ describe("settings schema", () => {
   })
 })
 
-test("font defaults are 思源黑体 and IBM Plex Mono", () => {
+test("font defaults are the single 思源黑体 UI stack and IBM Plex Mono", () => {
   expect(sansDefault).toBe("思源黑体")
   expect(monoDefault).toBe("IBM Plex Mono")
 })

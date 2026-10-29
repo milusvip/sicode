@@ -1,4 +1,5 @@
 import { Marked } from "marked"
+import { highlightInlineCode } from "./inline-code-highlight"
 
 export function createMarkdownBase() {
   return new Marked({
@@ -7,6 +8,11 @@ export function createMarkdownBase() {
         const titleAttr = title ? ` title="${title}"` : ""
 
         return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${this.parser.parseInline(tokens)}</a>`
+      },
+      // SiCode: inline code carries the theme's syntax colours here rather than on the worker-only
+      // extension, so the small/synchronous path and the worker path paint a snippet identically.
+      codespan({ text }) {
+        return `<code>${highlightInlineCode(text)}</code>`
       },
     },
   })

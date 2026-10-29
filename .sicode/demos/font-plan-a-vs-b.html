@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>字体定稿：单一思源黑体 400</title>
+    <style>
+      /* Real registrations, mirroring packages/app/src/index.css. */
+      @font-face {
+        font-family: "思源黑体";
+        src: local("思源黑体"), local("Source Han Sans SC"), local("Noto Sans SC"), local("Noto Sans CJK SC");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "Inter";
+        src: url("../../packages/app/public/assets/Inter.ttf") format("truetype");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
+
+      :root {
+        --bg: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #6f6f6f;
+        --faint: #9a9a9a;
+        --line: #e8e8e8;
+        --card: #fafafa;
+        --accent: #034cff;
+        /* Shipped: one face for Latin and CJK. */
+        --shipped: "思源黑体", "Source Han Sans SC", "Noto Sans SC", sans-serif;
+        /* Previous: Inter for Latin, 思源黑体 for CJK. */
+        --previous: "Inter", "思源黑体", "Source Han Sans SC", "Noto Sans SC", sans-serif;
+        --weight: 400;
+        --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101010;
+          --fg: rgba(255, 255, 255, 0.93);
+          --muted: rgba(255, 255, 255, 0.62);
+          --faint: rgba(255, 255, 255, 0.42);
+          --line: #282828;
+          --card: #171717;
+          --accent: #9dbefe;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px 16px 64px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--shipped);
+        font-weight: var(--weight);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+      }
+
+      .lede {
+        margin: 0 0 20px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+
+      button {
+        flex: 1 1 auto;
+        min-height: 34px;
+        padding: 6px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--card);
+        color: var(--fg);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      button[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+
+      .panel {
+        margin-bottom: 18px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--card);
+        padding: 16px;
+      }
+
+      .tag {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+        font-family: var(--mono);
+        letter-spacing: 0.02em;
+      }
+
+      .tag.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .sample {
+        font-size: 15px;
+        line-height: 1.6;
+        margin: 0 0 14px;
+      }
+
+      .sample:last-child {
+        margin-bottom: 0;
+      }
+
+      .sample-shipped {
+        font-family: var(--shipped);
+      }
+
+      .sample-previous {
+        font-family: var(--previous);
+        font-weight: 460;
+      }
+
+      .row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 13px;
+        line-height: 20px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      .row:last-child {
+        margin-bottom: 0;
+      }
+
+      .tool {
+        color: var(--fg);
+        font-weight: 530;
+      }
+
+      .meta {
+        margin-inline-start: auto;
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        color: var(--faint);
+      }
+
+      code {
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .weights {
+        display: grid;
+        grid-template-columns: 64px 1fr;
+        gap: 6px 12px;
+        align-items: baseline;
+        font-size: 15px;
+      }
+
+      .weights .k {
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .note {
+        margin: 0 0 18px;
+        padding: 11px 13px;
+        border-left: 2px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        background: color-mix(in srgb, var(--accent) 6%, transparent);
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .note b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>字体定稿：单一思源黑体 400</h1>
+      <p class="lede">
+        拉丁和汉字都由思源黑体绘制，常规字重 400。下面的按钮切换整套界面的字重，用来确认 400 之外的档位不再需要。
+      </p>
+
+      <div class="controls">
+        <button data-weight="400" aria-pressed="true">400（当前）</button>
+        <button data-weight="460" aria-pressed="false">460（旧）</button>
+        <button data-weight="500" aria-pressed="false">500</button>
+      </div>
+
+      <p class="note">
+        旧方案是 <b>Inter 处理英文 + 思源黑体处理中文 + 460</b>。两套骨架放在一起时，即使字重插值到同一个数，混排也像两种字体——这正是改成单一字体的原因。
+        代价是英文偏大偏松：思源黑体的拉丁字形来自 Source Sans，并在字族内放大到 115%。
+      </p>
+
+      <div class="panel">
+        <span class="tag on" id="state">400</span>
+        <p class="sample" id="sample-main"></p>
+        <div class="row"><span>Read</span><span class="tool">src/settings/model.tsx</span><span class="meta">14 lines</span></div>
+        <div class="row"><span>Shell</span><span class="tool">bun typecheck</span><span class="meta">1.0s</span></div>
+        <div class="row"><span>Edit</span><span class="tool">theme.css</span><span class="meta">+9 −4</span></div>
+        <p class="sample" style="margin-top: 14px">行内代码 <code>var(--font-family-sans)</code> 保持等宽，中文注释 <code>统一字体</code> 落在思源黑体。</p>
+      </div>
+
+      <div class="panel">
+        <span class="tag on">定稿 · 思源黑体（拉丁 + 中文同族）· 400</span>
+        <p class="sample sample-shipped">The quick brown fox jumps over the lazy dog. 中文与 English 混排时的观感，取决于拉丁字形的骨架与大小。</p>
+      </div>
+
+      <div class="panel">
+        <span class="tag">旧方案 · Inter（拉丁）+ 思源黑体（中文）· 460</span>
+        <p class="sample sample-previous">The quick brown fox jumps over the lazy dog. 中文与 English 混排时的观感，取决于拉丁字形的骨架与大小。</p>
+      </div>
+
+      <div class="panel">
+        <span class="tag">字重阶梯 · Ag 永</span>
+        <div class="weights">
+          <span class="k">400</span><span style="font-weight: 400">Ag 永 界面 Interface</span>
+          <span class="k">460</span><span style="font-weight: 460">Ag 永 界面 Interface</span>
+          <span class="k">500</span><span style="font-weight: 500">Ag 永 界面 Interface</span>
+          <span class="k">700</span><span style="font-weight: 700">Ag 永 界面 Interface</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const text =
+        "把字体统一之后，The quick brown fox 与中文混排时的节奏会变化：思源黑体的拉丁字形来自 Source Sans，并且放大到 115%，所以英文看起来偏大偏松；Inter 则是更收敛的 UI 骨架。"
+
+      const apply = (weight) => {
+        document.documentElement.style.setProperty("--weight", weight)
+        document.getElementById("sample-main").textContent = text
+        document.getElementById("state").textContent = weight + (weight === "400" ? "（当前）" : "")
+        for (const b of document.querySelectorAll("[data-weight]"))
+          b.setAttribute("aria-pressed", String(b.dataset.weight === String(weight)))
+      }
+
+      let weight = "400"
+      for (const b of document.querySelectorAll("[data-weight]"))
+        b.addEventListener("click", () => {
+          weight = b.dataset.weight
+          apply(weight)
+        })
+
+      document.fonts.ready.then(() => apply(weight))
+      apply(weight)
+    </script>
+  </body>
+</html>

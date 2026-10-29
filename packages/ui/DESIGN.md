@@ -4,19 +4,26 @@ Values shared by `packages/ui`, `packages/session-ui`, and `packages/app`. Each 
 
 ## Font stack
 
-- Sans: `--font-family-sans` — system stack (`-apple-system`, PingFang SC, Microsoft YaHei), with Noto Sans SC registered as the fallback for machines that have neither.
-- Mono: `--font-family-mono` — IBM Plex Mono, falling back to Consolas.
+- Sans: `--font-family-sans` — `思源黑体` only, for Latin and CJK alike. One face draws both scripts, so English and Chinese share a skeleton; handing Latin to a separate family first (the earlier `Inter` + CJK split) makes mixed text read as two typefaces even when the weights match. 思源黑体's Latin comes from Source Sans, scaled to 115% inside the family, so it looks slightly larger and looser than a dedicated UI face at the same point size — that is the accepted cost of one voice. `Source Han Sans SC` and `Noto Sans SC` are the same family under other names (registered via `local()` in `packages/app/src/index.css`), `Noto Sans SC Variable` is the bundled `@fontsource-variable` copy, and the platform stacks (`PingFang SC`, `Microsoft YaHei`) are last-resort fallbacks for machines with none of them.
+- Mono: `--font-family-mono` — IBM Plex Mono, then `ui-monospace` / Consolas, and only then the CJK faces. Fallback is per-glyph, so Chinese comments still land on 思源黑体 through the generic `monospace` (Consolas has no CJK), while a failed Plex webfont cannot hand Latin to the CJK face's proportional glyphs.
+
+`packages/app/src/settings/model.tsx` writes both variables inline on `:root` when settings load, so the strings there override the initial values in `theme.css`. `sansFallback` / `monoFallback` and the two `theme.css` declarations must stay byte-identical; only the runtime one has any effect.
 
 ## Weight
 
-`theme.css` declares `--font-weight-regular: 460`, `--font-weight-medium: 500`, `--font-weight-bold: 670`. Only two of those are real everywhere:
+`theme.css` declares `--font-weight-regular: 400`, `--font-weight-medium: 500`, `--font-weight-bold: 670`. Regular is the face's own default, so every install renders body text at exactly 400 without relying on interpolation or the CSS upward-search rule: a static three-weight family (400/500/700) and a variable one (wght 100–900) both land on 400.
 
-| platform | real weights |
-| --- | --- |
-| Windows / Microsoft YaHei | 300, 400, 700 |
-| macOS / PingFang SC | continuous 200–600 |
+| face | real weights | `400` resolves to |
+| --- | --- | --- |
+| 思源黑体 → variable install (`local("Noto Sans SC")` → `NotoSansSC-VF.ttf`) | continuous 100–900 | 400 |
+| 思源黑体 → static three-weight install | 400, 500, 700 | 400 |
+| Noto Sans SC Variable (bundled `@fontsource-variable`) | continuous 100–900 | 400 |
+| PingFang SC | continuous 200–600 | 400 |
+| Microsoft YaHei | 300, 400, 700 | 400 |
 
-On Windows `460` and `500` both resolve to `400`, so a level separated by 460 against 400 carries no hierarchy there. Separate with 400 against 700, or with size and color.
+Earlier the regular token was `460`. That only worked because variable installs interpolate; a truly static family jumps to 500 (for a target between 400 and 500 the browser searches upward before going below), so the same token produced different weights per machine. Verify a machine's row by its font file, not its registry entries — Windows lists named instances of one variable file as separate `Noto Sans SC` / `Medium` / `Bold` entries, which reads like three static weights.
+
+`--font-weight-regular` only governs declarations that reference the token. The upstream CSS also hardcodes `440` (secondary text) and `530` (titles, labels) in a few hundred places; those are upstream values and were left alone, and they remain distinct from 400 on a variable install. Weight steps below about one hundred units do not survive a family that only ships 400/700: separate hierarchy with 400 against 700, or with size and color.
 
 ## Type scale
 

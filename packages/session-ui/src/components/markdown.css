@@ -2,8 +2,11 @@
 
 [data-component="markdown"] {
   --markdown-inline-code-path-color: var(--v2-text-text-code-path);
-  --markdown-inline-code-color: var(--v2-text-text-code-accent);
-  --markdown-inline-code-bg-mix: 14%;
+  /* SiCode: this variable now only dresses code that really is a link (an external URL). Plain inline
+     code takes its colour from the syntax spans the parser emits, on a neutral base — see
+     packages/ui/src/context/inline-code-highlight.ts. */
+  --markdown-inline-code-color: var(--markdown-link);
+  --markdown-inline-code-bg-mix: 6%;
   --markdown-shell-code-background: var(--v2-background-bg-layer-02);
   --markdown-shell-code-border: var(--v2-border-border-muted);
   --markdown-shell-code-color: var(--v2-text-text-base);
@@ -48,12 +51,16 @@
     text-wrap-style: auto;
   }
 
-  /* Headings: Sized by level, distinguished by color and spacing */
+  /* Headings: sized on the type ladder (20 / 16 / 15 / 14), separated by weight and space.
+     SiCode: h3 used to sit on --font-size-small, i.e. smaller than the 15px body it heads — the
+     hierarchy inverted exactly where a long answer needs it most. h3 is now body size at 600 and
+     earns its level from weight and margin instead of size, which keeps the ladder honest: an
+     answer never uses more than two steps above body. */
   h1 {
     font-size: var(--font-size-x-large);
     color: var(--v2-text-text-base);
     font-weight: 600;
-    margin-top: 28px;
+    margin-top: 32px;
     margin-bottom: 12px;
     line-height: var(--line-height-large);
   }
@@ -62,28 +69,36 @@
     font-size: var(--font-size-large);
     color: var(--v2-text-text-base);
     font-weight: 600;
-    margin-top: 24px;
+    margin-top: 28px;
     margin-bottom: 10px;
     line-height: var(--line-height-large);
   }
 
   h3 {
-    font-size: var(--font-size-small);
+    font-size: var(--font-size-base);
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
-    margin-top: 20px;
+    font-weight: 600;
+    margin-top: 22px;
     margin-bottom: 8px;
     line-height: var(--line-height-large);
   }
 
-  h4,
+  h4 {
+    font-size: var(--font-size-small);
+    color: var(--v2-text-text-base);
+    font-weight: 600;
+    margin-top: 18px;
+    margin-bottom: 6px;
+    line-height: var(--line-height-large);
+  }
+
   h5,
   h6 {
     font-size: var(--font-size-small);
     color: var(--v2-text-text-muted);
     font-weight: var(--font-weight-medium);
-    margin-top: 20px;
-    margin-bottom: 8px;
+    margin-top: 16px;
+    margin-bottom: 6px;
     line-height: var(--line-height-large);
   }
 
@@ -197,45 +212,73 @@
   /* Lists */
   ul,
   ol {
-    /* SiCode: a list is one grouped block of content, so it now reads as a block — a soft rounded
-       surface, the same vocabulary the quote block uses. The 36px start padding is 16px of
-       breathing room plus a 20px slot for the marker, so nothing hangs outside the surface
-       (demo: artifacts/markdown-polish-demo.html §⑦). */
-    margin: 14px 0;
+    /* SiCode: no container, on purpose. A wash behind every list turned a message with two or
+       three lists into stacked panels — the surface competed with the prose it was meant to
+       organise. What marks the block instead is a single hairline rail on the start edge: it says
+       "these rows belong together" without adding a face, and it stays quiet when lists repeat
+       (chosen from artifacts/list-pick.html, option C). */
+    margin: 16px 0;
     margin-inline-start: 0;
-    padding: 10px 16px 10px 36px;
+    padding: 2px 0 2px 18px;
     list-style-position: outside;
-    background: color-mix(in oklch, var(--v2-text-text-base) 5%, transparent);
-    border-radius: 8px;
+    /* The rail is the whole block marker, so it cannot inherit the muted border token: at 8% on a
+       near-black canvas it disappeared. 12% of the text colour keeps it readable in both themes. */
+    border-inline-start: 1px solid color-mix(in oklch, var(--v2-text-text-base) 12%, transparent);
   }
 
-  /* SiCode: markers used to be the same colour as the text, so in a list full of inline code
-     every bullet/number fought the content for attention. Quiet markers give the rows a spine
-     without adding weight (demo: artifacts/markdown-polish-demo.html §⑦). */
-  li::marker {
-    color: var(--v2-text-text-faint);
-  }
-
+  /* Custom dot instead of the browser disc: 5px, round, and one step quieter than the text, so a
+     row full of code chips keeps a spine without gaining weight. */
   ul {
-    list-style-type: disc;
+    list-style-type: none;
+  }
+
+  ul > li {
+    position: relative;
+    margin-inline-start: 10px;
+  }
+
+  ul > li::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: -13px;
+    top: 0.62em;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--v2-text-text-base) 30%, transparent);
+  }
+
+  /* Task rows carry their own checkbox; a dot beside it would be two markers for one line. */
+  ul > li:has(> input[type="checkbox"])::before,
+  ul > li:has(> p > input[type="checkbox"])::before {
+    display: none;
   }
 
   ol {
     list-style-type: decimal;
   }
 
-  li {
-    margin-bottom: 6px;
+  ol > li {
+    margin-inline-start: 10px;
   }
 
-  /* Nested lists hang off their parent row instead of floating at the outer margin's rhythm — and
-     they are sub-rows, not blocks, so they drop the container and keep only the indent. */
+  li::marker {
+    color: var(--v2-text-text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Spacing between rows, not after each row: the last item should not push its container open. */
+  li + li {
+    margin-top: 8px;
+  }
+
+  /* Nested rows step in one level and drop the rail: a rail inside a rail reads as a table of
+     contents, not as a sub-list. */
   li > ul,
   li > ol {
-    margin: 6px 0 0;
-    padding: 0 0 0 20px;
-    background: none;
-    border-radius: 0;
+    margin: 8px 0 0;
+    padding: 0 0 0 18px;
+    border-inline-start: 0;
   }
 
   li > p:first-child {
@@ -313,6 +356,17 @@
     margin-bottom: 0;
   }
 
+  /* A quote is already a block with its own pill on the edge; the list rail inside it would be a
+     second border a few pixels later. Inside a quote the rows simply indent. */
+  blockquote :is(ul, ol) {
+    border-inline-start: 0;
+    padding-inline-start: 6px;
+  }
+
+  blockquote :is(ul, ol) > li {
+    margin-inline-start: 8px;
+  }
+
   /* Horizontal Rule */
   hr {
     /* SiCode: was invisible spacing only; draw a muted line so the author's --- reads as a rhythm break. */
@@ -341,6 +395,35 @@
     position: relative;
     direction: ltr;
     unicode-bidi: isolate;
+  }
+
+  /* The code row is [gutter][code]. The gutter is sticky so it survives horizontal scrolling, and
+     inherits the card's background so code lines disappear under it instead of showing through. */
+  [data-component="markdown-code"] > pre {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  [data-slot="markdown-code-gutter"] {
+    position: sticky;
+    inset-inline-start: 0;
+    flex: 0 0 auto;
+    z-index: 1;
+    padding-inline-end: 10px;
+    border-inline-end: 1px solid color-mix(in oklch, var(--v2-text-text-base) 8%, transparent);
+    background: inherit;
+    color: var(--v2-text-text-faint);
+    text-align: end;
+    white-space: pre;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: none;
+  }
+
+  [data-component="markdown-code"] > pre > code {
+    flex: 0 0 auto;
   }
 
   [data-component="markdown-mermaid"] {
@@ -428,10 +511,10 @@
   pre {
     margin-top: 12px;
     margin-bottom: 24px;
-    /* SiCode: a 200-line answer block used to stretch the whole transcript; cap it and keep the
-       scrollbars visible so overflow is discoverable (demo: artifacts/markdown-polish-demo.html §④). */
-    max-height: 400px;
-    overflow: auto;
+    /* SiCode: the 400px clamp added earlier is gone — it turned long blocks into a scrolling peep
+       hole, so the block shows all of its code again. Horizontal scroll stays, because code does not
+       soft-wrap. */
+    overflow-x: auto;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--v2-text-text-base) 22%, transparent) transparent;
     &::-webkit-scrollbar {
@@ -455,11 +538,22 @@
     unicode-bidi: isolate;
     font-family: var(--font-family-mono);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
+    /* SiCode: a chip filled with body-text grey is a block with no identity, and at body size the
+       mono face is wider than the prose around it — five chips in one line and the row turns into
+       a patchwork. So code stops being the loudest thing in the sentence: one step smaller than
+       prose, tinted with the code accent just enough to separate it, filled at 6% with a hairline.
+       A token, not a block. The hairline is a box-shadow, never a border: the path attribute
+       arrives asynchronously and must stay paint-only to avoid the reflow bug.
+       Demo: artifacts/markdown-redesign.html */
+    font-size: 0.92em;
+    /* Neutral base: identifiers inherit this, the parser's spans paint keyword/string/number tokens
+       on top. A single-colour chip reads as a link or a highlighter mark; tokens read as source. */
     color: var(--v2-text-text-base);
     font-weight: var(--font-weight-medium);
-    padding: 0 4px;
-    border-radius: 4px;
+    padding: 0.1em 0.34em;
+    border-radius: 5px;
     background: color-mix(in oklch, var(--v2-text-text-base) var(--markdown-inline-code-bg-mix), transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--v2-text-text-base) 6%, transparent);
   }
 
   :not(pre) > code[data-inline-code-kind="path"] {

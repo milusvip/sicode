@@ -87,6 +87,14 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     section: "settings.general.section.permissions",
     keywords: "rm del destructive confirm shell remove delete",
   },
+  // SiCode: 正文链接打开位置。
+  {
+    tab: "general",
+    label: "settings.general.row.linkTarget.title",
+    target: "settings-link-target",
+    section: "settings.general.section.general",
+    keywords: "link browser external open url 链接 浏览器",
+  },
   {
     tab: "appearance",
     label: "settings.general.row.colorScheme.title",

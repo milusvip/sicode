@@ -16,7 +16,9 @@ import { McpTool } from "../tool/mcp.js"
 import { ReferenceInstructions } from "../reference/instructions.js"
 import { SkillInstructions } from "../skill/instructions.js"
 import { Tool } from "../tool.js"
+import { SessionClarifyHint } from "./clarify-hint.js"
 import { SessionContextHints } from "./context-hints.js"
+import { SessionDesignHint } from "./design-hint.js"
 import { AgentNotFoundError } from "./error.js"
 import { SessionHistory } from "./history.js"
 import { InstructionEntry } from "./instruction-entry.js"
@@ -182,12 +184,27 @@ const layer = Layer.effect(
         sessionID: selection.session.id,
         messages: history.entries.map((entry) => entry.message),
       })
+      // SiCode: a UI turn gets the repository's design values condensed in, because the rule in
+      // AGENTS.md ("read DESIGN.md before changing CSS") is not followed — 5 reads in 510, against
+      // 245 edits under the UI packages. Request-only, and only on turns that touch UI.
+      const designed = yield* Effect.tryPromise(() =>
+        SessionDesignHint.inject({
+          messages,
+          directory: location.directory,
+          enabled: process.env.OPENCODE_DESIGN === "0" ? false : true,
+        }),
+      ).pipe(Effect.catch(() => Effect.succeed(messages)))
       return {
         session: selection.session,
         agent: selection.agent,
         model,
         initial: history.initial,
-        messages,
+        // SiCode: a request too thin to act on gets what it leaves open named, so the model states
+        // the reading it took instead of guessing silently. Request-only; `OPENCODE_CLARIFY=0` off.
+        messages: SessionClarifyHint.inject({
+          messages: designed,
+          enabled: process.env.OPENCODE_CLARIFY !== "0",
+        }),
         tools: selection.tools,
       }
     })

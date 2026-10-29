@@ -286,6 +286,22 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 2026-10-29 正文排版调整（markdown.css）：h1 → `--font-size-x-large`(20px)、h2 → `--font-size-large`(16px)；blockquote 改 2px accent 左条 + 5% 淡底 + 8/14 内边距；hr 从隐形改为 1px muted 线；`pre` max-height 400px 且恢复细滚动条（原 `scrollbar-width:none` 让长行无法发现可横滚）；任务列表 checkbox 加 `accent-color`；行内 code 底 `--markdown-inline-code-bg-mix` 8%→14%。对照 demo 在 artifacts/markdown-polish-demo.html。
 - 等宽栈顺序：`ui-monospace/Menlo/Consolas` 必须排在「思源黑体/Noto Sans SC」之前。字体回退是按字形走的，CJK 照样落到中文字体，但 Latin 不会在 webfont 加载失败时被中文体的比例字形接管。
 - Markdown 表格字号在 packages/session-ui/src/components/markdown.css：`[data-component="markdown"] table`（原硬编码 12.5px，2026-10-29 改为 `var(--font-size-small)`=14px、行高 1.6）与 `th`（原 11.5px，改为 `font-size: inherit`，层级只靠 weight/muted 色/底色）；放大浮层 `[data-slot="markdown-table-zoom-scroll"]` 同一套。正文是 15px，差两档会像两份文档。
+- 2026-10-29 统一：`--font-family-sans` 与 `sansFallback` 现在都以思源黑体打头，两端逐字一致。生效的是 `model.tsx` 的 `createEffect` 写进 `:root` 的行内样式，`theme.css` 的声明只是初值——两者不同步时前者永远赢，所以改字体必须同时动这两个文件与 `packages/ui/DESIGN.md`。
+- 2026-10-25 那条「改成 WorkBuddy 同序系统栈」的记录只动了 `theme.css`，被行内样式覆盖，从未真正生效；Windows 上实际渲染一直是 Noto Sans SC（`index.css` 的 `local("Noto Sans SC")` 命中装机字体），不是微软雅黑。等宽栈同理：CJK 字形落到思源黑体，Latin 走 IBM Plex Mono。
+- `packages/app/src/settings/model.test.ts` 的 `prefix: '"思源黑体", '` 用例已经锁住这个前缀，改默认字体时它会先失败。
+- 2026-10-29 再统一：`packages/ui/src/navigation/tabs/tabs.css` 两处 `[data-slot="terminal-tab-title"]` 与 `#review-panel [data-slot="tabs-trigger"]` 原本硬编码 `Inter, sans-serif`，让标签页标题绕过 token 用了 Inter（而非思源黑体），已改为 `var(--font-family-sans)` 并加 `// SiCode:` 注释（该文件是上游文件）。同块的 `font-variation-settings: "slnt"` 依赖 Inter 的倾斜轴，思源黑体没有该轴，`.italic` 靠 `font-style: italic !important` 合成斜体，视觉可接受。
+- 终端仍是独立一套：`terminalFontFamily` → `terminalBase` = JetBrainsMono Nerd Font Mono，经 `host-apis.tsx:798` 的 `appearance.font()` 传给 xterm 的 `fontFamily`（`gui-extensions/src/terminal/terminal.tsx:443`）。它不属于「统一思源黑体」的范围，等宽终端不应合并。
+- 字体栈排查口径：`font-family` 是裸值且非 `var()` 才是漏网之鱼。目前 `packages/*/src` 只剩 `index.css` 的 `@font-face` 声明（那是注册字体，不是使用）、`font-family: inherit`，以及 `var(--v2-font-family-sans, "Inter", sans-serif)` 这类带兜底的写法。
+- 2026-10-29 方案 B 落地：`--font-family-sans` 与 `sansFallback` 改为 `"Inter"` 打头、`"思源黑体"` 紧随，用于「拉丁走 Inter、汉字走思源黑体」的混排。依据是字体回退按字形进行，Inter 无 CJK 覆盖，汉字照旧落到思源黑体。实测（Chromium + 真实 `@font-face` 注册）：`Ag` 在候选栈里量出 Inter 的 57.563px，`永` 落在思源黑体——栈内两种字形各取所需。等宽栈未动，仍是真实等宽字体在前。
+- 装机 Noto Sans SC 是**可变字体**：注册表里 `Noto Sans SC` / `Medium` / `Bold` 三行看起来像三个静态档，实际都指向同一个 `C:\Windows\Fonts\NotoSansSC-VF.ttf`（17.7MB，fvar 只有 `wght 100–900`，默认值 100）。所以本机 `--font-weight-regular: 460` 是真实插值，不是落回 400/500。判断一个字重是否「真」要看文件的 `fvar` 表，不能看注册表条目数——`.sicode/scratch/font-axes.ts` 就是读 sfnt 表目录做这件事的。
+- 修正此前两条错结论：①「460 在装机字体上落到 400」错误，正确规则是目标在 400–500 之间时先向 500 找，静态三档会落 **500**，且本机根本是可变字体、460 直接生效；② 上一轮说「中文字重会与英文不一致」错误，Inter 与 Noto Sans SC Variable 都在 460 上插值，中西一致。
+- `packages/app/src/settings/model.tsx` 的 `sansDefault` 从 `"思源黑体"` 改成 `"Inter, 思源黑体"`：它只做设置界面「UI 字体」输入框的 placeholder（`general/controllers.ts:97` → `appearance/appearance.tsx:94`），混排后只写思源黑体名就不完整了。改它会连带 `model.test.ts` 的两处断言。
+- `packages/session-ui/component-tests/session-lifecycle.spec.ts` 第 79、83 行 的 `font-family` 断言原本是 `/^Inter,/`（上游 4d72de340f 之前的状态），上一轮「统一思源黑体」时被改成 `/^思源黑体,/`，方案 B 后已改回 `/^Inter,/`。这两行是组件测试，跑它要 playwright，本轮未执行。
+- 2026-10-29 定稿 A+400：`--font-family-sans` 与 `sansFallback` 只保留 `"思源黑体"` 打头，去掉 `"Inter"`；`--font-weight-regular` 从 460 改回 400。判据是用户反馈「中英文没统一」——方案 B（Inter 拉丁 + 思源黑体汉字）即便 460 在两种字体上都插值到位，两套骨架并排仍读作两种字体。代价已知并接受：思源黑体的拉丁字形来自 Source Sans 且字族内放大 115%，英文比专用 UI 字体偏大偏松。
+- `packages/ui/src/styles/theme.css` 里的 `--font-family-sans` 与 `packages/app/src/settings/model.tsx` 里的 `sansFallback` 必须逐字一致（`.sicode/scratch/font-stack-check.mjs` 可复验，输出 `font-family-sans EQUAL` / `font-family-mono EQUAL`）。原因是 `model.tsx` 的设置 `createEffect` 把同一个变量写成 `:root` 行内样式，行内样式恒赢，`theme.css` 里那份只是首屏初值。等宽栈没动，仍是 `IBM Plex Mono` → `ui-monospace`/Consolas → 思源黑体，顺序是「真实等宽字体在前」，回退按字形进行所以 Consolas 抢不走 CJK。
+- `--font-weight-regular` 只管引用该 token 的声明（`utilities.css` 的 `text-*-regular`、`base.css`、各组件 CSS）。上游仍硬编码 `440`（约 77 处，次级文本）和 `530`（约 68 处，标题/标签），这些没随 token 改；在可变字体装机上是真实插值，所以 400 正文和 440/530 层级仍然分得开，但不再是 460/440 那种 20 单位的差距。
+- `sansDefault` 是设置界面「UI 字体」输入框的 placeholder（`general/controllers.ts` → `appearance/appearance.tsx`），单一字体后写 `"思源黑体"` 就完整了；改它连带 `packages/app/src/settings/model.test.ts` 的 4 处前缀断言。`packages/session-ui/component-tests/session-lifecycle.spec.ts` 第 79、83 行 的 `font-family` 断言现为 `/^思源黑体,/`。
+- `.sicode/demos/font-plan-a-vs-b.html` 已从「A/B 方案二选一」改成「定稿 400 / 旧方案 Inter+460」的对照页，并保留 400/460/500 字重切换。
 
 ## 全局右键菜单
 
@@ -580,6 +596,13 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 唯一没跑起来的是 LSP：`tool/plugin/lsp.ts` 提供 definition/references/hover/diagnostics，但工程里没有 opencode.json、没有 lsp 配置，等于没有 language server。实测 4342 次工具调用里 lsp 调用 **0 次**——不是模型不爱用，是压根没得用。
 - 检索不是时间瓶颈：探索类（read 566 / grep 436 / glob 32 / lsp 0）合计 1034 次占调用 23.8%，累计执行只有 799 秒（read 387 + grep 389 + glob 23），占 26.3 小时总量 0.8%。grep 436 次空结果为 0——搜得到，问题从来不是搜不到。
 - 所以「差索引」的正确表述：差的不是检索速度（已毫秒级），是**符号跳转没上线**。它的价值也不在执行毫秒数，而在减少步数——模型少走几步 grep+read 的往返，每步省约 13 秒模型时间。语义/向量索引那条已决策不做，且没有数据支持它值那个价。
+- **P1 结论反转（2026-10-29 定向实测）：不做自动检测接入。** 前提全部满足 —— 本机 `lsp.typescript` 已配且解析 0 错、`typescript-language-server.exe` 已装、工具已注册进 `internal.ts:263` 且对模型可见 —— 用户在 SiCode 仓库（有 tsconfig.json）问 `where is detectPollingWait defined`，模型只调了一次 **grep（0.4 秒、9 命中）**，lsp **0 次**。会话 ses_e79d5813dffdelGJl93tTVdr2U。
+- 根因不止「模型习惯用 grep」，更是**结构性限制**：definition / references / hover 三个 op 都要求 `path` + `line` + `character`（`tool/plugin/lsp.ts:44-47`）。模型要找「X 在哪定义」时并不知道行号，必须先 grep 定位；而 grep 一旦跑完答案就已经拿到了（本次 0.4 秒）。**lsp 无法替代「定位」这一步，只能在已知位置后做精确化** —— 对「找定义」这个最高频场景是帮不上忙的。
+- 成本对比（同一任务的两种路径）：grep 0.4 秒；TS language server 首次索引几十秒到几分钟 + 常驻 1~2GB 内存。找定义这类任务上 lsp 是**负收益**。
+- **撤回此前估计**：「LSP 能替掉 25% 的 grep+read 往返、约省 54 分钟」过度乐观且无依据 —— 全库 lsp 调用 0 次，本次定向验证仍 0 次。以后不要再引用这个数字。
+- 不做自动检测的四条理由：① 实测模型不用，接上也摆设；② 结构性限制使其在最高频场景无效；③ 1~2GB 常驻内存是硬成本；④ diagnostics 那部分价值已被 `syntax-check` 覆盖（改动后自动校验，不需要模型主动调用，已随 a43848e4da 提交）。
+- 若将来要捡起来，正确形态不是「自动检测接入」，而是：给 grep 加符号级模式（按符号名搜索、不需要先行号），或把 lsp 查询**嵌进既有工具**而不是让模型单独决策调用。
+- 保留事项：本机 `~/.config/opencode/opencode.jsonc` 的 lsp 配置无害，留作后续验证；`lsp: true` 仍是上游预留的内置钩子（`lsp/config.ts:49` 目前返回 unconfigured，注释明说 reserved for future built-ins），它是 opt-in 语义，将来做产品化就填这里，不写不付内存代价。
 
 ## 侧边栏文件树
 
@@ -800,8 +823,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 设置
 
-
-
 - 设置页 TRAE 风格改版（2026-10-26）：结构不变（左竖导航+右内容），纯视觉重排。settings.css：侧栏面板化（bg-layer-01 + 右 0.5px 分隔线，padding 20/16/24，原 50/24/64）；back 键整行+底部细线；新增 .settings-account 品牌卡（navigation.tsx，仅根设置页 searchable() 显示，Mark 头像+SiCode/Desktop 占位，无账号体系）；导航项 28→30px 高、radius 6、gap 10；组标签 12px faint。内容：settings-tab-title 15→18px；settings-section gap 16→10、标题 12.5px/560 带 2px 左缩进；settings-list radius 10、padding-inline 16；行 padding 20→14（catalog 变体仍 16）。general.tsx 偏好设置页拆三卡：常规(语言/标签页/默认环境+扩展段)/权限(自动接受)/输入(智能体/终端位置/后续消息/双指缩放/移动端标题栏)；i18n 加 settings.general.section.permissions、.input（en/zh，其余语言回退 en）。验证：CDP 实截 偏好设置/外观 两页正常；tsc -b 通过（bun check 报 artifact-card.tsx:81 Accessor 索引错误是 oxc 误报，真 tsc 无错）。
 - 侧栏大空隙：设置布局原来是 `justify-content: center` 整体居中，窗口一宽工具栏和侧栏面板之间就空出一大块（实测 95px）。修复：`.settings-screen > .settings` 加 `margin-inline-end: auto` 贴左，侧栏紧贴工具栏（x=68）。
 - 权限卡补第二行：演示稿承诺的「破坏性命令确认」开关此前没落地（拦截逻辑写死在 auto-approve.ts）。现已做成真设置 `settings.general.destructiveConfirm`（默认开）：关掉后 rm/del 等删除命令跟随自动接受。改 model.tsx（schema+default+context）、auto-approve.ts、requests/model.ts（弹窗显示同步）、general.tsx、i18n en/zh、search-catalog、model.test.ts。
@@ -813,6 +834,16 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 内容列内边距：`.settings-screen .settings-tab-header { padding: 48px 0 0 }` 和 `.settings-tab-body { padding-inline: 0 }` 上游就是 0，以前没有分隔线所以看不出来；侧栏有了边线后标题和卡片直接压线。改成左右 32px（`packages/app/src/settings/settings.css:63` 附近）。
 - 侧栏导航：`.settings-nav { width: 240px }` 原本正好等于「328 - 24 起始 - 64 尾随」的内容宽；尾随改成 24 后内容宽变 288，导航仍是 240，选中胶囊离面板右缘差 48px。改成 `width: 100%`（移动端断点本来就是 100%，现在两边一致）。
 - 设置页没有 storybook fixture：`SettingsNavigation` 依赖 `useSettingsSurface`（router + layout + servers），`SettingsSearch` 还依赖 command/global，静态复刻脚手架很容易失效。要目测就起桌面端。
+- 外链点击链路（2026-10-29 排查）：`marked` 产出 `<a class="external-link" target="_blank" rel="noopener noreferrer">`（裸网址也自动成链）；DOMPurify 保留 href/target；桌面壳 `windows/security.ts` 的 `wireNavigationPolicy` 同时接了 `setWindowOpenHandler` 与 `will-navigate` → `openExternalURL` → `shell.openExternal`；两个窗口创建点（early.ts / windows/index.ts）都调用。**用裸 Electron 探针验证过** `setWindowOpenHandler` 对 `target=_blank rel=noopener noreferrer` 会触发（`artifacts/link-probe.cjs`）。所以链路本身是通的。
+- 原来唯一的问题：这条链路**在 app 里没有主人**——渲染层完全不处理链接点击，成功时没有任何痕迹、失败时也没有反馈，因此既不可测也改不动。新增 `packages/session-ui/src/components/markdown-external-links.ts` 的 `setupExternalLinks()`（挂在 markdown 容器的 click 上，取 `a.external-link[href]` → `history/replace` 不走，直接 preventDefault + 调 host 的 `openExternal`）。host 回调走 `MarkdownProvider` 新增的 `openExternal`，app 侧在 `shell/routes/session-ui-provider.tsx` 接 `platform.openExternal`（桌面 = IPC → `shell.openExternal`，web = `window.open`）。host 没给 handler 时不 preventDefault，web/分享页行为不变。改键点击（cmd/ctrl/shift/alt）与次要键放行给平台。单测 `markdown-external-links.test.ts` 5 条（happy-dom）。
+- 顺带发现的真空洞：主会话的 `MarkdownProvider` **没有传 `openLocalFile`**（只有 `runtime/extension/render.tsx` 的 ExtensionLinks 传了），所以正文里指向本地路径的行内链接（`src/app.ts` 这类）点了没反应，`data-local-links` 属性也不会被打开。没动，因为接上会把路径型行内代码变成可点样式（视觉变化），需要用户拍板。
+- 内置浏览器开外链目前**做不到**：`gui-extensions/src/browser/contract.ts` 的 Browser 契约只有 `openFile(session, path, {select})`，没有 openURL。要做得加契约方法 + model.openURL + layout select + 设置项 + i18n，属新功能。
+- 设置面板加一个「链接打开位置」的正确落点：`packages/app/src/settings/general/general.tsx` + `settings/model.tsx`（照 workspaces.defaultDestination 的写法：Select + 持久化），i18n 三份，另有 `settings/search-catalog.ts` 需补条目。
+- 「链接打开位置」设置（2026-10-29 落地）。两档：`system`（默认，系统浏览器）/ `browser`（桌面侧边浏览器面板）。存在 `settings.general.linkTarget`（`packages/app/src/settings/model.tsx`，`Persistence.optional` + `withFallback`，默认 `"system"`），UI 在 `settings/general/general.tsx` 的 `LinkTargetSetting`（Select，仅 `platform==="desktop"` 渲染），i18n en/zh 四条（含 `linkTarget.unavailable` 回退提示），搜索目录 `settings-link-target`。
+- 路由只有一个入口：`packages/app/src/shell/routes/session-ui-provider.tsx` 的 `openLink()`，经 `MarkdownProvider.openExternal` 交给 session-ui。规则：只有 `http(s)` 且用户选了 `browser`、且 browser 契约 `status==="active"`、且 `canOpen(session)` 为真，才走 `pane.open(session, url)`；其余（mailto、web、窄屏、面板没打开过）一律回落系统浏览器，并在**首次**回落时弹一条 toast 说明原因（`warnedSideBrowser` 每次运行只提示一次）。
+- 契约层不需要新增方法：`Browser.open(session, url)` 早已存在（`browser/renderer.tsx:52` → `model.openURL` → `command(tabs.open, {url})`）。**但 `canOpen`/`openURL` 都要求 pane 已 attach（`registration` 或 `browser` 状态存在）**，也就是这个会话的侧边浏览器至少被打开过一次，否则命令无处可发。这是侧边浏览器方案的硬前提，也是回退提示存在的原因。
+- 取舍：默认系统浏览器。理由是链接的语义是「去别处」，用户要的是自己的登录态与扩展；侧边面板适合不想离开应用的少数场景。`⌘/Ctrl/Shift/Alt + 点击` 始终交给平台（不拦截）。
+- 验证：app tsc 干净、`vite build` 通过（产物 `shell-*.js` 含 `settings-link-target`）、单测 779 pass / 3 fail（与改动前基线一致：settings search ×2 + visibleTimelineMessages ×1）。
 
 ## artifact 侧边预览
 
@@ -947,13 +978,31 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 项目地图
 
-
 - 注入端：`packages/core/src/config/plugin/project-map.ts` 把 `.sicode/structure.md` 全文和 `.sicode/notes.md` 的 `## ` 标题清单拼进每个请求。notes 只给标题是刻意的——全文约 28KB，每请求重放比模型自己按需读那一节更贵；地图全文注入则是划算的，它省掉「先读一遍再动手」的往返（约 1.3k tokens）。
 - 生成端：cli/src/commands/handlers/init.ts（已随该命令一起撤销），命令曾是 `opencode init`（bin 名仍是 `opencode`，见 `packages/cli/package.json` 的 bin）。它从 cwd 往上找 `.git`/`package.json`/`Cargo.toml`/`go.mod`/`pyproject.toml` 定项目根，扫一级目录（跳过 node_modules、dist、隐藏目录等）、`package.json` 里 dev/build/test/check/lint 开头的脚本、README 第一段散文，产出带 TODO 的骨架；文件已存在就提示并退出，不覆盖。
 - 有意不给「目录职责」「改动该去哪」下结论：静态扫描猜错比留 TODO 更糟，模型会当真。这两节留给 agent 或人填。
 - `.sicode/` 只读不建是长期状态：`ConfigDiscovery` 的 `projectDirectories = [".sicode", ".opencode"]` 只用于发现，全仓没有任何地方 mkdir 它，所以新项目里那套注入不会生效，除非跑一次 init 或手工写文件。
 - 生成入口只有一个：core 的内置斜杠命令 `/init`（`packages/core/src/config/plugin/command.ts`，注册在配置命令之前，用户自建 `init` 可覆盖）。它把「读代码写 `.sicode/structure.md`」整件事交给模型，prompt 里约束篇幅（一页）、排除易过期内容（文件清单/行数/TODO/版本号）、要求已存在时就地改进。桌面端在 composer 打 `/init` 即触发，命令经 `GET /api/command` 暴露，app 侧无需改动。
 - 曾经写过一个 CLI 版 `opencode init`（静态扫描目录 + package.json 脚本 + README 首段，1 秒出骨架），已撤销（`a7aa342ec3`）。撤销理由：桌面端用户不该被要求开终端；两个同名不同行为的入口会让人猜用哪个。静态扫描的价值不足以维护第二份模板。
+- **别家三派做法对照（2026-10-29 调研）**：① **agentic search**（Claude Code，Cursor 部分场景）——不做索引，直接 rg/glob/read，理由是早期 RAG 实验显示按需搜更好，代价是多走几轮；② **repo map**（Aider）——tree-sitter 抽定义/引用（名字+行号），按引用关系建文件图，PageRank 配个性化权重（在聊文件 50x、对话提到的标识符 10x），按 token 预算（默认 1024）挑最高分符号+签名；③ **语义索引**（Cursor）——Merkle 树增量 + 语法级分块 + 自训 embedding + 向量库。
+- 关键数据：Aider 的 repo map 在 SWE-bench Lite 上 26.3% resolve rate、**70.3% 正确文件识别**（官方博客给的是全栈成绩，未单独消融）；Cursor 官方博客：语义搜索带来**平均 12.5% 准确率提升**（6.5–23.5%，视模型）、1000+ 文件的大库上代码留存 +2.6%、少了需求迭代 —— **是准确率不是速度**。Cursor 文档同时明确：引用具体符号时 Agent 自动走 grep（他们自建 Instant Grep，比 ripgrep 快），语义搜索是补充，两者组合最好。
+- **SiCode 的位置**：已经在 agentic search 这一派（grep 0.4 秒、436 次零空结果），并且**已有 repo map 注入通道** —— `config/plugin/project-map.ts` 每请求注入 `.sicode/structure.md` 全文 + notes 标题清单（约 1.3k token）。区别只是：Aider 的地图自动生成，我们的靠手写维护。
+- **所以「捡起来」的正确方向是自动 repo map，不是 LSP、也不是向量索引。** 依据：① LSP 三个 op 都要行号，实测模型不用（见「代码检索 / LSP」区）；② 向量索引是准确率收益且成本最高（需 embedding 路径 + 自训模型，见「语义索引」区决策）；③ repo map 恰好补「模型不知道仓库里有什么 → 反复 grep 摸索」这个真缺口，且**预注入、不需要模型主动调用**（绕开「模型不会用新工具」这个已被证伪两次的假设）。
+- 落地形态（复用既有注入点，符合「新增文件+单点注册」纪律）：新增 core 下的 repo-map 目录（提取器 + 生成器 + 缓存，尚未创建），由 `project-map.ts` 在 `.sicode/structure.md` 缺失或过旧时改用自动生成的地图；注入通道一行不改。
+- 前置依赖：`web-tree-sitter 0.25.10` 已在 `packages/core/package.json`，但**只带 bash 与 windows shell 语法**，TS/TSX 需另加 tree-sitter-typescript 的 wasm。这是唯一的硬前置。
+- 成本与风险：约 2 天工作量（语法包接入+提取器半天、生成与预算半天、mtime 增量缓存半天、测试半天）；本仓 5146 个 ts/tsx 文件首次全量解析预计十几秒到几十秒，需缓存；地图体积要从 1.3k 控制在 2–3k token 内，否则每请求成本反超收益（Aider 的做法是按预算裁剪，不是全量输出）。
+- 先做简单版的理由：PageRank 可以先用「被引用次数」近似，Aider 的 50x/10x 个性化权重属于调优项，不影响第一版验证「预注入符号地图是否减少探索步数」这个核心假设。
+- **自动 repo map 已落地**（2026-10-29）。目录 `packages/core/src/repo-map/`：`languages.ts`（扩展名→语法注册表）、`extract.ts`（tree-sitter 树→符号+依赖，纯函数）、`render.ts`（排序+预算渲染，纯函数）、`parse.ts`（懒加载 wasm、按语言复用 Parser）、`cache.ts`（磁盘缓存）、`index.ts`（扫描+增量+内存缓存）。接入点只有一处：`config/plugin/project-map.ts` 在 `structure.md` 缺失时改用它。wasm 走 `#repo-map-wasm` 条件导出（bun/node/workerd 三份），写法照抄 `#shell-parser-wasm`。
+- 语言覆盖：内置 10 种 —— typescript / tsx / javascript / python / go / rust / java / c / ruby / php，合计约 11MB wasm。`tree-sitter-wasms@0.1.13` 本身有 36 种，其他没打包是因为每个语法都进二进制（c_sharp/kotlin 各 4MB）。**加一种语言 = 注册表加一行 + `wasm.bun.ts` 加一个 import**，其余代码不动。
+- 提取规则是结构化的，不是按语言写死：**顶层节点只要有 `name` 字段就当定义**（python/go/rust/java/js/ts 实测成立），外加三处修正 —— ① `export_statement` / `decorated_definition` 是包装层，递归进去取内层；② go 的名字在 `type_declaration` 下面的 `type_spec`；③ c 的函数定义没有 name 字段，名字在 `declarator` 链末端。另外只有 `export const` 这类绑定才下钻取 `variable_declarator`，未导出的模块级 const 不入图（否则全是常量噪声）。
+- 排序：可解析的相对依赖入度 ×8，`src|lib|app` 目录 +2；ts 里 import 常写成 .js 扩展名、磁盘上却是同名 .ts 文件，所以带源码扩展名的 spec 会去掉扩展名再试一次；python 的点号路径（`.mod` / `..pkg` / `.`）单独处理。**绝对不要给裸包名建边**（`react`、go 的 import path 都在仓库外）。没有 import 边的语言（go/rust/java）全部 0 分，退化成路径序 —— 这是已知弱项，不是 bug。
+- 渲染格式：单行 `path: name(line) name(line) …`，预算 4000 字符（≈1240 token，与原来手写的 structure.md 同量级）、每文件 5 个符号、单行上限 180 字符。超预算的文件是**跳过继续**而不是 break（避免一个长行把后面的全清空），跳过的数量合并成一行 `… and N more files`，且这行**从同一预算里扣**，否则总长会超。
+- 本仓实测（2800+ 文件）：冷启动 5.8s，二次（走磁盘缓存，只 stat + 重解变更文件）0.39s。预算 4000/每文件 8 → 29 个文件，每文件 4 → 42 个，每文件 5 → 约 35 个。排序头部是 `schema.ts`（81 个文件引用）、`bus.ts`（65）、`protocols/shared.ts`（60），与实际依赖中心一致。
+- 缓存：`<global cache>/repo-map/<sha1(绝对目录)>.json`，失效信号是 `mtimeMs + size`（与 trigram 同一套），原子写（临时文件 + rename）。内存层 TTL 5 分钟，key 是 `目录|budget|symbolsPerFile`（预算不同渲染结果不同，不能共用）。
+- 冷启动不阻塞：没有磁盘缓存时**先返回空、后台构建**，下一轮请求才有图 —— 宁可第一轮没图，也不要让首轮卡 6 秒。有缓存时直接 await 增量刷新（亚秒级）。`wait: true` 是给测试和一次性命令用的。
+- `.sicode/structure.md` 仍然优先（它承载解析器推不出来的架构知识），生成的图只做兜底。要在本仓对比两者，设 `OPENCODE_REPO_MAP=generated`。
+- 验证：`test/repo-map.test.ts` 16 项（六种语言的提取、路径解析、排序、预算与尾部裁剪、磁盘缓存与新增文件）+ `test/project-map.test.ts` 5 项，共 21 pass；core typecheck 1738 文件 0 错误。**尚未验证的是效果本身** —— 预注入符号地图能否让每回合步数下降，要跑真实会话才有数据。
+- 未验证风险：node 变体用 `require.resolve("tree-sitter-wasms/out/…")`（该包无 exports 字段，按路径解析可行）；打包成单个可执行文件时若 wasm 不在旁边，需要 `OPENCODE_REPO_MAP_WASM_DIR` 指向目录，否则该功能静默降级（图不注入，不影响其它功能）。
 
 ## 并行编辑与 DeepSeek 兼容
 
@@ -1086,6 +1135,21 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - `Mark` 取 `size-6`（24px）：没有底板时图标要吃掉 28px 控件里除 2px 边距外的全部空间，否则读起来是角落里的小徽标。
 - 侧栏展开态只有一个横向内缩：每个块各自 `px-2`（外层不再带横向内缩），搜索行、新建会话按钮、项目头、会话行、归档行都落在同一条 8px 边线上。列表容器原先用 `pe-2.5` 给滚动条让位，导致项目头比上面的按钮窄 8px，整列看起来像两套网格；滚动条是 12px 覆盖层、只在滚动时出现，行可以从它下面通过。`ScrollView` 必须全宽，thumb 用 `inset-inline-end: 0` 贴的是它自己的盒子，外层一旦有横向内缩，滚动条就离开侧栏右缘。
 - 折叠联动终版是**转移触发**而非状态监听（`left-sidebar.tsx:347`）：effect 只在右面板 open→closed / closed→open 的瞬间执行，内部用 `untrack` 读 collapsed/foldCause，避免面板开着时 effect 跟着 collapsed() 变化重跑（那会把用户点展开立即压回去——两轮 bug 的共同根因）。规则：面板打开瞬间，展开态→折叠并记 cause=auto（已折叠则不动，不覆盖手动意图）；面板关闭瞬间，仅 cause==="auto" 才展开。`foldCause()!=="user"` 的持续门槛版本会让「曾手动展开」的栏此后永远不被面板折叠，已废弃。
+- 顶部标签与左栏联动：`viewed()` 让**路由压过 `home.selection()`**——`route.type === "session"` 时用 `groupOf(server, sessionID)` 找归属项目，`route.type === "draft"` 时读草稿标签自带的 `directory`，其余情况才回落到 home 选择。改前 `current` / `isActiveProject` 只读 `home.selection()`，而切换标签只改路由，于是侧栏一直指着上一个项目：正在看的会话被折叠在一个没展开的分组里。
+- `groupOf` 先按 id 在 `groups()` 里找（分组已把 sandbox 目录并进来），找不到再退回 `data.session.get(id).location.directory` 比对 worktree / sandboxes：搜索词会过滤掉行，但路由仍可能指向被滤掉的会话。
+- 自动展开用 `createEffect(on(() => 当前项目 id, ..., { defer: true }))`，只做「展开」。效果只在项目变化时触发，所以手动折叠当前项目不会被回弹；从别的项目切回来时它自己展开。
+- 会话标题悬浮滚动（`packages/app/src/shell/marquee-text.tsx` + `marquee-text.css`）：多行 `/` 的会话标题（侧栏 224px，标题常见 200px+）改成静止省略号、悬停滑出尾巴。三层结构 `[data-slot=marquee] > marquee-track > marquee-label`；`data-marquee="run"` 时把 `overflow:hidden/text-overflow:ellipsis` 从 label 摘掉、只留外层裁剪，否则 label 自身的 clip 框随 translate 一起移动，尾巴永远出不来（这是这类实现最容易踩的坑）。
+- 距离必须在**截断态**量：`label.scrollWidth - root.clientWidth`。切成 visible 之后 `scrollWidth` 只报盒宽，距离会塌成 0。
+- 时序：悬停 160ms 后启动（防止鼠标划过多行时满屏都在动），时长 `distance*14ms` 钳在 450~3200ms，`cubic-bezier(0.33,1,0.68,1)`；离开 180ms ease-out 滑回并复位。`prefers-reduced-motion` 直接跳到尾巴不滑。标题变更（自动生成标题）走 `createEffect` 复位，避免沿用旧位移。
+- 只挂在 `flex-1` 的文字区，所以缩进槽（ps-42px）和右侧时间/「···」上悬停不触发。
+- 接入两处：主列表与「已归档」列表的标题；项目名（`left-sidebar.tsx` 的 group 行）暂未接，要的话同一行替换即可。
+- 预览：`artifacts/marquee-states.html`（四态：静止/滚动中/到位/短标题），`artifacts/marquee-preview.html`（真悬停 + 逐帧测量，Playwright 验证位移 67px、时长 0.94s、离开后 `overflow:hidden` + ellipsis 复原）。
+- 顺带记录：`packages/app` 单测 779 pass / 3 fail，三条（settings search 两条 + visibleTimelineMessages 一条）在 `packages/app/src/settings/` 无改动的前提下也失败，属既有问题，与本次无关。
+- 单条删除/归档必须自己发 `notifySessionTabsRemoved`：`packages/app/src/shell/left-sidebar.tsx` 的 `remove()` 与 `setArchived()` 原来只调 `ctx.data.session.remove()` / `.sync()`，而 `data.session.remove` 只在 `createSessionMutations` 里记一条 remove 变更，不碰标签，所以顶部会话标签会留在那儿指向已消失的会话。
+- 参照写法在 `packages/app/src/home/sessions/controller.tsx`（单条删除带 `sessionTreeIDs`）与 `packages/app/src/home/sessions/archive.ts`（单条归档只发自己）。删除要带上整棵子树，否则删掉的父会话留下子 agent 的孤儿标签。
+- 批量路径 `archiveBatch` / `deleteBatch` 早就发了，单条路径是漏的；清理标签的责任在发起方，不在 `data.session` 层，新加会话删除/归档入口时按这两处对齐。
+- 激活会话的左侧竖条原来在 `start-[30px]`，正好落在项目头像列（20–36）中央，看着像从图标里长出来的一条线；改到 `start-[20px]`，与头像左边缘严格对齐，两级共用一条左边缘（`left-sidebar.tsx` 激活行 Show 内）。实测文字都在 42px 没动。对照 artifacts/active-mark-preview.html。
+- 右侧对齐：项目行 button 是 `pe-2`、会话行是 `pe-1`，导致项目行的 pin/转圈比会话行右端的转圈/时间靠左 4px；项目行改 `pe-1`，两行右端落在同一列（实测 216→220 变 216/216 同列）。左边缘本来就齐：项目名与会话标题的文字起点都是 42px（ps-1 4 + chevron 10 + gap 6 + avatar 16 + gap 6）。对照 artifacts/sidebar-end-preview.html。
 
 ## harness 止损机制
 
@@ -1154,3 +1218,68 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 列表改成软容器（用户要求「美化成容器」）：`markdown.css` 的 ul/ol 加 `background: color-mix(in oklch, var(--v2-text-text-base) 5%, transparent)` + `border-radius: 8px` + `padding: 10px 16px 10px 36px`（36 = 16 呼吸 + 20 符号位），margin 统一 14px；删掉 ol 单独的 28px 覆盖。嵌套 `li > ul/ol` 保留 20px 缩进但 `background: none; border-radius: 0`（子行不是块）。淡符号（`li::marker` faint）保留。
 - demo §⑦ 现状=淡符号+紧缩进（.was-list），提案=容器版（.proposal）；新增一段有序列表验证序号不被容器边缘裁掉。预览 artifacts/list-container-preview.png。
 - 验证手法：Playwright 指定 CentBrowser executablePath；截图用 `locator("#sec-list").screenshot()` 而非 --screenshot + #anchor（后者在本机 headless 会截到空白）。
+- 行内代码片二次改版（用户点名「包括 `<div class=...>` 这些背景」，即丑的是代码片不是列表骨架）：`markdown.css` 的 `--markdown-inline-code-bg-mix` 14% → 8%，`:not(pre) > code` 的 `color` 从 `--v2-text-text-base` 改为 `--markdown-inline-code-color`（= `--v2-text-text-code-accent` 蓝），并加 `box-shadow: inset 0 0 0 1px` 7% 内描边（用 box-shadow 不用 border：border 会改 metrics，而 path 属性是异步到达的，必须保持 paint-only）。
+- 关键判断：原来「14% 灰底 + 正文同色文字」= 一块没有身份的补丁，一行五个就成了补丁墙；改成靠**颜色**而不是**深色块**表明「这是代码」。对比页 artifacts/inline-code-variants.html（A 现状 / B 只减淡 / C 已落地），截图 artifacts/inline-code-variants.png。
+- 列表容器（5% 淡底+圆角）用户此前判为「也不好看」，但根因疑似是代码片太重；代码片减淡后需重新评估，四方案页 artifacts/list-variants.html 仍在。
+- 第三版重设计（换模型后重做，块引用不动）：方向从「给列表/代码加表面」反转为「让它们更轻」。列表彻底去掉容器（此前 5% 淡底+圆角 8 被判难看），改 `margin: 16px 0` + `padding-inline-start: 22px` + `ul { list-style-type: none }` 配自定义 `ul > li::before` 5px 圆点（`inset-inline-start: -13px; top: 0.62em`，text-base 30%）+ `li + li { margin-top: 7px }`；任务行用 `:has(input[checkbox])` 排除圆点；嵌套列表 18px 缩进无容器。
+- 行内代码同步收紧：`font-size: 0.92em`（mono 比正文宽，缩一档才不抢眼）、`--markdown-inline-code-bg-mix` 6%、文字 `color-mix(code-accent 78%, text-base)`、`padding: 0.1em 0.34em`、radius 5、内描边仍用 box-shadow（不改 metrics）。
+- 新增终版 demo artifacts/markdown-redesign.html（完整一条回答：正文/无序/有序/嵌套/任务清单/行内代码/块引用），浅色 artifacts/markdown-redesign.png、深色 artifacts/markdown-redesign-dark.png；旧 demo 的 §⑤/§⑦ 提案列已同步成新实现，避免两份说法打架。
+- 计算值核对（Playwright）：ul 背景透明、缩进 22px、圆点 5px、行距 7px、ol marker faint、code 13.8px(0.92em)/底 6%。
+- 列表定案：方案 C「左侧 1px 细线」（用户在 artifacts/list-pick.html 四选一中选中）。`markdown.css`：ul/ol 加 `padding: 2px 0 2px 18px` + `border-inline-start: 1px solid color-mix(text-base 12%)`；`ul>li`/`ol>li` 加 `margin-inline-start: 10px`；圆点仍 5px/30%；`li + li { margin-top: 8px }`；嵌套 `li > ul/ol` 显式 `border-inline-start: 0` + `padding-left: 18px`（线套线会读成目录）。
+- 线的颜色不能用 `--v2-border-border-muted`：那是 8% 白，在 #080808 画布上直接消失（计算值验证）。12% 文字色在深浅两套都可读。
+- 四选一页 artifacts/list-pick.html（A 灰点 / B accent 点 / C 细线 / D 短横线），关键做法：**页面本身不加卡片外框**——上一轮四选一被误读成「整个消息是个容器」，就是因为方案页的 `.cell` 卡片底。
+- 覆盖面核查：blockquote / 列表 / 行内代码全部只定义在 `packages/session-ui/src/components/markdown.css` 的 `[data-component="markdown"]` 作用域内，所以所有会话内渲染（回答正文、reasoning 思考块、工具输出、问答卡片、压缩摘要）自动同步。`message-part.css`（reasoning 用 `--font-size-small`+muted）与 `session-compaction.css` 只覆盖字号/颜色，不重复定义引用块。表格放大浮层是 `[data-component="markdown-table"]` 专用组件，不渲染 blockquote，无需处理。
+- 真漏一处并已修：引用块**内部**的列表会多出一条竖线贴在 accent 药丸条旁（双重边框感）。加 `blockquote :is(ul, ol) { border-inline-start: 0; padding-inline-start: 6px }` + `> li { margin-inline-start: 8px }`。测试页 artifacts/quote-nested-test.html（含引用块内列表+代码）。
+- 唯一未覆盖：公开分享页 `packages/web/src/components/share/content-markdown.module.css`（自用 `[data-slot="markdown"]` 一套独立样式），本机桌面端不涉及。
+- 行内代码颜色改绿（用户：「代码不能搞蓝色，不然还以为可以点的，就跟代码高亮样就行了」）。根因：`--v2-text-text-code-accent` 在浅色主题是 blue-900，和 `--markdown-link` (#3b7dd8) 同一蓝族，读起来像可点链接。改用 `--markdown-code`（浅 #3d9a57 / 深 #7fd88f，主题里 markdown 代码专用绿），去掉原先 78% 混正文色的 color-mix（会把绿洗淡）。
+- 文件路径类行内代码（`code[data-inline-code-kind="path"]`）**保持蓝**：它真的可点（`[data-local-links]` 下带 cursor:pointer + hover 下划线），蓝色此时是正确语义，不能统一改绿。
+- 顺带确认：`--markdown-link` 深色是 #fab283（橙）、浅色 #3b7dd8（蓝）——所以「蓝=链接」只在浅色成立，但用户体感如此，按用户的场景改。
+- 行内代码真·多色高亮：新增 `packages/ui/src/context/inline-code-highlight.ts`（约 60 行、零依赖、sticky 正则逐 token 扫描），配色直接引用 `--syntax-*`（与代码块同一套 palette）：标签 `syntax-type`、属性/声明属性/自定义属性 `syntax-property`、字符串 `syntax-string`、数字带单位/短横线开关 `syntax-constant`、函数调用 `syntax-primitive`、注释 `syntax-comment`、标点 `v2-text-text-faint`；标识符**不染色**继承正文色（避免彩虹）。挂载点在 `marked-base.tsx` 的 `codespan` 渲染器（不是 marked-parser 的 code 扩展），这样小/同步路径和 worker 路径产出完全一致（`parseSmallMarkdown` 与 worker 共用 base）。
+- 判词陷阱：CSS 自定义属性规则必须写 `--(?:[a-z][a-z0-9-]*)+(?![\w-])`。最初写 `--[a-z][\w-]*` 会把 `--noEmit` 吃掉一半（`--no` 被染成属性色、`Emit` 掉回正文），加尾部边界整体失败后才落到 flag 规则。
+- 标题层级修 bug：h3 原本用 `--font-size-small`(14px) 比正文 15px 还小，层级倒挂。改为阶梯 20/16/15/14（h4 单独 14），h3 靠 600 字重 + 间距承担层级；h5/h6 muted。依据 `packages/ui/DESIGN.md` 的 12/14/15/16/20 阶梯（文档明确 12.5/11.5 是手调残留要收敛）。
+- demo 改为**真解析器生成**：`artifacts/build-markdown-demo.ts` 用 `createMarkdownParser()` 渲染样例，并把 `markdown.css` 原文内联进页面 —— 预览与实现不再可能脱节（之前手抄样式两次出现文档与代码不一致）。
+- 测试：新增 `inline-code-highlight.test.ts` 6 条；`marked-parser.test.ts` 里 `<example>` 断言改为两个 span（tag + 括号）。ui 135 pass、session-ui 57 pass、两包 tsc 干净。
+- 代码块「还原 + 行号」：① 去掉今天加的 `pre { max-height: 400px }` 限高（长代码被压成 400px 窥视孔），保留 `overflow-x: auto` 与细滚动条；② 新增行号槽：`markdown.tsx` 的代码块构建处（唯一构建点，全仓只有 `pre.className="highlights"` 这一处）在 `<pre>` 内先插 `<span data-slot="markdown-code-gutter" aria-hidden>` 再插 `<code>`，`syncLineNumbers()` 用 `code.textContent.split("\n").length` 计行；流式更新时若行数未变就跳过（`dataset.count` 比对）。
+- 行号是**一个 span 内含换行文本**，不是每行一个元素：300 行也只多一个节点；`white-space: pre` + `tabular-nums` + `text-align: end` 让数字右对齐，靠行高与代码行同步（代码块不软换行，源码一行=视觉一行）。
+- 布局：`[data-component="markdown-code"] > pre { display: flex }`，gutter `position: sticky; inset-inline-start: 0` 抗横向滚动，`background: inherit`（继承卡片底色）+ `border-inline-end` 1px 8%；`pointer-events: none` 免干扰选择。
+- demo（`artifacts/build-markdown-demo.ts`）里把解析器产出的 `<pre class="highlights">` 包成运行时同款结构（wrapper + gutter + code），这样预览与运行时形状一致，行号可被看见。
+- 校验：session-ui tsc 干净、markdown 相关 33 pass。
+- 代码块行号在真机缺失，根因是**代码块有两个收尾点**（`packages/session-ui/src/components/markdown.tsx`）：流式的 `updateCodeBlock`（约 1040 行）本来会插行号槽；静态 HTML 分支的 `applyBlock`（约 953 行，包 `pre > code` 时只加了 `data-component` 和复制按钮）不插。已保存的回复走 `completedProjection()` → 单个 `mode:"full"` 块 → 静态分支，所以打开历史会话就看不到行号；流式生成时反而有。
+- 修法：在 `applyBlock` 的包裹循环里补 `pre.prepend(createLineNumbers())` + `syncLineNumbers(pre, code.textContent)`，与流式分支调用同一对函数。改后不论 `full` / `code` / 流式三种来源都会带行号。
+- 教训：这个组件里「HTML 来源」和「块来源」是两套 DOM 生产路径，任何对代码块的装饰（复制按钮、mermaid、行号）都要两边都挂；只测流式会漏掉历史渲染。
+- 验证限制：`bun test` 下无法挂载 Solid 组件（bun 原生 JSX 不走 solid 编译器，`DialogProvider` 直接报 `jsxs_xxx is not defined`），组件级验证只能靠 storybook 的 Playwright 组件测试（本机未装 playwright 浏览器）；本次以读码 + `vite build` 通过 + 既有 demo 的干槽（同一对 helper、同样 parser 形状的 `<pre>`）为依据。
+
+## 长会话与上下文压缩
+
+- 同行做法（2026-10-29 调研）：**Claude Code** 压缩后自动重读「最近修改的 5 个文件」，超过 5k token 的文件只回填路径（`Referenced file`），并从磁盘重注入 CLAUDE.md / plan / auto memory / git status / skill 正文；**Codex** 摘要四块（进度与决策 / 约束与偏好 / 剩余 TODO / 继续所需关键数据），保留全部用户消息原话，新上下文 = 初始上下文 + 最近约 20k token + 摘要，单条工具输出在记录时就按 10k token 截断，自动压缩阈值硬夹 90%；**Cursor** 用「耐久块」而非摘要承载状态（plan 全文、最新 todo、transcript 文件位置、未关闭订阅），且「开始压」和「允许落盘」是两个阈值，后台摘要在途可跨回合收养；**Anthropic API** 层的 `clear_tool_uses` 是选择性清除旧工具结果而不是摘要，实测单用 +29%、配合 memory 工具 +39%。
+- SiCode 原本已有：检查点模板（Objective / Requirements / Decisions / Work State / Next Move / Relevant Files≤15 / Important Context）、最近 15k token 原文尾、压缩前 transcript 指针、以及跨会话的 project-memory 事实。**短板不在摘要质量，在摘要之外什么都没留**。
+- 新落地 1（`packages/core/src/session/compaction-durable.ts`）：压缩时把「最近改过的文件内容 + 最新 todo 清单」作为 `<working-files>` 块写进 checkpoint 的 metadata，由 `packages/core/src/session/runner/to-llm-message.ts` 渲染在 `<recent-context>` 之后、transcript 指针之前。文件内容用 `<file path="...">` 标签而不是 markdown 围栏 —— 代码里带反引号会把围栏打坏。
+- 规则：编辑类工具（edit / write / patch）优先于只读过的文件；最多 4 个文件；被编辑的文件上限 12000 字符，只读过的 4000 字符；总量 24000 字符且不超过压缩预算的 5%；跳过大于 512KB、含 NUL 的二进制、以及已不存在的路径。内容为压缩时刻的快照，块内明说是快照 —— 拿旧内容编辑会因 `oldString` 不匹配而失败（大声失败，不会写坏文件）。
+- 实测（把真实 12 小时会话的工具调用回放进 collect）：产出 2 个文件 / 24402 字符 / 约 7626 token，占 200k 窗口 3.8%，主要是 `packages/app/src/shell/left-sidebar.tsx` 和 `.sicode/notes.md`。
+- 新落地 2（`packages/core/src/session/compaction.ts`）：`precompute` 默认值由 false 改为 true（85% 阈值、64k 以下不启动、失败 2 次停），压缩不再必然卡在关键路径上。`test/session-compaction.test.ts` 里原来那条「background summaries stay off unless enabled」改为显式关闭再断言，并新增一条钉住默认值。
+- 为什么做这两条（真实会话 ses_e7c2b57ecffe0dBHGxXuqNhsgy 的数据）：44 回合 / 792 步 / 16 次压缩；read 218 次里 66% 是重复读，其中 68 次跨越压缩点；压缩后 6 步内 48 次 read 有 90% 是已读过的文件；read 输出中位 12411 字符，91% 超过 `packages/core/src/session/recent-text.ts` 里 1250 字符的截断线 —— 也就是说压缩后那些文件等于没读。
+- 未做，留观察：`packages/core/src/session/recent-text.ts` 的 1250 字符截断仍对全部工具输出生效，耐久块只覆盖最近 2~4 个文件；要让其余文件也可编辑，得按工具类型区分截断（read 放宽、shell 维持）。另外自定义 compaction 插件提前返回的那条路径不会生成耐久块。
+- 已知测试失败：`test/session-compaction.test.ts` 的「summary compaction past the ceiling keeps the conversation unchanged while the window fits」在本次改动前就失败（用 git stash 回到 HEAD 复验过，同样 3→2 消息数不符），与本次无关，未处理。
+
+## 输入处理 / 澄清
+
+- 四项输入侧改进的实测触发频率（2026-10-29，本机 302 条用户输入 / 500 次 read）：① read 的 file-not-found 只有 9 次（1.8%），现行双向子串建议已命中 5 次，改成 stem/编辑距离**新增命中 0 次** → 不值得做；② 把 kimi 那两条（混合输入照做、用用户语言回复）提进 `packages/core/src/session/runner/prompt/system.txt` 无收益 —— 不加任何语言指令时模型中文回复率已是 95%（131/138），乱输入的纠正率 2.7% 与规整输入 2.4% 无差；③ context-hints 有 59% 的可处理消息抠不到词，但其中 **84% 是纯中文口语**，文件路径是拉丁字母、文件名模糊查找也救不了，可救的只有 16%（约 19 条，且词是 api/vpn 这类噪声）；④ 澄清只在 10.9%（33/302）的消息上触发。
+- 澄清已落地：`packages/core/src/session/clarify-hint.ts`（纯函数 `assess()` + `inject()`，无 Service/Layer，便于回放真实数据），接在 `packages/core/src/session/context.ts` 里紧跟 context-hints 的同一注入点。只在「回合起始」（最后一条用户消息之后还没有 assistant/shell）注入，请求级、不写会话，system 前缀不受影响，因此不吃缓存。开关 `OPENCODE_CLARIFY=0` 默认开。
+- 规则：长度 ≤24 字 + 含动作词 + 无任何锚点（路径/文件后缀/≥5 字母标识符/数字/URL/引号）+ 非疑问句（吗呢啥什么怎么为什么哪如何多少是不是 ?？）+ 非续写（继续/好/嗯/ok）+ 不含许可词（随便/随意/都行/你定/看你/whatever）。缺什么就只说缺什么：目标（"which file, module, or symbol"）与交付形态（生成类）或完成标准（修改类）。
+- 关键是**两档而不是强制提问**：先要求模型用一行写明它采取的读法，只有当两种读法都成立且会引出不同工作时才用 question 工具问一句。早期版本是「必须先提问」，实测会在中途短消息上变成打扰（"你帮我修复好" 指向刚讨论的 bug，问「哪个文件」是错的）。
+- 反向证据（必须记住）：欠约束消息之后下一句是纠正的比例 **0/26 = 0%**，其他消息后是 7/254 = 2.8%。所以「欠约束导致返工」这个前提**没有数据支持**。26 个样本按 2.8% 基准期望只有 0.7 次纠正，观察 0 不能证明无收益，只能证明无证据 —— 因此这条按「成本极小（约 100 token、覆盖 11% 回合）+ 失败模式对称（最坏是没效果）」保留，靠后续 A/B 决定去留。
+- 意外发现（下一项候选，比澄清更值钱）：**纯提问的回合里有 35%（41/117）模型仍然写了文件**。最典型的一次是会话 ses_e86496d5fffdDmGWD22vIMhqrG：用户连续问「网页版反代卡在哪」，模型连做 3 次 edit 改 nginx.conf 与文档，用户回「撤掉所有文件，我问你问题没让你改东西」。这条的改法是「提问回合先说明要改什么、等确认再动手」，但不能做成「提问就不准写」——"新建一个订阅可以吗"这类问句本身就是许可请求（该回合写到 53 次），必须 A/B。
+
+## 设计值注入
+
+- 动机（实测）：`AGENTS.md` 已经写了「改 packages/ui / session-ui / app 的 CSS 前先读 packages/ui/DESIGN.md」，但本机 510 次 read 里只有 **5 次**打开了它，同期 `packages/{ui,session-ui,app}` 下写了 **245 次**。指令不被执行 → 规范根本不在场，每个组件各有一套字号/圆角。
+- 落地 `packages/core/src/session/design-hint.ts`（`condense` / `needed` / `inject`），接在 `packages/core/src/session/context.ts` 里与 context-hints、clarify-hint 同一注入点。仅在「UI 回合」注入，请求级、不写会话；开关 `OPENCODE_DESIGN=0`。
+- 触发条件（都不看模型意图，只看可观测事实）：① 本轮用户消息含设计词（样式/字体/字号/字重/圆角/间距/阴影/深色/浅色/主题/界面/布局/对比度，或 css/scss/typography/theme/radius/elevation/contrast 等英文词）；② **上一轮**编辑过 UI 文件（`.css|scss|sass|less|styl`，或 `.tsx|jsx|vue|svelte|astro|html` 且路径不在 core/server/api/sdk/scripts/test/fixtures/cli/tui 下）。只回溯到上一条用户消息为止 —— 否则一次 CSS 改动会让这个会话之后每个请求都背上 ~1k token。
+- 路径判据用**反向排除**而不是白名单：`packages/app/src/shell/left-sidebar.tsx` 这种组件既无 `ui` 也无 `components` 字样，按名词白名单会漏判。
+- 压缩规则：按 `##`/`###` 切节 → 只留值类章节（font/weight/type/scale/space/radius/elevation/color/token…），丢掉 Known drift / Changing a surface 这类历史与流程；表只留有 `token` 或 `--` 表头的（逐 face 解释 400 怎么解析的那张表属于解释，丢弃）；散文只取句子，句界是「中文句号」或「英文句点+空格」——`0.25rem`、`e.g.` 不是句界（按标点硬切曾把 0.25rem 切成两句）。
+- 每个散文行取**前 3 句**（上限 460 字符），不按关键词挑句：试过按「含 token / 含 only-must 类规定词」打分挑选，结果把「上游还有硬编码 440/530」这句挤掉了 —— 而它正是让权重改动做不干净的那条。文档顺序有效，别自作聪明。
+- 章节按「决策频率」排序输出：Type scale → Radius → Space → Elevation → Weight → Font stack → Color；预算按**整节**丢弃（半张表比没有更糟），默认 3000 字符。
+- 实测产物：本仓 `packages/ui/DESIGN.md` 6552 字符（≈2048 tok）→ 压缩 2933 字符（≈917 tok，45%），7 个章节全保留，关键规则全在（12/14/15/16/20 阶梯、10px 圆角上限、4·8·12·24 栅格、只有浮层用 elevation、440/530 硬编码、不许在组件里写裸 hex）。加上 `<design-values>` 包装共 ≈1012 tok。
+- 为什么每步请求都重复注入而不是只做一次：synthetic 消息不落盘，回合内第 3 步编辑时如果不再注入，模型手里就没有这些值了；而注入位置固定在用户消息之后，前缀稳定，命中提示词缓存。一次性注入（像 context-hints 那样）适合「首步选文件」，不适合「第 N 步写组件」。
+- 验证：`test/design-hint.test.ts` 13 项（表格/规则/caveat 保留，Known drift 与非 token 表丢弃，章节排序，按整节裁剪，空文档返回 undefined，三种触发与两种不触发，四类 inject 行为）；core typecheck 1744 文件 0 错误；相关 6 个测试文件 81 pass。
+- 未验证：模型拿到这些值后是否真的少犯「自创字号 / 乱加圆角 / 到处加阴影」的错。要等真实 UI 会话对比。

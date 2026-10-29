@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, untrack } from "solid-js"
+import { For, Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-progress-indicator-v2"
 import type { SessionInfo } from "@opencode/client/promise"
@@ -11,11 +11,12 @@ import { ScrollView } from "@opencode/ui/scroll-view"
 import { Button } from "@opencode/ui/button"
 import { TextField } from "@opencode/ui/text-field"
 import { DockToolbar } from "@/shell/dock-toolbar"
+import { MarqueeText } from "@/shell/marquee-text"
 import { ProjectIcon } from "@/shell/layout/project-icon"
 import { closeHomeProject, errorMessage } from "@/shell/layout/helpers"
 import { showToast } from "@/shell/notifications/toast"
 import { useSettingsSurface } from "@/settings/surface"
-import { useLayout, type LocalProject } from "@/shell/state/layout"
+import { useLayout, type HomeProjectSelection, type LocalProject } from "@/shell/state/layout"
 import { useRevealProject } from "@/home/projects/reveal"
 import { useTabs } from "@/shell/tabs/tabs"
 import { findSessionTab } from "@/shell/tabs/tabs"
@@ -149,9 +150,55 @@ export function LeftSidebar() {
     query().trim() ? groups().filter((group) => group.sessions.length > 0) : groups(),
   )
 
-  /** The project the header names: the selected one, else the first with sessions. */
+  /**
+   * The group a session belongs to: by id first, since grouping already folded the project's
+   * sandboxes into it. A search query filters the rows this column carries, so the route can name a
+   * session the visible list does not hold — the session itself still records its directory.
+   */
+  const groupOf = (server: ServerConnection.Key, sessionID: string) => {
+    const all = groups()
+    const known = all.find((group) =>
+      [...group.sessions, ...group.archived].some((session) => session.id === sessionID),
+    )
+
+    if (known) return known
+    const directory = global.serverCtx(server)?.data.session.get(sessionID)?.location.directory
+
+    if (!directory) return undefined
+    const key = pathKey(directory)
+
+    return all.find((group) =>
+      [group.project.worktree, ...(group.project.sandboxes ?? [])].some((item) => pathKey(item) === key),
+    )
+  }
+
+  /**
+   * The project in view. The route outranks `home.selection`: picking a top tab is a move to
+   * whatever project that session lives in, and the column has to follow it. Reading only the home
+   * selection left the header naming the project the user had left, with the session they were
+   * looking at folded away inside a group that was not open.
+   */
+  const viewed = createMemo((): HomeProjectSelection | undefined => {
+    const route = layout.route()
+
+    if (route.type === "session") {
+      const owner = groupOf(route.server, route.sessionId)
+
+      if (owner) return { server: owner.key, directory: owner.directory }
+    }
+
+    if (route.type === "draft") {
+      const draft = tabs.store.find((tab) => tab.type === "draft" && tab.draftID === route.draftID)
+
+      if (draft?.type === "draft") return { server: draft.server, directory: draft.directory }
+    }
+
+    return layout.home.selection()
+  })
+
+  /** The project the header names: the one in view, else the first with sessions. */
   const current = createMemo(() => {
-    const selection = layout.home.selection()
+    const selection = viewed()
     const all = groups()
 
     return (
@@ -160,6 +207,26 @@ export function LeftSidebar() {
       all[0]
     )
   })
+
+  /**
+   * Switching tabs into a folded group would highlight a row nobody can see, so the group the route
+   * lands in opens itself. Keyed on the project, and only an expand: the effect fires when the
+   * project changes, so folding the group the user is already looking at sticks instead of being
+   * undone by the next render, while coming back to a project from another one reveals its rows.
+   */
+  createEffect(
+    on(
+      () => {
+        const selection = viewed()
+        return selection?.server && selection.directory ? `${selection.server}:${selection.directory}` : undefined
+      },
+      (id) => {
+        if (!id) return
+        setOpenState((state) => (state[id] === true ? state : { ...state, [id]: true }))
+      },
+      { defer: true },
+    ),
+  )
 
   const newSession = () => {
     const group = current()
@@ -175,7 +242,7 @@ export function LeftSidebar() {
   const archived = createMemo(() => groups().flatMap((group) => group.archived.map((session) => ({ group, session }))))
 
   const isActiveProject = (key: ServerConnection.Key, directory: string) => {
-    const selection = layout.home.selection()
+    const selection = viewed()
 
     return selection?.server === key && selection?.directory === directory
   }
@@ -427,7 +494,16 @@ export function LeftSidebar() {
 
               void ctx?.sdk.api.session
                 .update({ sessionID: session.id, archived })
-                .then(() => ctx.data.session.sync(session.id))
+                .then(() => {
+                  if (archived)
+                    notifySessionTabsRemoved({
+                      server: key,
+                      directory: session.location.directory,
+                      sessionIDs: [session.id],
+                    })
+
+                  return ctx.data.session.sync(session.id)
+                })
                 .catch(() => undefined)
             }}
           >
@@ -497,12 +573,26 @@ export function LeftSidebar() {
             variant="danger"
             onClick={() => {
               dialog.close()
-              void global
-                .serverCtx(key)
-                ?.data.session.remove(session.id)
+              const ctx = global.serverCtx(key)
+
+              if (!ctx) return
+              // The whole child tree goes with the root, so the tabs to close are the same set the
+              // batch path collects — otherwise a subagent whose parent was deleted keeps its tab.
+              const ids = sessionTreeIDs(ctx.data.session.list(), session.id)
+
+              void ctx.data.session
+                .remove(session.id)
                 // Same reason as the batch path: the row is gone from the live cache, not from the
                 // snapshot the column renders, so the snapshot is what has to be replaced.
-                .then(() => refetchSessions())
+                .then(() => {
+                  notifySessionTabsRemoved({
+                    server: key,
+                    directory: session.location.directory,
+                    sessionIDs: ids,
+                  })
+
+                  return refetchSessions()
+                })
                 .catch(() => undefined)
             }}
           >
@@ -937,7 +1027,7 @@ export function LeftSidebar() {
                           target, and clicking the name used to jump to home instead of folding. */}
                         <button
                           type="button"
-                          class={`flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[5px] pe-2 ps-1 text-start hover:text-v2-text-text-base ${
+                          class={`flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[5px] pe-1 ps-1 text-start hover:text-v2-text-text-base ${
                             // A folded group shows nothing but this name, so it carries the weight its
                             // hidden sessions cannot. Expanded, the sessions are the content and the
                             // header steps back — one emphasis per group, never both at once.
@@ -1019,7 +1109,7 @@ export function LeftSidebar() {
 
                       <Show when={!isCollapsed()}>
                         <For each={group.sessions}>
-                            {(session) => (
+                          {(session) => (
                               // The row is a button, so the "…" trigger sits beside it rather than
                               // inside: nesting one button in another is invalid and swallows the
                               // inner click. Hovering swaps the trailing slot for it, the way the
@@ -1053,7 +1143,12 @@ export function LeftSidebar() {
                                     when={selection.active}
                                     fallback={
                                       <Show when={isActiveSession(session)}>
-                                        <span class="absolute start-[30px] top-[7px] bottom-[7px] w-[2px] rounded-[2px] bg-v2-text-text-base" />
+                                        {/* SiCode: the mark sits on the project avatar's left edge
+                                            (20px), not in the middle of that column where it used to
+                                            look like a line growing out of the icon. Now the two
+                                            levels share one edge, so the mark reads as "this row
+                                            belongs to the project above". */}
+                                        <span class="absolute start-[20px] top-[7px] bottom-[7px] w-[2px] rounded-[2px] bg-v2-text-text-base" />
                                       </Show>
                                     }
                                   >
@@ -1068,7 +1163,7 @@ export function LeftSidebar() {
                                       <Icon name="check" class="size-2.5" />
                                     </span>
                                   </Show>
-                                  <span class="min-w-0 flex-1 truncate">{session.title || language.t("session.new")}</span>
+                                  <MarqueeText class="min-w-0 flex-1" text={session.title || language.t("session.new")} />
                                   {/* One trailing slot, two states: how long ago the session moved at
                                       rest, the "…" trigger on hover. The time keeps its place while
                                       invisible so the title never reflows under the pointer, and the
@@ -1096,33 +1191,33 @@ export function LeftSidebar() {
                                     batch mode: there the row is a checkbox, so the trigger steps
                                     aside rather than offering a second, narrower path. */}
                                 <Show when={!selection.active}>
-                                {/* z-10 is load-bearing: the scroll view's thumb overlays the last
-                                    12px of the list with pointer-events on, so without a stacking
-                                    step of its own the trigger loses its right edge to an invisible
-                                    strip and the cursor turns into a default arrow over it. */}
-                                <button
-                                  type="button"
-                                  class="hover-reveal absolute end-1 top-1/2 z-10 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] text-v2-icon-icon-muted group-hover/session:opacity-100 group-focus-within/session:opacity-100 hover:text-v2-text-text-base"
-                                  aria-label={language.t("common.moreOptions")}
-                                  onClick={(event) => {
-                                    // The aside closes menus on any click that reaches it.
-                                    event.stopPropagation()
-                                    const rect = event.currentTarget.getBoundingClientRect()
-                                    setHovered(-1)
-                                    setMenuPlacement(undefined)
-                                    setMenu({
-                                      x: rect.right,
-                                      y: rect.bottom + 4,
-                                      items: sessionMenu(group.key, session),
-                                    })
-                                  }}
-                                >
-                                  <Icon name="outline-dots" class="size-3.5" />
-                                </button>
+                                  {/* z-10 is load-bearing: the scroll view's thumb overlays the last
+                                      12px of the list with pointer-events on, so without a stacking
+                                      step of its own the trigger loses its right edge to an invisible
+                                      strip and the cursor turns into a default arrow over it. */}
+                                  <button
+                                    type="button"
+                                    class="hover-reveal absolute end-1 top-1/2 z-10 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] text-v2-icon-icon-muted group-hover/session:opacity-100 group-focus-within/session:opacity-100 hover:text-v2-text-text-base"
+                                    aria-label={language.t("common.moreOptions")}
+                                    onClick={(event) => {
+                                      // The aside closes menus on any click that reaches it.
+                                      event.stopPropagation()
+                                      const rect = event.currentTarget.getBoundingClientRect()
+                                      setHovered(-1)
+                                      setMenuPlacement(undefined)
+                                      setMenu({
+                                        x: rect.right,
+                                        y: rect.bottom + 4,
+                                        items: sessionMenu(group.key, session),
+                                      })
+                                    }}
+                                  >
+                                    <Icon name="outline-dots" class="size-3.5" />
+                                  </button>
                                 </Show>
                               </div>
-                            )}
-                          </For>
+                          )}
+                        </For>
                       </Show>
                     </div>
                   )
@@ -1156,39 +1251,39 @@ export function LeftSidebar() {
                 <Show when={archivedOpen()}>
                   <For each={archived()}>
                     {({ group, session }) => (
-                      // Archived rows stay out of batch selection: the selection model tracks the live
-                      // list, so a tick here would be pruned away on the next sync. Deleting one is
-                      // still a right-click away.
-                      <div class="group/session relative flex h-7 items-center rounded-[6px] transition-colors hover:bg-v2-overlay-simple-overlay-hover">
-                        <button
-                          type="button"
-                          class="flex h-full w-full cursor-pointer items-center rounded-[6px] pe-7 ps-[19px] text-start text-12-regular text-v2-text-text-muted hover:text-v2-text-text-base"
-                          onClick={() => openSession(group.key, session)}
-                          onContextMenu={(event) => showMenu(event, archivedMenu(group.key, session))}
-                        >
-                          <span class="min-w-0 flex-1 truncate">{session.title || language.t("session.new")}</span>
-                          {/* Archived spans every project, so the row has to name its own origin —
-                              it does not sit under a project heading that could say it for it. The
-                              right gutter is reserved for the "…", so the name stops short of it. */}
-                          <span class="max-w-[45%] shrink-0 truncate ps-2 text-[10.5px] text-v2-text-text-faint">
-                            {group.project.name ?? group.directory.split(/[\\/]/).filter(Boolean).pop()}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          class="hover-reveal absolute end-1 top-1/2 z-10 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] text-v2-icon-icon-muted group-hover/session:opacity-100 group-focus-within/session:opacity-100 hover:text-v2-text-text-base"
-                          aria-label={language.t("common.moreOptions")}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            const rect = event.currentTarget.getBoundingClientRect()
-                            setHovered(-1)
-                            setMenuPlacement(undefined)
-                            setMenu({ x: rect.right, y: rect.bottom + 4, items: archivedMenu(group.key, session) })
-                          }}
-                        >
-                          <Icon name="outline-dots" class="size-3.5" />
-                        </button>
-                      </div>
+                        // Archived rows stay out of batch selection: the selection model tracks the
+                        // live list, so a tick here would be pruned away on the next sync. Deleting
+                        // one is still a right-click away.
+                        <div class="group/session relative flex h-7 items-center rounded-[6px] transition-colors hover:bg-v2-overlay-simple-overlay-hover">
+                          <button
+                            type="button"
+                            class="flex h-full w-full cursor-pointer items-center rounded-[6px] pe-7 ps-[19px] text-start text-12-regular text-v2-text-text-muted hover:text-v2-text-text-base"
+                            onClick={() => openSession(group.key, session)}
+                            onContextMenu={(event) => showMenu(event, archivedMenu(group.key, session))}
+                          >
+                            <MarqueeText class="min-w-0 flex-1" text={session.title || language.t("session.new")} />
+                            {/* Archived spans every project, so the row has to name its own origin —
+                                it does not sit under a project heading that could say it for it. The
+                                right gutter is reserved for the "…", so the name stops short of it. */}
+                            <span class="max-w-[45%] shrink-0 truncate ps-2 text-[10.5px] text-v2-text-text-faint">
+                              {group.project.name ?? group.directory.split(/[\\/]/).filter(Boolean).pop()}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            class="hover-reveal absolute end-1 top-1/2 z-10 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] text-v2-icon-icon-muted group-hover/session:opacity-100 group-focus-within/session:opacity-100 hover:text-v2-text-text-base"
+                            aria-label={language.t("common.moreOptions")}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              setHovered(-1)
+                              setMenuPlacement(undefined)
+                              setMenu({ x: rect.right, y: rect.bottom + 4, items: archivedMenu(group.key, session) })
+                            }}
+                          >
+                            <Icon name="outline-dots" class="size-3.5" />
+                          </button>
+                        </div>
                     )}
                   </For>
                 </Show>

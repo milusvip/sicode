@@ -38,6 +38,7 @@ import { SessionRunnerModel } from "./runner/model.js"
 import { SessionRunnerRetry } from "./runner/retry.js"
 import { toLLMMessages } from "./runner/to-llm-message.js"
 import { SessionRecentText } from "./recent-text.js"
+import { SessionCompactionDurable } from "./compaction-durable.js"
 import { contentFilterError, toSessionError } from "./to-session-error.js"
 import { SessionUsage } from "./usage.js"
 
@@ -354,7 +355,11 @@ export const layer = Layer.effect(
 
     const state = State.create<Settings, Editor>({
       name: "session-compaction",
-      initial: () => ({ auto: true, keep: 15_000, precompute: false }),
+      // SiCode: precompute on by default. Summarizing on the critical path blocks the turn for the
+      // length of a full model call at exactly the moment the context is full; Cursor ships the
+      // same split (start the summary early, persist it later). The background run is skipped below
+      // 64k measured tokens and stops after two failures, so short sessions never pay for it.
+      initial: () => ({ auto: true, keep: 15_000, precompute: true }),
       editor: (settings) => ({
         configure: (update) => {
           Object.assign(settings, update)
@@ -682,7 +687,20 @@ export const layer = Layer.effect(
         yield* writeTranscript(context.session.id, messages.slice(0, keepIndex))
         return {
           ...result,
-          metadata: { keepID, transcriptPath: transcriptPath(context.session.id), ...result.metadata },
+          metadata: {
+            keepID,
+            transcriptPath: transcriptPath(context.session.id),
+            // SiCode: the summary is a retelling, and what it drops is the raw text of the files the
+            // agent was working in — measured as 66% repeated reads, 90% of them in the steps right
+            // after a compaction. Quoting the last few of those files here costs ~5% of the budget
+            // and removes the re-read on the next step.
+            durable: SessionCompactionDurable.collect(
+              messages.slice(0, keepIndex),
+              context.session.location.directory,
+              budget,
+            ),
+            ...result.metadata,
+          },
         }
       }
       // A compaction hook may choose its own kept range.

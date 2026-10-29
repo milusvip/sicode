@@ -8,6 +8,7 @@ import { usePlatform } from "@/runtime/platform/platform"
 import { ExtensionSettingsSections } from "@/runtime/extension/settings-page-view"
 import {
   type FollowUpBehavior,
+  type LinkTarget,
   type TerminalPlacement,
   type WorkspaceDefaultDestination,
   useSettings,
@@ -39,8 +40,39 @@ const AutoApprovePermissionsSetting: Component = () => {
   )
 }
 
-const WorkspaceDestinationSetting: Component = () => {
+// SiCode: 正文链接的落点。只有桌面端有侧边浏览器面板，所以 web 上不出现这一行。
+const LinkTargetSetting: Component = () => {
   const language = useLanguage()
+  const settings = useSettings()
+  const platform = usePlatform()
+
+  const options = createMemo((): { value: NonNullable<LinkTarget>; label: string }[] => [
+    { value: "system", label: language.t("settings.general.row.linkTarget.system") },
+    { value: "browser", label: language.t("settings.general.row.linkTarget.browser") },
+  ])
+
+  return (
+    <Show when={platform.platform === "desktop"}>
+      <SettingsRow
+        title={language.t("settings.general.row.linkTarget.title")}
+        description={language.t("settings.general.row.linkTarget.description")}
+      >
+        <Select
+          data-action="settings-link-target"
+          options={options()}
+          current={options().find((option) => option.value === settings.general.linkTarget())}
+          value={(option) => option.value}
+          label={(option) => option.label}
+          placement="bottom-end"
+          gutter={6}
+          onSelect={(option) => option && settings.general.setLinkTarget(option.value)}
+        />
+      </SettingsRow>
+    </Show>
+  )
+}
+
+const WorkspaceDestinationSetting: Component = () => {  const language = useLanguage()
   const settings = useSettings()
 
   const options = createMemo((): { value: WorkspaceDefaultDestination; label: string }[] => [
@@ -247,6 +279,7 @@ export const SettingsGeneral: Component = () => {
         <TabLayoutSetting />
 
         <WorkspaceDestinationSetting />
+        <LinkTargetSetting />
         <ExtensionSettingsSections page="general" section="general" />
       </SettingsList>
     </div>

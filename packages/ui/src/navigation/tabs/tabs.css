@@ -301,7 +301,8 @@
     }
 
     [data-slot="terminal-tab-title"] {
-      font-family: Inter, sans-serif;
+      /* SiCode: was hardcoded to `Inter, sans-serif`, which opted this label out of the unified UI face. */
+      font-family: var(--font-family-sans);
       font-style: normal;
       font-weight: 440;
       font-size: 13px;
@@ -553,7 +554,8 @@
   }
 
   [data-slot="tabs-trigger"] {
-    font-family: Inter, sans-serif;
+    /* SiCode: was hardcoded to `Inter, sans-serif`, which opted tab labels out of the unified UI face. */
+    font-family: var(--font-family-sans);
     font-style: normal;
     font-weight: 440;
     font-size: 13px;

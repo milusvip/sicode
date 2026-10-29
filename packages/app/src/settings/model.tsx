@@ -17,6 +17,9 @@ export type TerminalPlacement = Settings["general"]["terminalPlacement"]
 
 export type FollowUpBehavior = Settings["general"]["followUpBehavior"]
 
+/** SiCode: 正文链接的打开位置——系统浏览器或桌面侧边浏览器。 */
+export type LinkTarget = Settings["general"]["linkTarget"]
+
 export type TabLayout = Settings["appearance"]["tabLayout"]
 
 export type SessionWidth = Settings["appearance"]["sessionWidth"]
@@ -40,14 +43,23 @@ export function projectSettingsKey(scope: ServerScope, projectID: string | undef
 
 export const monoDefault = "IBM Plex Mono"
 
+// SiCode: one family for both scripts, so English and Chinese share 思源黑体's skeleton. The settings
+// placeholder names it because that is the whole default.
 export const sansDefault = "思源黑体"
 
 export const terminalDefault = "JetBrainsMono Nerd Font Mono"
 
-// SiCode: CJK in code/comments falls through Plex Mono to the UI default face, not a random system mono.
+// SiCode: these two stacks are written inline on :root below, so they override the initial values in
+// packages/ui/src/styles/theme.css. Keep the strings byte-identical to --font-family-mono and
+// --font-family-sans there; a mismatch means one of the two is dead CSS.
+// CJK in code/comments falls through to 思源黑体, but the real mono faces stay ahead of it: fallback
+// is per-glyph, so Consolas never steals CJK, and a failed Plex webfont does not hand Latin to the
+// CJK face's proportional glyphs.
 const monoFallback =
-  '"IBM Plex Mono", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+  '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace, "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC"'
 
+// SiCode: one face for both scripts. 思源黑体 also carries Latin, so English must NOT be handed to a
+// separate Latin family first — that is what made mixed Inter/CJK text read as two typefaces.
 const sansFallback =
   '"思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
 
@@ -136,6 +148,8 @@ const generalSchema = Persistence.struct({
   followUpBehavior: Schema.Literals(["queue", "steer"]),
   // SiCode: 破坏性命令确认——开启时删除类 shell 命令不被「自动接受权限」放行（默认开）。
   destructiveConfirm: Persistence.optional(Schema.Boolean),
+  // SiCode: 正文里点的链接去哪——系统浏览器（默认）还是桌面侧边浏览器面板。
+  linkTarget: Persistence.optional(Schema.Literals(["system", "browser"])),
 })
 
 const appearanceSchema = Persistence.struct({
@@ -302,6 +316,10 @@ export const defaultSettings: Settings = {
     terminalPlacement: "side",
     followUpBehavior: "steer",
     destructiveConfirm: true,
+    // Links leave the app by default: a link in an answer is "go read this", and the reader usually
+    // wants their own browser — their logins, their extensions, their tabs. The side pane is the
+    // opt-in for people who would rather not leave the session.
+    linkTarget: "system",
   },
   appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal", sessionWidth: "default" },
   keybinds: {},
@@ -416,6 +434,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setDestructiveConfirm(value: boolean) {
           setStore("general", "destructiveConfirm", value)
+        },
+        linkTarget: withFallback(() => store.general?.linkTarget, defaultSettings.general.linkTarget),
+        setLinkTarget(value: LinkTarget) {
+          setStore("general", "linkTarget", value)
         },
       },
       visibility: {

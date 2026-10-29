@@ -14,7 +14,9 @@ import { useData } from "@/runtime/server/current"
 import { useServerSDK } from "@/runtime/server/client"
 import { useTabs, type Tab } from "@/shell/tabs/tabs"
 import { readLocalImage } from "@/runtime/server/image"
+import { usePlatform } from "@/runtime/platform/platform"
 import { useLanguage } from "@/runtime/i18n/language"
+import { useSettings } from "@/settings/model"
 import { showToast } from "@/shell/notifications/toast"
 import { createTurnDiffCache } from "@/session/timeline/turn-diffs"
 
@@ -29,6 +31,8 @@ export function SessionUIProvider(
   const data = useData()
   const serverSDK = useServerSDK()
   const tabs = useTabs()
+  const platform = usePlatform()
+  const settings = useSettings()
   const language = useLanguage()
   const host = useExtensionHost()
   const extensions = useExtensionAttachment()
@@ -132,6 +136,51 @@ export function SessionUIProvider(
     session_diff: {},
   }))
 
+  // The host types `context` as the base Context; `uses` lives on the instance context.
+  const browserPane = () => {
+    const context = host.context("browser") as
+      | { uses?: { browser?: () => { status: string; value?: unknown } } }
+      | undefined
+    const pane = context?.uses?.browser?.()
+
+    if (pane?.status !== "active") return
+
+    return pane.value as {
+      canOpen(session: unknown): boolean
+      open(session: unknown, url: string): void
+    }
+  }
+
+  // One warning per run: a reader who picked the side browser and gets the system one deserves to
+  // know why, but not once per link.
+  let warnedSideBrowser = false
+
+  /**
+   * SiCode: the single owner for links in an answer. "Side browser" sends http(s) to the desktop's
+   * browser pane when that pane is attached to this session; everything else — mailto:, the web
+   * build, a narrow window, or a pane that was never opened — falls back to the system browser, so a
+   * link always opens somewhere.
+   */
+  const openLink = (url: string) => {
+    if (/^https?:/i.test(url) && settings.general.linkTarget() === "browser") {
+      const pane = browserPane()
+      const session = extensions.current()
+
+      if (pane && session && pane.canOpen(session)) {
+        pane.open(session, url)
+
+        return
+      }
+
+      if (!warnedSideBrowser) {
+        warnedSideBrowser = true
+        showToast({ title: language.t("settings.general.row.linkTarget.unavailable") })
+      }
+    }
+
+    platform.openExternal(url)
+  }
+
   return (
     <DataProvider
       data={sessionUIData()}
@@ -165,7 +214,13 @@ export function SessionUIProvider(
       }
       backgroundCompaction={backgroundCompaction()}
     >
-      <MarkdownProvider readImage={readImage()} openSession={openReferencedSession}>
+      {/* SiCode: links in an answer go through the platform instead of an unowned `target="_blank"`.
+          On the desktop that is `shell.openExternal` unless the reader asked for the side browser. */}
+      <MarkdownProvider
+        readImage={readImage()}
+        openSession={openReferencedSession}
+        openExternal={openLink}
+      >
         <LocalProvider>{props.children}</LocalProvider>
       </MarkdownProvider>
     </DataProvider>

@@ -938,10 +938,13 @@ const enablePrecompute = Effect.gen(function* () {
   return compaction
 })
 
-it.effect("background summaries stay off unless enabled", () =>
+// SiCode: precompute ships on by default, so "off" is now something a caller asks for. The
+// assertion below is unchanged — a held summary is still ignored while the setting is off.
+it.effect("background summaries stay off when disabled", () =>
   Effect.gen(function* () {
     requests = []
     const compaction = yield* SessionCompaction.Service
+    yield* compaction.transform((editor) => editor.configure({ precompute: false }))
     const session = yield* insertSession(Session.ID.make("ses_precompute_off"))
     const history = precomputeHistory()
 
@@ -951,6 +954,28 @@ it.effect("background summaries stay off unless enabled", () =>
     })
     expect(requests).toHaveLength(1)
     expect(JSON.stringify(requests[0].messages)).toContain("Third answer")
+  }),
+)
+
+// SiCode: pins the shipped default. Without configuration the background summary must be swapped
+// in, because that is the whole point of enabling it — see the note on the initial settings.
+it.effect("precompute is on without configuration", () =>
+  Effect.gen(function* () {
+    requests = []
+    const compaction = yield* SessionCompaction.Service
+    const sessionID = Session.ID.make("ses_precompute_default")
+    const session = yield* insertSession(sessionID)
+    const history = precomputeHistory()
+    yield* storeMessages(sessionID, history.due)
+
+    yield* compaction.precompute(Effect.succeed(loaded(session, history.near)))
+    expect(yield* compaction.compact({ reason: "auto", context: loaded(session, history.due) })).toEqual({
+      status: "completed",
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(JSON.stringify(requests[0].messages)).toContain("Second question")
+    expect(JSON.stringify(requests[0].messages)).not.toContain("Second answer")
   }),
 )
 

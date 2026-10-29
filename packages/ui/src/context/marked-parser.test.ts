@@ -8,7 +8,8 @@ test.each([
   ["OpenCode", "OpenCode"],
   ["**`#123`**", "<strong><code>#123</code></strong>"],
   ["*Review* ~~draft~~", "<em>Review</em> <del>draft</del>"],
-  ["`<example>`", "<code>&lt;example&gt;</code>"],
+  // SiCode: inline code is tokenised for colour, so a tag comes back as two spans (name, bracket).
+  ["`<example>`", '<code><span style="color:var(--syntax-type)">&lt;example</span><span style="color:var(--v2-text-text-faint)">&gt;</span></code>'],
   ["\\*literal\\*", "*literal*"],
 ])("renders link label %s with application attributes", async (label, html) => {
   const markdown = `[${label}](https://opencode.ai)`

@@ -1,0 +1,25 @@
+/* SiCode: hover-scroll label for rows whose text is routinely wider than the column (session
+   titles). At rest the label ellipsises like a plain `truncate`; while `data-marquee="run"` the
+   clip moves from the label to the outer box so the tail can slide into view. See marquee-text.tsx
+   for the measurement and timing. */
+[data-slot="marquee"] {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-slot="marquee-track"] {
+  display: block;
+}
+
+[data-slot="marquee-label"] {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-slot="marquee"][data-marquee="run"] [data-slot="marquee-label"] {
+  overflow: visible;
+  text-overflow: clip;
+}

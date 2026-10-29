@@ -607,6 +607,12 @@ export const dict = {
   "settings.general.row.pinchZoom.description": "允许使用触控板双指捏合和 Ctrl+滚轮手势缩放",
   "settings.general.row.destructiveConfirm.title": "破坏性命令确认",
   "settings.general.row.destructiveConfirm.description": "删除类命令（rm、del 等）总是弹出确认，不受自动接受影响。",
+  "settings.general.row.linkTarget.title": "链接打开位置",
+  "settings.general.row.linkTarget.description":
+    "回复里的链接用哪个浏览器打开。",
+  "settings.general.row.linkTarget.system": "系统浏览器",
+  "settings.general.row.linkTarget.browser": "侧边浏览器",
+  "settings.general.row.linkTarget.unavailable": "这个会话还没打开侧边浏览器，链接已用系统浏览器打开。",
 
   "sound.option.none": "无",
   "sound.option.alert01": "警报 01",

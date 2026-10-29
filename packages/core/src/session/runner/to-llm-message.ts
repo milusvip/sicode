@@ -13,6 +13,7 @@ import { fileURLToPath } from "url"
 import { SessionMessage } from "../message.js"
 import { SessionHistory } from "../history.js"
 import { SessionRecentText } from "../recent-text.js"
+import { SessionCompactionDurable } from "../compaction-durable.js"
 import type { FileAttachment } from "@opencode/schema/prompt"
 
 const imageMimes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
@@ -318,6 +319,10 @@ function toLLMMessage(
       // the summary only paraphrased.
       const transcriptPath =
         typeof message.metadata?.transcriptPath === "string" ? message.metadata.transcriptPath : undefined
+      // SiCode: the checkpoint also carries the contents of the files the agent was working in, so
+      // the step after a compaction does not begin with a round of re-reads. See
+      // `session/compaction-durable.ts` for why this lives beside the summary instead of in it.
+      const durable = SessionCompactionDurable.from(message.metadata)
       return [
         Message.make({
           id: message.id,
@@ -328,6 +333,7 @@ function toLLMMessage(
             "",
             `<summary>\n${message.summary}\n</summary>`,
             ...(kept ? ["", `<recent-context>\n${kept}\n</recent-context>`] : []),
+            ...(durable ? [SessionCompactionDurable.render(durable)] : []),
             ...(transcriptPath
               ? [
                   "",
