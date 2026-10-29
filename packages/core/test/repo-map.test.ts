@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile, mkdir } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
 import { RepoMap } from "../src/repo-map/index.js"
+import { RepoMapCallGraph } from "../src/repo-map/call-graph.js"
 import { RepoMapLanguages } from "../src/repo-map/languages.js"
 import { RepoMapParse } from "../src/repo-map/parse.js"
 import { RepoMapRender } from "../src/repo-map/render.js"
@@ -33,6 +34,22 @@ describe("extract", () => {
     expect(result!.symbols.map((symbol) => symbol.name)).toEqual(["load", "Client", "helper"])
     expect(result!.symbols[0]!.line).toBe(3)
     expect(result!.imports).toEqual(["./bus.js", "./shared.js"])
+  })
+
+  test("collects calls by their leaf name across languages", async () => {
+    const cases: Array<[string, string, string[]]> = [
+      ["typescript", "export function a() { b(); c.d(); new Foo() }", ["b", "d", "Foo"]],
+      ["python", "def a():\n    b()\n    c.d()\n    X()", ["b", "d", "X"]],
+      ["go", "package m\nfunc a() { b()\n c.D() }", ["b", "D"]],
+      ["rust", "fn a() { b(); c::d(); X::new() }", ["b", "d", "new"]],
+      ["java", "class A { void a() { b(); c.d(); new Foo(); } }", ["b", "d", "Foo"]],
+      ["c", "int a() { b(); c_d(); }", ["b", "c_d"]],
+      ["php", "<?php function a() { b(); $c->d(); new Foo(); }", ["b", "d", "Foo"]],
+    ]
+    for (const [language, source, expected] of cases) {
+      const result = await RepoMapParse.parse(source, language)
+      expect(result!.calls, language).toEqual(expected)
+    }
   })
 
   test("python: decorators do not hide the definition, import names are not symbols", async () => {
@@ -131,6 +148,49 @@ describe("render", () => {
       { budget: 120, lineLimit: 300 },
     )
     expect(text).toContain("z.ts")
+  })
+})
+
+describe("call graph", () => {
+  const state = {
+    version: 2,
+    root: "/repo",
+    files: {
+      "src/hub.ts": {
+        mtimeMs: 1, size: 1, language: "typescript",
+        symbols: [{ name: "hub", line: 1 }], imports: [], calls: [],
+      },
+      "src/a.ts": {
+        mtimeMs: 1, size: 1, language: "typescript",
+        symbols: [{ name: "a", line: 1 }], imports: [], calls: ["hub"],
+      },
+      "src/b.ts": {
+        mtimeMs: 1, size: 1, language: "typescript",
+        symbols: [{ name: "b", line: 1 }], imports: [], calls: ["hub"],
+      },
+      "src/deep.ts": {
+        mtimeMs: 1, size: 1, language: "typescript",
+        symbols: [{ name: "deep", line: 1 }], imports: [], calls: ["a"],
+      },
+    },
+  }
+
+  test("callers and callees answer in both directions", () => {
+    const graph = RepoMapCallGraph.build(state)
+    expect(graph.callers("hub")).toEqual(["src/a.ts", "src/b.ts"])
+    expect(graph.callees("src/a.ts")).toEqual(["hub"])
+    expect(graph.callers("missing")).toEqual([])
+  })
+
+  test("impact walks the transitive caller closure", () => {
+    const graph = RepoMapCallGraph.build(state)
+    // hub -> called by a and b; a -> called by deep. So changing hub reaches a, b, deep.
+    expect(graph.impact("hub")).toEqual(["src/a.ts", "src/b.ts", "src/deep.ts"])
+  })
+
+  test("impact of a leaf symbol is empty", () => {
+    const graph = RepoMapCallGraph.build(state)
+    expect(graph.impact("deep")).toEqual([])
   })
 })
 

@@ -4,6 +4,7 @@ import { readFile, readdir, stat } from "fs/promises"
 import { join } from "path"
 import { Global } from "@opencode/util/global"
 import { RepoMapCache } from "./cache.js"
+import { RepoMapCallGraph } from "./call-graph.js"
 import type { Symbol } from "./extract.js"
 import { RepoMapLanguages } from "./languages.js"
 import { RepoMapParse } from "./parse.js"
@@ -156,14 +157,31 @@ const refresh = async (directory: string, options: Options, file: string): Promi
       language,
       symbols: result.symbols as Symbol[],
       imports: result.imports,
+      calls: result.calls,
     }
     stored[relative] = record
     if (result.symbols.length > 0) entries.push({ file: relative, symbols: result.symbols, imports: result.imports })
   }
 
-  await RepoMapCache.write(file, { version: 1, root: directory, files: stored })
+  await RepoMapCache.write(file, { version: RepoMapCache.VERSION, root: directory, files: stored })
   const text = RepoMapRender.render(entries, options)
   return text === "" ? undefined : text
+}
+
+/**
+ * SiCode: build the call graph for the directory and run a structure query against it. Ensures the
+ * cache is current first, then answers over the same parsed state the map uses — no separate index.
+ */
+export const query = async (
+  directory: string,
+  input: { kind: "callers" | "callees" | "impact"; name: string },
+  options: Options = {},
+): Promise<string | undefined> => {
+  const file = RepoMapCache.path(directory, options.cache ?? defaultCache())
+  await refresh(directory, options, file)
+  const state = await RepoMapCache.read(file)
+  if (!state) return undefined
+  return RepoMapCallGraph.render(state, input)
 }
 
 export const get = async (directory: string, options: Options = {}): Promise<string | undefined> => {

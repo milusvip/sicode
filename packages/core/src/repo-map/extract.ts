@@ -27,6 +27,11 @@ export interface Symbol {
 export interface Result {
   readonly symbols: Symbol[]
   readonly imports: string[]
+  /**
+   * SiCode: names this file calls, for the call graph. A single pass collects them alongside the
+   * symbols and imports, so building the graph costs no extra parse.
+   */
+  readonly calls: string[]
 }
 
 /** Transparent wrappers: the declaration worth recording is one of their children. */
@@ -57,6 +62,22 @@ const IMPORTS = new Set([
   "namespace_use_declaration",
   "require",
   "require_call",
+])
+
+/**
+ * SiCode: call nodes across the bundled grammars, and the field each one puts the callee in.
+ * Most share the `function` field (ts/js/go/rust/c/python/ruby/php); java's `method_invocation`
+ * uses `name`, and constructors (`new_expression` / `object_creation_expression`) use
+ * `constructor` / `type`. Verified against the wasm grammars, not from documentation.
+ */
+const CALLS = new Map<string, string>([
+  ["call_expression", "function"],
+  ["call", "function"],
+  ["method_invocation", "name"],
+  ["function_call_expression", "function"],
+  ["member_call_expression", "name"],
+  ["new_expression", "constructor"],
+  ["object_creation_expression", "type"],
 ])
 
 const SKIP = new Set(["comment", "line_comment", "block_comment", "package_clause", "package_declaration", "namespace_definition", "program", "module"])
@@ -92,7 +113,9 @@ const usable = (name: string): boolean => name.length > 0 && name.length <= 80 &
 export const walk = (root: SyntaxNode): Result => {
   const symbols: Symbol[] = []
   const imports: string[] = []
+  const calls: string[] = []
   const seen = new Set<string>()
+  const seenCalls = new Set<string>()
 
   const record = (node: SyntaxNode, name: string | undefined) => {
     if (!name || !usable(name) || seen.has(name)) return
@@ -127,6 +150,37 @@ export const walk = (root: SyntaxNode): Result => {
     if (name) record(node, name)
   }
 
+  // SiCode: a second, independent pass for calls. It walks the whole tree because a call lives
+  // inside a function body that the symbol pass does not descend into, and it is kept separate so
+  // the symbol/import shapes above stay untouched. The callee is the leaf of the called name —
+  // `c.d()` records `d`, matching how symbols are stored by their bare name.
+  const CALLEE_FALLBACK = new Set(["name", "qualified_name", "type_identifier", "identifier", "field_identifier"])
+  const collectCalls = (node: SyntaxNode): void => {
+    const field = CALLS.get(node.type)
+    if (field) {
+      // php's `object_creation_expression` keeps the class name on an anonymous `name` /
+      // `qualified_name` child rather than a named field, so fall back to those.
+      let raw = node.childForFieldName(field)?.text
+      if (!raw) {
+        for (const child of node.namedChildren) {
+          if (child && CALLEE_FALLBACK.has(child.type)) {
+            raw = child.text
+            break
+          }
+        }
+      }
+      if (raw) {
+        const leaf = raw.replace(/^.*[.:>\\]/u, "")
+        if (usable(leaf) && !seenCalls.has(leaf)) {
+          seenCalls.add(leaf)
+          calls.push(leaf)
+        }
+      }
+    }
+    for (const child of node.namedChildren) if (child) collectCalls(child)
+  }
+
   for (const node of root.namedChildren) if (node) visit(node, false)
-  return { symbols, imports }
+  collectCalls(root)
+  return { symbols, imports, calls }
 }

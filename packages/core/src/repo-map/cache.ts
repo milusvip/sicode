@@ -18,7 +18,8 @@ import type { Symbol } from "./extract.js"
  * checkout never gains a stray file and deleting the cache is always safe.
  */
 
-const VERSION = 1
+const VERSION = 2
+export { VERSION }
 
 export interface Stored {
   readonly mtimeMs: number
@@ -26,6 +27,8 @@ export interface Stored {
   readonly language: string
   readonly symbols: readonly Symbol[]
   readonly imports: readonly string[]
+  /** SiCode: names this file calls; version 2 added them, so older caches rebuild. */
+  readonly calls?: readonly string[]
 }
 
 export interface State {
