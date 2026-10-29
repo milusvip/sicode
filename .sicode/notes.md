@@ -603,6 +603,14 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 阶段二（搜索子代理）已落地（2026-10-29）：无需新建 agent——上游已有 `explore` 子代理（`packages/core/src/plugin/agent.ts:74-94`），权限已锁死 grep/glob/read/shell/webfetch/websearch + `*:* deny` 兜底。增量是三处提示词：① `PROMPT_EXPLORE` 补「输出契约」——只回传结论 + `file:line` 清单、不回传正文（否则子代理把读到的字节又灌回主会话，隔离上下文白做）；② `system.txt` 加 `# Parallelizing search with subagents` 段（大范围定位/中文意图先派 explore，覆盖默认 + DeepSeek/Anthropic 两个 append 模型）；③ `kimi.txt`、`meta.txt` 补同款触发指引。
 - 关键发现（方案没料到）：`gpt.txt` / `gpt-astra.txt` 里有上游刻意写的「Do not spawn subagents unless 用户/AGENTS.md/skill 明确要求」——GPT 系模型自动派子代理是负收益，上游主动禁了。所以触发指引**按模型分治**：append 系（default/deepseek/anthropic）加指引、kimi/meta 补指引，gpt 系保持禁派不动。trinity.txt 第 83 行本来就有「file search 时 prefer subagent」。
 - 子代理机制：`tool/plugin/subagent.ts` 里 `agents.resolve(input.agent)` + 深度限制（`experimental.subagent_depth` 默认 1）；可用子代理列表由 `tool/plugin/subagent.ts:288` 的 context hook 动态注入工具描述（`mode !== "primary" && !hidden`）。
+- 阶段三（结构自研）已落地（2026-10-29）——分两块：3b trigram 早已存在并接通（`filesystem/trigram-search.ts` 两阶段搜索，之前的工作），本轮只做了 3a 调用边。
+- 3a 调用边：`repo-map/extract.ts` 的 `walk` 新增 `calls` 提取（第二遍独立遍历，符号/import 提取不动），跨 9 种语言实测 call 节点类型与字段名——统一规律是 `call_expression`/`call`/`method_invocation`/`function_call_expression`/`member_call_expression` 用 `function` 或 `name` 字段，`new_expression`/`object_creation_expression` 是构造（`constructor`/`type`，php 的类名在匿名字段的 `name`/`qualified_name` 子节点里，需回退）。
+- callee 取「叶子名」（`c.d()`→`d`、`X::new`→`new`、`\Bar\Baz`→`Baz`），匹配符号按 bare name 存储的约定。
+- `repo-map/cache.ts` 的 `Stored` 加 `calls?` 字段，VERSION 1→2（旧缓存整体失效重建），并导出 VERSION 让 index.ts 写缓存用常量（原来硬编码 `version:1` 会导致版本永远对不上、每次重建）。
+- `repo-map/call-graph.ts` 新增纯函数 `build(state)` → `callers`/`callees`/`impact`，impact 是传递闭包（走「谁调用了这些文件里定义的符号」层层外扩）。`index.ts` 加 `query()`（refresh 后 read cache + build + render）。
+- 新工具 `tool/plugin/callgraph.ts`：`callers`/`callees`/`impact` 三合一，注册在 `plugin/internal.ts`（grep 之后），system.txt 的 `# Parallelizing search` 段加「结构问题用 callgraph 别 grep」。
+- 实测（本仓）：`callers makeLocationNode` → 30+ 文件命中；`callers searchGuidance` → system-prompt.ts；冷查询 450~570ms（含 refresh）。首次 query 会遇到 v1→v2 缓存迁移的一次性空结果，属预期。
+- 诚实登记：调用边是「按符号名」的近似（overload/动态分发会错），工具描述和 render 文案都写明「确认前先 read」。
 
 ## 侧边栏文件树
 
