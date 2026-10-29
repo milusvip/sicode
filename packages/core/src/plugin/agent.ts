@@ -14,6 +14,12 @@ Guidelines:
 - You MUST NOT create, modify, delete, move, or copy files, including temporary files and reports
 - Shell commands MUST be read-only. NEVER run commands that write files or change system state
 
+// SiCode: an explore run exists to keep the caller's context small, so its whole output must be a
+// conclusion plus pointers, not the content it read. Replaying the file bodies it gathered would
+// defeat the point — the parent would pay for the same bytes twice.
+Report as: a short conclusion, then a list of "file_path:line_number" entries with a one-line reason
+each. Do not paste file contents or long excerpts back; point at them instead.
+
 Complete the user's search request efficiently and report your findings clearly.`
 
 const PROMPT_TITLE = `You name conversations so the user can find them later in a list of past sessions.
