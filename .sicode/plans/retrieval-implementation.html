@@ -35,7 +35,7 @@
 <div class="wrap">
 
 <h1>SiCode 代码定位提速 · 实施方案 <span class="badge">v6 · 定稿</span></h1>
-<div class="sub">2026-10-29 · 定稿（调研依据见 <code>codebase-retrieval.html</code>）· 等用户批准开工</div>
+<div class="sub">2026-10-29 · 定稿（调研依据见 <code>codebase-retrieval.html</code>）· 阶段一（1a/1b）已落地并推送，阶段二/三待做</div>
 
 <div class="no" style="background:#fff8c5;border-color:#d4a72c66">
   <b>v4 修订（用户定调：面向用户的能力直接做好，不推第三方 MCP）：</b><br>
@@ -64,26 +64,26 @@
   </ul>
 </div>
 
-<h2>阶段一：查询扩展 + 关键词加权（两个都做，各管一半问题）</h2>
+<h2>阶段一：查询扩展 + 关键词加权 <span class="badge green">✅ 已落地（2026-10-29）</span></h2>
 
 <div class="card phase">
-  <h3>1a. 查询扩展指引 <span class="badge">先做这个，一天</span></h3>
+  <h3>1a. 查询扩展指引 <span class="badge green">✅ 已完成</span></h3>
   <ul>
-    <li><b>system.txt</b>（packages/core/src/session/runner/prompt/system.txt）的搜索守则区加一条：搜不到目标时，先把用户意图展开成多组英文候选词（组件名、CSS 类、i18n 键、错误串），每组重试后再升级手段</li>
-    <li><b>grep/glob 工具描述</b>内嵌一句：空结果 ≠ 不存在，先扩展同义词/拆词再重试，3 次仍空则换 glob 或读目录结构</li>
-    <li>对照物：参考 <code>shell.ts</code> 里 detectPollingWait 的守则写法；开关 <code>OPENCODE_QEXPAND=0</code> 可关</li>
-    <li><b>token 预算（硬约束）</b>：指引总量 ≤ 250 token/请求（参照 design-hint 压缩纪律：这是每步都付的税）。超出就砍，不挤占别的</li>
-    <li><b>风险如实登记</b>：收益 −30~50% 是预估、无文献数；本仓先例提示「写了指引模型未必照做」。所以 1a 上线即跑 A/B，<b>数据不支持就撤，不恋战</b></li>
+    <li><b>system.txt</b>（packages/core/src/session/runner/prompt/system.txt）加了 <code># Finding code from a description</code> 段：搜不到时先把意图翻译成多组英文候选词（组件名、CSS 类、i18n 键、错误串）再搜</li>
+    <li><b>grep/glob 工具描述</b>各加一句「空结果=词猜错了，先扩展同义词/拆词/看 UI 串」</li>
+    <li>开关 <code>OPENCODE_QEXPAND=0</code> 可关；实测总开销 223 token（预算 250 内）</li>
+    <li><b>待 A/B</b>：收益 −30~50% 是预估、无文献数，上线即跑 A/B，<b>数据不支持就撤，不恋战</b></li>
   </ul>
 </div>
 
 <div class="card phase">
-  <h3>1b. BM25F 分字段加权 <span class="badge">恢复立项：与 1a 各管一半</span></h3>
+  <h3>1b. BM25F 分字段加权 <span class="badge green">✅ 已完成</span></h3>
   <ul>
-    <li>字段加权：文件路径 / 符号定义（tree-sitter 已有）/ 内容；<b>i18n 键与值（zh 字典）进符号字段</b>——中文 UI 文案直接可搜；CSS 类名（BEM 拆分）进符号字段</li>
-    <li>与 1a 的分工：1a 解决「中文意图→英文代码」断链；1b 解决「半猜半搜的命中率」——两个失效模式不同，<b>收益叠加而非二选一</b>（Cody 实证约 +20%）</li>
-    <li>落点：新模块 <code>packages/core/src/search-ranked/</code>，查询 → path + 得分 + 命中字段；在 grep 空结果时自动注入建议（不靠模型主动调用，绕开 adoption 风险）</li>
-    <li>trigram 倒排跟在 1b 后面做，同一模块（<b>v6：本仓 8k 文件即有 50~70× 实测收益</b>，见 3b）</li>
+    <li>字段加权已实现：文件路径 / 符号（含 <b>i18n 键值、CSS 类名 BEM 拆分</b>）/ 内容，权重 path 3 / symbol 2 / content 1</li>
+    <li>新模块 <code>packages/core/src/search-ranked/</code>（terms 分词 / score BM25F / index 编排），grep 空结果时自动注入前 5 个最接近文件 + 命中字段，开关 <code>OPENCODE_RANKED=0</code></li>
+    <li>无常驻索引：文件列表走 ripgrep，其余按需读且有界；本仓 8809 文件实测单次 173~216ms</li>
+    <li><b>待 A/B</b>：词法命中率 +20% 是 Cody 内部口径，需实测验证</li>
+    <li><b>trigram 倒排（3b）未做</b>：跟在 1b 后，本仓 8k 文件即有 50~70× 实测收益</li>
   </ul>
 </div>
 
@@ -155,10 +155,10 @@
 <h2>落地注意（v2 新增）</h2>
 <div class="card">
   <ul>
-    <li><b>增量策略统一（v6 明确）</b>：不做后台 watcher 守护进程（CodeGraph 那种，资源代价不值）。1a 零索引；1b/3a 沿用 repo map 现有 mtime+size 懒失效（冷启 5.8s/热 0.39s，已验证）；trigram 用 <b>commit 锚定式</b>——索引锚 git commit、未提交改动叠加其上、仅大漂移时重建（Cursor 官方机制），非 git 仓库查询时按 mtime 懒检查。本仓全量重建也才 ~7s（逆向实测同量级），增量压力天然小</li>
+    <li><b>增量策略统一（v6 明确）</b>：不做后台 watcher 守护进程（CodeGraph 那种，资源代价不值）。1a 零索引；1b 无常驻索引（文件列表走 ripgrep、内容按需读）；3a 沿用 repo map 现有 mtime+size 懒失效（冷启 5.8s/热 0.39s，已验证）；trigram 用 <b>commit 锚定式</b>——索引锚 git commit、未提交改动叠加其上、仅大漂移时重建（Cursor 官方机制），非 git 仓库查询时按 mtime 懒检查。本仓全量重建也才 ~7s（逆向实测同量级），增量压力天然小</li>
     <li><b>与现有 hint 机制的关系</b>：查询扩展指引走 system.txt 静态区 + 工具描述，<b>不新增 hint 注入点</b>——context.ts 已有 context-hints/clarify-hint/design-hint 三个，不再挤</li>
     <li><b>并行会话冲突</b>：prompt 文件正被其他会话改，落地前先 git status 确认，改完立即提交不留在工作区</li>
-    <li><b>回滚开关</b>：1a 用 OPENCODE_QEXPAND=0；阶段二子代理用 agent 配置开关；每个能力独立可关</li>
+    <li><b>回滚开关</b>：1a 用 OPENCODE_QEXPAND=0，1b 用 OPENCODE_RANKED=0；阶段二子代理用 agent 配置开关；每个能力独立可关</li>
   </ul>
 </div>
 
@@ -166,8 +166,8 @@
 <table>
   <tr><th>#</th><th>动作</th><th>预期收益（证据强度）</th><th>解决哪一半问题</th></tr>
   <tr><td class="big">0</td><td>CodeGraph 内部验证</td><td>产出基线 + 设计清单（结构任务 −34% 为其量级参考）</td><td>为 3a/3b 修正设计</td></tr>
-  <tr><td class="big">1a</td><td>查询扩展指引</td><td>待 A/B（预估 −30~50%，无文献数）</td><td>中文意图 → 英文代码断链</td></tr>
-  <tr><td class="big">1b</td><td>BM25F 分字段加权</td><td>词法命中率 +20%（Cody 内部口径）</td><td>半猜半搜命中率</td></tr>
+  <tr><td class="big">1a</td><td>查询扩展指引 <span class="badge green">✅</span></td><td>已落地，待 A/B（预估 −30~50%，无文献数）</td><td>中文意图 → 英文代码断链</td></tr>
+  <tr><td class="big">1b</td><td>BM25F 分字段加权 <span class="badge green">✅</span></td><td>已落地，待 A/B（词法命中率 +20%，Cody 内部口径）</td><td>半猜半搜命中率</td></tr>
   <tr><td class="big">二</td><td>搜索子代理</td><td>轮数下降 + 长会话稳定性（无独立数字）</td><td>上下文污染</td></tr>
   <tr><td class="big">三</td><td>调用边/impact + trigram（自研）</td><td>对标 CodeGraph 量级：结构任务步数 −34%</td><td>结构定位 + 大仓库延迟</td></tr>
 </table>
