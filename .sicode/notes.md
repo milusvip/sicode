@@ -517,6 +517,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **教训（比结论本身值钱）**：测 reasoning effort 必须 ① 用需要思考的任务（算术题思考量太小）② 保证不撞 max_tokens（撞了就全是「满额」）③ 至少 8 次采样看中位数（单次差异会被波动吃掉）。三档真实差异只有 30~80 字（约 35%），用户体感上不会明显，真正省时间的是「关闭」。
 - 滑条顺序改成「由省到费」（2026-10-30，提交 cb103b1ffc）：原来 `packages/app/src/composer/model.ts:271` 写死 `["default", ...list()]`，把「默认」固定在最左，导致「关闭」只能排第二。改成 `[...list(), "default"]`，现在 m-c-api 的 deepseek 是 **关闭 → 低 → 中 → 高 → 默认**。没有 variants 的模型 `list()` 为空、只剩 `["default"]`、`length===1` 时不渲染滑条，行为与改前一致。**注意这改动影响所有带 variants 的模型**（内置 claude/gpt 的滑条也会变成 低→中→高→默认）。
 - `bun test src/composer` 有 4 个失败是 `Solid jsxDEV not found`（测试基建/构建条件问题），与业务改动无关，不要当成回归。
+- **修正上一条的副作用**（2026-10-30，提交 38ac53cfb4）：上一版把 `default` 一律挪到末尾，等于改了所有内置模型（claude/gpt 会变成 低→中→高→默认）。现在改成「`none` 和 `default` 都算『不做额外控制』、一起排前面」：`[...list.filter(v=>v==="none"), "default", ...list.filter(v=>v!=="none")]`。结果——m-c-api 的 deepseek：**关闭 → 默认 → 低 → 中 → 高**；没有关闭档的内置模型：默认 → 低 → 中 → 高（原样）；无 variants：只剩 `["default"]`、不渲染滑条。**这条才是当前行为，上一条作废。**
 
 ## 代码检索 / LSP
 
