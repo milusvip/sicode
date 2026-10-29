@@ -4,16 +4,47 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import type { RpcRegistration } from "@opencode/plugin/effect/rpc"
 import type { Session } from "@opencode/schema/session"
 import { Tool } from "@opencode/schema/tool"
-import { Deferred, Effect, Schema, Stream } from "effect"
+import { Deferred, Effect, Option, Schema, Stream } from "effect"
 import { Browser } from "./rpc.js"
 import { BrowserTunnel } from "./tunnel.js"
+
+type Locked = { read: boolean; write: boolean }
 
 type Attachment = {
   connectionID: string
   state: Browser.State
+  access: Browser.AgentAccess
+  /** Config-file denies for this session's agent. Panel grant must not cover these. */
+  locked: Locked
   closed: Deferred.Deferred<"closed" | "replaced">
   pending: Map<string, { command: Browser.Command; result: Deferred.Deferred<Browser.Result, Tool.Error> }>
   tunnels: BrowserTunnel.Tunnels
+}
+
+const BROWSER_ALLOWS = ["browser.read", "browser.write"] as const
+
+function stripBrowserAllows<T extends { action: string; resource: string; effect: string }>(permissions: readonly T[]) {
+  return permissions.filter(
+    (rule) => !(BROWSER_ALLOWS.includes(rule.action as (typeof BROWSER_ALLOWS)[number]) && rule.resource === "*" && rule.effect === "allow"),
+  )
+}
+
+function deniedStar(permissions: readonly { action: string; resource: string; effect: string }[], action: string) {
+  return permissions.some((rule) => rule.action === action && rule.resource === "*" && rule.effect === "deny")
+}
+
+/**
+ * Config deny is stronger than a panel grant: session allows are merged after agent rules and
+ * would otherwise win via findLast. Skip allows the user already denied in config so their
+ * safety boundary stays. If read is locked, grant nothing — write alone would still expose a
+ * half-usable browser. Unlocking requires editing config, not the panel switch.
+ */
+function allowsFor(access: Browser.AgentAccess, locked: Locked) {
+  const rules: { action: string; resource: "*"; effect: "allow" }[] = []
+  if (locked.read) return rules
+  rules.push({ action: "browser.read", resource: "*", effect: "allow" })
+  if (access === "full" && !locked.write) rules.push({ action: "browser.write", resource: "*", effect: "allow" })
+  return rules
 }
 
 export type Connection = Effect.Success<ReturnType<typeof make>>
@@ -22,35 +53,50 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
   ctx: Pick<Context, "agent" | "rpc" | "session" | "location" | "event">,
 ) {
   const browsers = new Map<Session.ID, Attachment>()
-  // Appended after config, so every agent hides the browser until an attachment allows it.
-  yield* ctx.agent.transform((editor) =>
-    editor.list().forEach((agent) => agent.permissions.push({ action: "browser", resource: "*", effect: "deny" })),
-  )
-  // Each attachment adds and removes its own allow, so a replaced attachment keeps the new one's.
-  const grant = (sessionID: Session.ID) =>
-    Effect.acquireRelease(
-      ctx.session.get({ sessionID }).pipe(
-        Effect.flatMap((session) =>
-          ctx.session.update({
-            sessionID,
-            permissions: [...(session.permissions ?? []), { action: "browser", resource: "*", effect: "allow" }],
-          }),
-        ),
-        Effect.orDie,
+  // ConfigAgentPlugin runs before this plugin, so user denies are already on agent.permissions.
+  // Capture them before we push the default attachment gate, then refuse to grant over them.
+  const lockedByAgent = new Map<string, Locked>()
+  yield* ctx.agent.transform((editor) => {
+    lockedByAgent.clear()
+    editor.list().forEach((agent) => {
+      lockedByAgent.set(agent.id, {
+        read: deniedStar(agent.permissions, "browser.read"),
+        write: deniedStar(agent.permissions, "browser.write"),
+      })
+      // Two rules (not browser.*): avoids matching future unrelated browser.* actions.
+      agent.permissions.push({ action: "browser.read", resource: "*", effect: "deny" })
+      agent.permissions.push({ action: "browser.write", resource: "*", effect: "deny" })
+    })
+  })
+  const lockedFor = (agentID: string | undefined): Locked =>
+    (agentID ? lockedByAgent.get(agentID) : undefined) ??
+    lockedByAgent.get("build") ?? { read: false, write: false }
+  const applyAccess = (sessionID: Session.ID, access: Browser.AgentAccess, locked: Locked) =>
+    ctx.session.get({ sessionID }).pipe(
+      Effect.flatMap((session) =>
+        ctx.session.update({
+          sessionID,
+          permissions: [...stripBrowserAllows(session.permissions ?? []), ...allowsFor(access, locked)],
+        }),
       ),
-      () =>
-        ctx.session.get({ sessionID }).pipe(
-          Effect.flatMap((session) => {
-            const permissions = session.permissions ?? []
-            const index = permissions.findIndex(
-              (rule) => rule.action === "browser" && rule.resource === "*" && rule.effect === "allow",
-            )
-            if (index === -1) return Effect.void
-            return ctx.session.update({ sessionID, permissions: permissions.toSpliced(index, 1) })
-          }),
-          Effect.ignore,
-        ),
+      Effect.orDie,
     )
+  // The outgoing attachment's release can run after the incoming one's grant, so it must re-derive
+  // from whatever is attached now instead of stripping blindly and revoking the new access.
+  const revoke = (sessionID: Session.ID) =>
+    Effect.gen(function* () {
+      const current = browsers.get(sessionID)
+      if (current) return yield* applyAccess(sessionID, current.access, current.locked)
+      yield* ctx.session.get({ sessionID }).pipe(
+        Effect.flatMap((session) =>
+          ctx.session.update({ sessionID, permissions: stripBrowserAllows(session.permissions ?? []) }),
+        ),
+        Effect.ignore,
+      )
+    })
+  // Each attachment adds and removes its own allows, so a replaced attachment keeps the new one's.
+  const grant = (sessionID: Session.ID, access: Browser.AgentAccess, locked: Locked) =>
+    Effect.acquireRelease(applyAccess(sessionID, access, locked), () => revoke(sessionID))
   let active = true
   const close = (sessionID: Session.ID, reason: "closed" | "replaced" = "closed") =>
     Effect.gen(function* () {
@@ -86,9 +132,13 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
             Effect.gen(function* () {
               if (!active) return yield* Effect.fail(call.error("unavailable", "Browser is unavailable.", {}))
               yield* close(input.sessionID, "replaced")
+              const locked = lockedFor(session.agent)
               const browser: Attachment = {
                 connectionID: input.connectionID,
                 state: { tabs: [], focusedTabID: null },
+                // Omit → full so older panes keep today's behavior; the panel passes "read" by default.
+                access: input.access ?? "full",
+                locked,
                 closed: yield* Deferred.make<"closed" | "replaced">(),
                 pending: new Map(),
                 tunnels: BrowserTunnel.make(),
@@ -98,12 +148,24 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
             }),
             (browser) => (browsers.get(input.sessionID) === browser ? close(input.sessionID) : Effect.void),
           )
-          yield* grant(input.sessionID)
+          yield* grant(input.sessionID, browser.access, browser.locked)
           yield* rpc.events
             .emit("control", { type: "attached", connectionID: input.connectionID, version: 4 })
             .pipe(Effect.orDie)
           return yield* Deferred.await(browser.closed)
         }).pipe(Effect.scoped),
+      access: (input, call) =>
+        Effect.gen(function* () {
+          const browser = browsers.get(input.sessionID)
+          if (!browser || browser.connectionID !== input.connectionID)
+            return yield* Effect.fail(call.error("unavailable", "Browser is unavailable.", {}))
+          browser.access = input.access
+          // Refresh locked from the current agent map in case config reloaded since attach.
+          const session = yield* ctx.session.get({ sessionID: input.sessionID }).pipe(Effect.option)
+          if (Option.isSome(session)) browser.locked = lockedFor(session.value.agent)
+          yield* applyAccess(input.sessionID, input.access, browser.locked)
+          return { access: input.access, locked: browser.locked }
+        }),
       state: (input, call) =>
         Effect.gen(function* () {
           const browser = browsers.get(input.sessionID)

@@ -71,6 +71,8 @@ export const BrowserPane = Ipc.define({
         server: text(16_384),
         session: text(256).check(Schema.isStartingWith("ses")),
         restore: Schema.optionalKey(Browser.State),
+        // Omitted → read. Renderer keeps this across suspend/reopen for the same session connection.
+        access: Schema.optionalKey(Schema.Literals(["full", "read"])),
       }),
     },
     // Creates the page of a restored tab the first time the pane shows it.
@@ -92,6 +94,23 @@ export const BrowserPane = Ipc.define({
     },
     // Deletes the cookies the page's address can read and its origin's stored data, then reloads the page.
     clearSite: { input: Schema.Struct({ binding, tabID: Browser.TabID }) },
+    // Agent browser access for this attachment: read (observe/navigate) or full (also click/fill/evaluate).
+    // locked.write means config denied write — the panel switch must stay off and disabled.
+    access: {
+      input: Schema.Struct({ binding }),
+      output: Schema.Struct({
+        access: Schema.Literals(["full", "read"]),
+        locked: Schema.Struct({ read: Schema.Boolean, write: Schema.Boolean }),
+      }),
+    },
+    // Recompute server permissions in place; does not reload pages or rebuild the attachment.
+    setAccess: {
+      input: Schema.Struct({ binding, access: Schema.Literals(["full", "read"]) }),
+      output: Schema.Struct({
+        access: Schema.Literals(["full", "read"]),
+        locked: Schema.Struct({ read: Schema.Boolean, write: Schema.Boolean }),
+      }),
+    },
     // Writes pasted login cookies for the page's own site, then reloads it so the site sees them. Resolves with the
     // number of cookies written and the best-effort login-state read; a paste for another site, or one Chromium
     // rejects, fails with the reason.

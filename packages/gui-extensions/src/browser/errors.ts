@@ -1,5 +1,7 @@
 import type { Browser } from "@opencode/plugin-browser/rpc"
 
+// SAFETY: a caught throw is untyped by definition; `message` narrows it before any use.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- see SAFETY above
 export function protocolError(method: string, error: unknown) {
   const detail = message(error)
 
@@ -19,6 +21,8 @@ export function protocolError(method: string, error: unknown) {
   return new Error(`${recovery} Chromium command ${method} failed: ${detail}`, { cause: error })
 }
 
+// SAFETY: a caught throw is untyped by definition; `message` narrows it before any use.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- see SAFETY above
 export function browserFailure(action: Browser.Action, error: unknown): Extract<Browser.Outcome, { type: "failure" }> {
   const detail = message(error, 1_700)
   const navigation = ["tabs.open", "navigate", "back", "forward", "reload"].includes(action.type)
@@ -36,7 +40,7 @@ export function browserFailure(action: Browser.Action, error: unknown): Extract<
             : network
               ? "The site failed to load through the connected server. Check its URL/network and the OC2 connection before retrying; inspect the current tab first."
               : action.type === "screenshot" && /UnknownVizError|capture.*(?:failed|unavailable)/i.test(detail)
-                ? "Chromium could not capture a rendered frame. Call browser.tabs.focus({tabID}) and keep the desktop window visible. If it is already visible, report the capture failure instead of repeating it unchanged."
+                ? "Chromium could not capture a rendered frame. Confirm the tab has a loaded document (not about:blank or a failed load), then retry once; if it still fails, report the capture failure instead of repeating it unchanged."
                 : undefined
 
   return {
@@ -49,6 +53,8 @@ export function browserFailure(action: Browser.Action, error: unknown): Extract<
   }
 }
 
+// SAFETY: the single boundary for a caught throw; this function is what turns it into a string.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- see SAFETY above
 function message(error: unknown, limit = 400) {
   return (error instanceof Error ? error.message : String(error)).slice(0, limit)
 }

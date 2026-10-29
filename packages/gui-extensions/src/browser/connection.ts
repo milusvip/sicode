@@ -29,6 +29,8 @@ export type Registration = {
   zoom(tabID: Browser.TabID, zoom: Zoom): void
   site(tabID: Browser.TabID): Promise<{ cookies: number }>
   clearSite(tabID: Browser.TabID): Promise<void>
+  access(): Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }>
+  setAccess(access: "full" | "read"): Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }>
   /** Writes pasted login cookies for the page's site and reloads it; resolves with the count and the login-state read. */
   setCookies(tabID: Browser.TabID, text: string): Promise<{ cookies: number; login: CookieLoginState }>
   close(): void
@@ -41,6 +43,10 @@ type ConnectionState = {
   embeds: Readonly<Record<string, string>>
   suspended: boolean
   error?: string
+  /** Agent write access for this attachment; default read. */
+  access: "full" | "read"
+  /** Config-file denies for the session agent; write locked disables the panel switch. */
+  locked: { read: boolean; write: boolean }
 }
 
 // Owns native registration, retry, and suspended tab metadata independently of the mounted session route, and
@@ -69,7 +75,14 @@ export function createConnection(input: {
   /** The user pressed the address shortcut while the page had focus. */
   address: (tabID: Browser.TabID) => void
 }) {
-  const state: ConnectionState = { browser: null, embeds: {}, suspended: false }
+  const state: ConnectionState = {
+    browser: null,
+    embeds: {},
+    suspended: false,
+    access: "read",
+    locked: { read: false, write: false },
+  }
+
   let disposed = false
   let blocked = false
   let attempts = 0
@@ -154,7 +167,10 @@ export function createConnection(input: {
     const registration: Registration = open(
       current,
       input.listen,
-      state.browser ? { ...input.target(), restore: state.browser } : input.target(),
+      {
+        ...(state.browser ? { ...input.target(), restore: state.browser } : input.target()),
+        access: state.access,
+      },
       (event) => {
         if (disposed || state.registration !== registration) return
 
@@ -221,6 +237,13 @@ export function createConnection(input: {
     state.suspended = false
     state.error = undefined
     publish()
+    // After attach, pane has the config-locked flags; pull them before the panel opens.
+    void registration.access().then((status) => {
+      if (state.registration !== registration) return
+      state.access = status.access
+      state.locked = status.locked
+      publish()
+    })
   }
 
   return {
@@ -262,6 +285,34 @@ export function createConnection(input: {
     /** The page's site data; undefined while no registration can answer. */
     site: (tabID: Browser.TabID) => state.registration?.site(tabID),
     clearSite: (tabID: Browser.TabID) => state.registration?.clearSite(tabID),
+    /** Agent browser access for this attachment (read = observe/navigate only). */
+    agentAccess: () => state.access,
+    agentLocked: () => state.locked,
+    setAgentAccess(access: "full" | "read") {
+      state.access = access
+      publish()
+      const done = state.registration?.setAccess(access)
+
+      if (!done) return undefined
+
+      return done.then((status) => {
+        state.access = status.access
+        state.locked = status.locked
+        publish()
+
+        return status
+      })
+    },
+    /** Refresh access + locked from the pane (after attach). */
+    refreshAgentAccess() {
+      return state.registration?.access().then((status) => {
+        state.access = status.access
+        state.locked = status.locked
+        publish()
+
+        return status
+      })
+    },
     /** Writes pasted login cookies; undefined while no registration can answer. */
     setCookies: (tabID: Browser.TabID, text: string) => state.registration?.setCookies(tabID, text),
     dispose() {
@@ -276,7 +327,7 @@ export function createConnection(input: {
 function open(
   client: Client,
   listen: (binding: string, listener: (event: PaneEvent) => void) => () => void,
-  target: { server: string; session: string; restore?: Browser.State },
+  target: { server: string; session: string; restore?: Browser.State; access?: "full" | "read" },
   listener: (event: PaneEvent) => void,
   failed: (cause: unknown) => void,
 ): Registration {
@@ -313,6 +364,8 @@ function open(
     },
     site: (tabID) => ready.then(() => client.site({ binding, tabID })),
     clearSite: (tabID) => ready.then(() => client.clearSite({ binding, tabID })),
+    access: () => ready.then(() => client.access({ binding })),
+    setAccess: (access) => ready.then(() => client.setAccess({ binding, access })),
     setCookies: (tabID, text) => ready.then(() => client.setCookies({ binding, tabID, text })),
     close() {
       if (status.closed) return

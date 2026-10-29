@@ -397,6 +397,7 @@ export function createModel(ctx: SetupContext<typeof definition>) {
       const entry = live.get(id)
 
       if (entry) entry.openingURL = undefined
+
       if (!unavailable(cause)) setState("errors", id, describe(cause instanceof Error ? cause.message : ""))
     }
 
@@ -409,6 +410,7 @@ export function createModel(ctx: SetupContext<typeof definition>) {
   // A file:// URL compared after decoding, so an encoded and a literal form of one path match.
   const sameURL = (a: string | undefined, b: string) => {
     if (!a) return false
+
     if (a === b) return true
 
     try {
@@ -514,6 +516,16 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     site: (session: Session, tabID: Browser.TabID) => live.get(session.key)?.connection.site(tabID),
     /** Deletes the page's cookies and stored data, and reloads it. */
     clearSite: (session: Session, tabID: Browser.TabID) => live.get(session.key)?.connection.clearSite(tabID),
+    /** Agent browser access for this session's attachment; default read. */
+    agentAccess: (session: Session) => live.get(session.key)?.connection.agentAccess() ?? "read",
+    /** Config-file denies for this session's agent; write locked disables the panel switch. */
+    agentLocked: (session: Session) =>
+      live.get(session.key)?.connection.agentLocked() ?? { read: false, write: false },
+    /** Allow or revoke write tools without reconnecting; pages stay. No-op when config locked write. */
+    setAgentAccess: (session: Session, access: "full" | "read") =>
+      live.get(session.key)?.connection.setAgentAccess(access),
+    /** Refresh access + locked from the pane (e.g. when opening the site popover). */
+    refreshAgentAccess: (session: Session) => live.get(session.key)?.connection.refreshAgentAccess(),
     /** Writes pasted login cookies for the page's site and reloads it; undefined while the pane cannot answer. */
     setCookies: (session: Session, tabID: Browser.TabID, text: string) =>
       live.get(session.key)?.connection.setCookies(tabID, text),

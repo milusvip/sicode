@@ -7,6 +7,7 @@ import { LineCommentEditor } from "@opencode/ui/line-comment"
 import { Loader } from "@opencode/ui/loader"
 import { Keybind } from "@opencode/ui/keybind"
 import { Menu } from "@opencode/ui/menu"
+import { Switch } from "@opencode/ui/switch"
 import { showToast } from "@opencode/ui/toast"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { ScrollView } from "@opencode/ui/scroll-view"
@@ -19,6 +20,10 @@ import { createKeyed, useExtension, usePanel, type PanelTab, type MountedSession
 import { addressParts, connection, loopback, resolveAddress, SEARCH_ENGINES, searchQuery, searches } from "./address"
 import { commentNote, pageNote } from "./comment"
 import type { CookieLoginState } from "./connection"
+import { bare, completes, highlight, suggest, type Visit } from "./history"
+import type { Model } from "./model"
+import type { PaneElement } from "./ipc"
+import { PageIcon } from "./page-icon"
 
 // SiCode: one label per login-state read, shown as the paste toast's description.
 const COOKIE_LOGIN_LABEL: Record<CookieLoginState["state"], string> = {
@@ -26,10 +31,6 @@ const COOKIE_LOGIN_LABEL: Record<CookieLoginState["state"], string> = {
   unclear: "cookies.login.unclear",
   unlikely: "cookies.login.unlikely",
 }
-import { bare, completes, highlight, suggest, type Visit } from "./history"
-import type { Model } from "./model"
-import type { PaneElement } from "./ipc"
-import { PageIcon } from "./page-icon"
 
 type PaneState = {
   /** The address field's text while the user edits it, and the submitted address it keeps afterwards. */
@@ -684,6 +685,10 @@ export default function SessionBrowserPane(props: {
 
                     return tab ? props.model.clearSite(props.session, tab.id) : undefined
                   }}
+                  agentAccess={() => props.model.agentAccess(props.session)}
+                  agentLocked={() => props.model.agentLocked(props.session)}
+                  setAgentAccess={(access) => props.model.setAgentAccess(props.session, access)}
+                  refreshAgentAccess={() => props.model.refreshAgentAccess(props.session)}
                 />
               </Show>
             </Show>
@@ -1339,15 +1344,43 @@ function SiteInformation(props: {
   /** The page's cookie count; undefined while the pane cannot answer. */
   site: () => Promise<{ cookies: number }> | undefined
   clear: () => Promise<void> | undefined
+  /** Agent write access for this attachment; default read (switch off). */
+  agentAccess: () => "full" | "read"
+  agentLocked: () => { read: boolean; write: boolean }
+  setAgentAccess: (access: "full" | "read") => Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }> | undefined
+  refreshAgentAccess: () => Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }> | undefined
 }) {
   const extension = useExtension()
 
   // `load` counts openings and clears, so a count for an earlier one never replaces a later one.
-  const [state, setState] = createStore<{ open: boolean; cookies?: number; clearing: boolean; load: number }>({
+  const [state, setState] = createStore<{
+    open: boolean
+    cookies?: number
+    clearing: boolean
+    load: number
+    write: boolean
+    lockedWrite: boolean
+    lockedRead: boolean
+  }>({
     open: false,
     clearing: false,
     load: 0,
+    // Default off = read-only: worst case on first open is the agent can only look.
+    write: props.agentAccess() === "full" && !props.agentLocked().read && !props.agentLocked().write,
+    lockedWrite: props.agentLocked().write,
+    lockedRead: props.agentLocked().read,
   })
+
+  // A config deny outranks this switch: a locked read grants nothing, so the whole browser is
+  // unavailable and the switch must read as off rather than claim a grant that is not in effect.
+  const syncAccess = () => {
+    const locked = props.agentLocked()
+    setState({
+      write: props.agentAccess() === "full" && !locked.read && !locked.write,
+      lockedWrite: locked.write,
+      lockedRead: locked.read,
+    })
+  }
 
   const kind = () => {
     const value = connection(props.url, { certificateWarning: props.certificateWarning })
@@ -1392,7 +1425,11 @@ function SiteInformation(props: {
       onOpenChange={(open) => {
         setState("open", open)
 
-        if (open) load()
+        if (open) {
+          syncAccess()
+          void (props.refreshAgentAccess() ?? Promise.resolve()).then(syncAccess, () => undefined)
+          load()
+        }
       }}
     >
       <Tooltip placement="top" value={extension.t("site.info")}>
@@ -1462,8 +1499,34 @@ function SiteInformation(props: {
           <SiteRow
             icon="select-element"
             title={extension.t("site.agent")}
-            detail={extension.t("site.agent.description")}
-          />
+            detail={extension.t(
+              state.lockedRead
+                ? "site.agent.locked.read"
+                : state.lockedWrite
+                  ? "site.agent.locked"
+                  : "site.agent.description",
+            )}
+          >
+            <Switch
+              appearance="compact"
+              hideLabel
+              aria-label={extension.t("site.agent.write")}
+              checked={state.write}
+              disabled={state.lockedWrite || state.lockedRead}
+              onChange={(checked) => {
+                if (state.lockedWrite || state.lockedRead) return
+                const access = checked ? "full" : "read"
+                setState("write", checked)
+                void (props.setAgentAccess(access) ?? Promise.resolve())
+                  .then(syncAccess, () => {
+                    setState("write", !checked)
+                    showToast({ title: extension.t("common.requestFailed") })
+                  })
+              }}
+            >
+              {extension.t("site.agent.write")}
+            </Switch>
+          </SiteRow>
           <Show when={props.server}>
             {(server) => <SiteRow icon="server" title={extension.t("site.network", { server: server() })} />}
           </Show>

@@ -37,6 +37,8 @@ const setup: MainSetup<typeof definition> = (ctx) => {
     zoom: async (input, caller) => (await existing()).zoom(caller.window, input.binding, input.tabID, input.zoom),
     site: async (input, caller) => (await existing()).site(caller.window, input.binding, input.tabID),
     clearSite: async (input, caller) => (await existing()).clearSite(caller.window, input.binding, input.tabID),
+    access: async (input, caller) => (await existing()).access(caller.window, input.binding),
+    setAccess: async (input, caller) => (await existing()).setAccess(caller.window, input.binding, input.access),
     setCookies: async (input, caller) =>
       (await existing()).setCookies(caller.window, input.binding, input.tabID, input.text),
     close: async (input, caller) => (await existing()).close(caller.window, input.binding),

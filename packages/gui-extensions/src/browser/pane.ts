@@ -32,6 +32,12 @@ type Entry = {
   lastState?: string
   network?: BrowserNetwork
   storageKey: string
+  /** Agent browser permission for this attachment. Default read; not a global setting. */
+  access: Browser.AgentAccess
+  /** Config-file denies; write locked → panel switch disabled. */
+  locked: { read: boolean; write: boolean }
+  /** Push access to the server without tearing down the attachment. Set once RPC is ready. */
+  setServerAccess?: (access: Browser.AgentAccess) => Promise<{ access: Browser.AgentAccess; locked: Entry["locked"] }>
   /**
    * Workspace directories whose files may load as file:// documents. Set only for the desktop's
    * own sidecar: a forwarded or explicit loopback server does not share this machine's disk.
@@ -61,7 +67,11 @@ export function createBrowserPane(input: {
   let disposed = false
 
   return {
-    async register(window: number, binding: string, target: Target) {
+    async register(
+      window: number,
+      binding: string,
+      target: Target & { access?: Browser.AgentAccess },
+    ) {
       const server = input.serverEndpoints.get(target.server)
 
       if (disposed || !server || !destinationOrigin(server.url)) throw new Error("browser.pane.registration.invalid")
@@ -108,6 +118,9 @@ export function createBrowserPane(input: {
         focusedTabID: previous.focusedTabID,
         partition: `opencode-browser-${crypto.randomUUID()}`,
         storageKey,
+        // Panel default: read-only until the user allows writes for this attachment.
+        access: target.access ?? "read",
+        locked: { read: false, write: false },
         fileRoots: [],
       }
 
@@ -163,6 +176,17 @@ export function createBrowserPane(input: {
 
             const attachment = { sessionID, connectionID: crypto.randomUUID() }
             const rpc = client.rpc(Browser.Definition)
+            entry.setServerAccess = (access) =>
+              runtime.runPromise(
+                rpc.access({ ...attachment, access }, options).pipe(
+                  Effect.tap((status) =>
+                    Effect.sync(() => {
+                      entry.access = status.access
+                      entry.locked = status.locked
+                    }),
+                  ),
+                ),
+              )
             entry.network = yield* createBrowserNetwork({
               rpc,
               attachment,
@@ -229,6 +253,16 @@ export function createBrowserPane(input: {
 
                   if (message.type === "attached") {
                     attached = true
+                    // Pull locked from the server so the panel can disable a config-denied write switch.
+                    yield* rpc.access({ ...attachment, access: entry.access }, options).pipe(
+                      Effect.tap((status) =>
+                        Effect.sync(() => {
+                          entry.access = status.access
+                          entry.locked = status.locked
+                        }),
+                      ),
+                      Effect.ignore,
+                    )
 
                     return entry.registered.resolve()
                   }
@@ -281,7 +315,7 @@ export function createBrowserPane(input: {
               receive,
               Stream.fromQueue(outbound).pipe(Stream.runForEach((send) => send)),
               Deferred.await(connected).pipe(
-                Effect.andThen(rpc.attach({ ...attachment, version: 4 }, options)),
+                Effect.andThen(rpc.attach({ ...attachment, version: 4, access: entry.access }, options)),
                 Effect.tap((result) =>
                   Effect.sync(() => {
                     if (result === "replaced") reason = "browser.pane.replaced"
@@ -333,6 +367,23 @@ export function createBrowserPane(input: {
     },
     async clearSite(window: number, binding: string, tabID: Browser.TabID) {
       await owned(window, binding).pages.get(tabID)?.clearSite()
+    },
+    access(window: number, binding: string) {
+      const entry = owned(window, binding)
+
+      return { access: entry.access, locked: entry.locked }
+    },
+    async setAccess(window: number, binding: string, access: Browser.AgentAccess) {
+      const entry = owned(window, binding)
+      entry.access = access
+      const status = await entry.setServerAccess?.(access)
+
+      if (status) {
+        entry.access = status.access
+        entry.locked = status.locked
+      }
+
+      return { access: entry.access, locked: entry.locked }
     },
     async setCookies(window: number, binding: string, tabID: Browser.TabID, text: string) {
       const page = owned(window, binding).pages.get(tabID)

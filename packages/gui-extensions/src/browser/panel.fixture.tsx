@@ -344,6 +344,8 @@ export function mountBrowserPane(input: PaneHost) {
         setStore({ cookies: 0, generation: store.generation + 1 })
         report()
       },
+      access: async () => ({ access: "read" as const, locked: { read: false, write: false } }),
+      setAccess: async (input) => ({ access: input.access, locked: { read: false, write: false } }),
       // Main writes the paste and reloads, so the page comes back with the pasted cookies in place.
       setCookies: async (value) => {
         const cookies = value.text.split(/[;\n]/).filter((part) => part.includes("=")).length
@@ -833,6 +835,8 @@ export function mountBrowserRegion(input: RegionHost) {
       zoom: async () => undefined,
       site: async () => ({ cookies: 0 }),
       clearSite: async () => undefined,
+      access: async () => ({ access: "read" as const, locked: { read: false, write: false } }),
+      setAccess: async (input) => ({ access: input.access, locked: { read: false, write: false } }),
       setCookies: async () => ({ cookies: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
       close: async () => undefined,
       state: () => undefined,
