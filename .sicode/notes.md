@@ -614,6 +614,10 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - callgraph impact 曾雪崩（已修）：原实现走「谁调用了定义文件里的**所有**符号」传递闭包，`makeLocationNode` 定义在 app-node.ts（同文件还导出 tags/makeGlobalNode 等），结果 impact 返回 2767 个文件（连 .mjs 探针都算进去）。根因是按 bare name 匹配时传递闭包本身无定义。修法：impact 降级为「直接 callers」（一跳），render/工具描述都写明「direct callers, re-run for next hop」。修后 `impact makeLocationNode` = 59 个真实调用文件，与 callers 一致。
 - 重要校准（用户用 SiCode 实测三份对话）：`makeLocationNode` 真实调用点 59 个（callgraph 提取，不含 import），grep 含 import 是 79 文件/87 调用点。这验证了 callgraph 的 `calls` 提取**正确排除了 import**（import 不产生 call 节点）——比 grep 更准。模型之前「callgraph 是 import 噪声」的判断是错的，实际 callgraph 已经是对的，只有 impact 雪崩是真 bug。
 - 教训：callgraph 工具上线后第一次真实使用就暴露了 impact 雪崩，说明单元测试（用 4 个文件的小 state）没覆盖「hub 文件导出多个符号」的雪崩场景。后续测试要加「定义文件多符号」的用例。
+- 第一手验收样本（2026-10-29 用户用 SiCode 实测三问，deepseek-v4.1-flash）：三个纯定位任务（edit=0），步数/token 如下——①「谁调用 makeLocationNode」7 轮/10 工具调用/227s/58584 token；②「改签名影响哪些文件」9 轮/17 工具调用/294s/90227 token；③「画调用链」15 轮/27 工具调用/770s/106946 token。
+- 三个都是「探索型任务」（方案验收线「探索/edit 比」不适用于纯提问，因为分母 edit=0）。它们暴露的是另一回事：**callgraph 工具刚上线就翻车导致模型弃用**——impact 雪崩 2767 文件（已修，见上条），模型连带不信 callers，全程退回 grep+read 手工定位，所以①③的 callgraph 调用数只有 0~1 次，其余 26 次都是 grep/read/shell 堆出来的。
+- 结论对验收线的意义：**「步数下降」要靠 callgraph 被信任后才能测**。修 impact 只是第一步，还要验证修完后模型是否愿意用 callgraph（而非一次翻车就永久绕开）。这比再加索引更急。
+- 与已有基线对照（notes 第 586-587 行）：探索类执行只占 0.8% 时间，瓶颈不是检索速度而是「符号跳转/结构查询减少往返步数」。③「画调用链」15 轮是典型——若 callgraph 一次答对，应是 2~3 轮而不是 15 轮。
 
 ## 侧边栏文件树
 
