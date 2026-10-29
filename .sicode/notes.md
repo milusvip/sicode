@@ -592,6 +592,14 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 不做自动检测的四条理由：① 实测模型不用，接上也摆设；② 结构性限制使其在最高频场景无效；③ 1~2GB 常驻内存是硬成本；④ diagnostics 那部分价值已被 `syntax-check` 覆盖（改动后自动校验，不需要模型主动调用，已随 a43848e4da 提交）。
 - 若将来要捡起来，正确形态不是「自动检测接入」，而是：给 grep 加符号级模式（按符号名搜索、不需要先行号），或把 lsp 查询**嵌进既有工具**而不是让模型单独决策调用。
 - 保留事项：本机 `~/.config/opencode/opencode.jsonc` 的 lsp 配置无害，留作后续验证；`lsp: true` 仍是上游预留的内置钩子（`lsp/config.ts:49` 目前返回 unconfigured，注释明说 reserved for future built-ins），它是 opt-in 语义，将来做产品化就填这里，不写不付内存代价。
+- 1a 查询扩展已落地（2026-10-29）：`packages/core/src/session/system-prompt.ts` 的 `searchGuidance()` 渲染 `# Finding code from a description` 段，占位符 `${OPENCODE_SEARCH_GUIDANCE}` 在 `packages/core/src/session/runner/prompt/system.txt` 的 Batching 段之后；grep/glob 工具描述各加一句「空结果=词猜错了」（`packages/core/src/tool/plugin/grep.ts` 的 `QUERY_EXPANSION_NOTE`、`glob.ts` 的 description 拼接）。开关 `OPENCODE_QEXPAND=0`（只在 system 段生效，工具描述也读同一个 env）。实测总开销 223 token（system 169 + grep 33 + glob 21），卡在方案定的 250 以内。
+- 1b 排序检索已落地：新模块 `packages/core/src/search-ranked/`（terms 分词 / score BM25F / index 编排），在 grep 空结果时自动注入「最接近的文件」（`packages/core/src/tool/plugin/grep.ts` 的 `result.total === 0 && !result.scoped` 分支），开关 `OPENCODE_RANKED=0`。
+- 字段权重：`path 3 / symbol 2 / content 1`，长度惩罚 `0.4 / 0.6 / 0.75`，k1=1.2（`score.ts`）。i18n 键值对与 CSS 类名（BEM 按 `__`/`--` 拆）都进 symbol 字段——中文意图唯一能接到英文标识符的桥就是字典。
+- 不做常驻索引：文件列表走 `ripgrep.find({pattern:"*"})`，其余按需读且有界（字典 30 + 样式 30 个文件、3MB；候选 40 个、单文件 256KB）。本仓 8809 文件实测单次 173~216ms。
+- 两个坑（都踩过）：① 字典与样式共用一个配额时，几百个 .css 会把 zh.ts 挤出桶外 → 必须分开配额；② 字典桶内按字母序取前 30 个，`zh.ts` 排在 `am/ar/az/bg/...` 之后永远取不到 → 按语言优先排序（`zh` 优先，其次 `ja/ko`）。
+- 中文分词用重叠 bigram（无空格可切），`paddingInline` 先按大写边界切再折叠大小写——顺序反了就只剩 `paddinginline`。
+- 本仓实测：`session header actions` → `packages/app/src/session/header/session-header-actions.tsx` 第一；`compaction durable` → `compaction-durable.ts` 第一；`侧边浏览器代理` → 各 `i18n/zh.ts` 前五（browser 那个排第 3）。`行号超出` 无命中（字典里确实没有该词条，属真实空缺）。
+- 待验证（方案 v6 的验收线）：改码型任务探索/edit 比 8:1 → 4:1，黄金问题集 recall@5。1a/1b 都要 A/B，数据不支持就撤。
 
 ## 侧边栏文件树
 
