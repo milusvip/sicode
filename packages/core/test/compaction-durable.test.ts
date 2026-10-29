@@ -84,6 +84,27 @@ describe("collect", () => {
     }
   })
 
+  test("keeps up to six files, not four, so a wider edit is not re-read after compaction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sicode-durable-six-"))
+    try {
+      await mkdir(join(root, "src"), { recursive: true })
+      for (let i = 1; i <= 6; i++) await writeFile(join(root, "src", `f${i}.ts`), `export const f${i} = ${i}\n`)
+      const messages = []
+      for (let i = 1; i <= 6; i++) messages.push(assistant(tool("edit", { filePath: join(root, "src", `f${i}.ts`) })))
+      const durable = SessionCompactionDurable.collect(messages, root, 200_000)
+      expect(durable!.files.map((file) => file.path)).toEqual([
+        "src/f6.ts",
+        "src/f5.ts",
+        "src/f4.ts",
+        "src/f3.ts",
+        "src/f2.ts",
+        "src/f1.ts",
+      ])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("carries the newest todo list even when no file is available", () => {
     const messages = [
       assistant(tool("todowrite", { todos: [{ content: "old task", status: "pending" }] })),

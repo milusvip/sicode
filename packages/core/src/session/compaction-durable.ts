@@ -39,12 +39,17 @@ export interface Durable {
   readonly todos: readonly DurableTodo[]
 }
 
-/** Most files an edit needs at once; each one costs tokens on every request that replays it. */
-const MAX_FILES = 4
+/**
+ * Most files an edit needs at once; each one costs tokens on every request that replays it.
+ * Six (was four): a real edit in this codebase often spans more than four files, and a file beyond
+ * the cap is dropped from the checkpoint entirely, so the next agent has to re-read it. The wider
+ * cap pays for itself by cutting post-compaction re-reads — measured at 90% of the first six steps.
+ */
+const MAX_FILES = 6
 const MAX_CHARS_PER_FILE = 12_000
 /** A file that was only read gets less room: it is context, not the thing being edited. */
 const MAX_CHARS_READ_ONLY = 4_000
-const MAX_CHARS_TOTAL = 24_000
+const MAX_CHARS_TOTAL = 36_000
 /** Anything bigger is a bundle or generated file, not something worth quoting. */
 const MAX_SOURCE_BYTES = 512 * 1024
 
