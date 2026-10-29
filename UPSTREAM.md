@@ -11,7 +11,8 @@ SiCode 是 [sst/opencode](https://github.com/sst/opencode) 的桌面端分支。
 | `backup/pre-rebase` | 重建血缘前的备份，勿删 |
 
 - 上游 remote：`upstream` → `git@github.com:sst/opencode.git`，分支 `dev`
-- 分叉基线：`76fd05ff45`（2026-10-22 14:33）。`main-sicode` 首个提交 `54b053cb` 的父提交就是它
+- 分叉起点：`76fd05ff45`（2026-10-22 14:33）。`main-sicode` 首个提交 `54b053cb` 的父提交就是它
+- **当前同步基线：`450e7b9241`（2026-10-25）。** 分支后来重定到更新的上游基线上，`76fd05ff45..450e7b9241` 之间的 160 个提交已经是我们的祖先，**算增量必须用 `450e7b9241`**，用旧值会多算 160 条。真正的判据是 `git merge-base HEAD upstream/dev`，每次同步前跑一次，别照抄这里的哈希
 - 分叉内容：相对基线改了 601 个文件 —— i18n 文案 258、图标 206、代码 137（内核仅 7 个）
 
 ## 同步策略：列清单，按需摘取
@@ -24,7 +25,8 @@ SiCode 是 [sst/opencode](https://github.com/sst/opencode) 的桌面端分支。
 
 ```bash
 git fetch upstream dev
-git log --oneline 76fd05ff45..upstream/dev
+MB=$(git merge-base HEAD upstream/dev)   # 当前同步基线，不要写死哈希
+git log --oneline $MB..upstream/dev
 ```
 
 把新提交按四类整理成一张清单，标注影响面：
@@ -88,12 +90,12 @@ git log --oneline 76fd05ff45..upstream/dev
 另外两条：
 
 - 所有本地改动加 `// SiCode:` 注释，同步时能机械识别哪些是我们的
-- 改完用 `git diff 76fd05ff45 -- <file>` 看一眼，确认改动范围小到能读懂
+- 改完用 `git diff $(git merge-base HEAD upstream/dev) -- <file>` 看一眼，确认改动范围小到能读懂
 
 ## 查看我们改了哪些内核文件
 
 ```bash
-git diff --name-only 76fd05ff45 main-sicode -- packages/core packages/ai
+git diff --name-only $(git merge-base HEAD upstream/dev) main-sicode -- packages/core packages/ai
 ```
 
 截至 2026-10-23 的清单：
