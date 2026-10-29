@@ -515,6 +515,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 踩坑记录：第一次用复杂 prompt 测档位，所有档位 completion 都打满 `max_tokens`，误判成「全部满额思考」——实际是被截断导致看不出差异，换简单 prompt 才看到梯度。**测 reasoning effort 必须保证不撞 max_tokens。**
 - **修正上一条（结论反转，2026-10-30）**：原来写「m-c-api 的 deepseek-v4.1-flash 只有 none 有效、low/medium/high 没梯度」——**那是错的**，测法有问题。用「3+4 等于几」这类题思考只有 100~200 字，而单次波动就有 44~103 字，噪声盖过信号；第一次用复杂题又撞了 max_tokens=3000 被截断，所有档位都看成「打满」。换成需要真推理的题（17 只羊），每档跑 8 次：**none=0、low 均值 327（中位 299）、medium 358（349）、high 442（522）**，梯度明确。所以四档全配成 variants，滑条顺序「默认 → 关闭 → 低 → 中 → 高」。
 - **教训（比结论本身值钱）**：测 reasoning effort 必须 ① 用需要思考的任务（算术题思考量太小）② 保证不撞 max_tokens（撞了就全是「满额」）③ 至少 8 次采样看中位数（单次差异会被波动吃掉）。三档真实差异只有 30~80 字（约 35%），用户体感上不会明显，真正省时间的是「关闭」。
+- 滑条顺序改成「由省到费」（2026-10-30，提交 cb103b1ffc）：原来 `packages/app/src/composer/model.ts:271` 写死 `["default", ...list()]`，把「默认」固定在最左，导致「关闭」只能排第二。改成 `[...list(), "default"]`，现在 m-c-api 的 deepseek 是 **关闭 → 低 → 中 → 高 → 默认**。没有 variants 的模型 `list()` 为空、只剩 `["default"]`、`length===1` 时不渲染滑条，行为与改前一致。**注意这改动影响所有带 variants 的模型**（内置 claude/gpt 的滑条也会变成 低→中→高→默认）。
+- `bun test src/composer` 有 4 个失败是 `Solid jsxDEV not found`（测试基建/构建条件问题），与业务改动无关，不要当成回归。
 
 ## 代码检索 / LSP
 
