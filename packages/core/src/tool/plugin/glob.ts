@@ -20,8 +20,8 @@ export const name = "glob"
  * directory, so a directory pattern used to answer "No files found" no matter how real the
  * directory was — the model could not find a project by folder name at all. Directories are now
  * derived from the file paths rg lists (so .gitignore still applies) and matched with the same glob
- * semantics. The scan bound is the price of that: it must see every file before it can name a
- * parent, so this one mode trades a larger read for a complete answer.
+ * semantics. A bounded pattern bounds the walk too (see `patternDepth`), so asking for one level
+ * does not read the whole tree.
  *
  * Two consequences worth knowing: an empty directory has no files to derive from and stays
  * invisible, and a directory rg itself ignores (node_modules, build output) stays invisible too —
@@ -30,6 +30,23 @@ export const name = "glob"
 export const DIRECTORY_SCAN_LIMIT = 50_000
 
 const isDirectoryPattern = (pattern: string) => pattern.trimEnd().endsWith("/")
+
+/**
+ * How deep a directory pattern looks, or undefined when `**` makes it unbounded.
+ *
+ * SiCode: a bounded pattern does not need the whole tree. Listing one level of a 57-site web root
+ * cost 15.7 s and 620k paths because rg walked everything before any parent could be named; the
+ * same answer with `--max-depth` was 0.6 s. A parent at depth D is derivable from any file at
+ * depth D+1, so D+2 is used — the margin covers a folder whose own files sit one level down. Only a
+ * folder whose every file is three levels deeper stays invisible, which is a rare shape and the
+ * price of not reading half a million paths to answer a one-level question.
+ */
+export const patternDepth = (pattern: string): number | undefined => {
+  const segments = pattern.split("/").filter((segment) => segment !== "")
+  if (segments.length === 0) return undefined
+  if (segments.some((segment) => segment.includes("**"))) return undefined
+  return segments.length
+}
 
 /** Every parent directory of the listed files, as search-root-relative paths with a trailing slash. */
 export const parentDirectories = (paths: readonly string[]): string[] => {
@@ -136,6 +153,7 @@ export const Plugin = {
               const pattern = input.pattern.trim()
               const limit = input.limit ?? FileSystem.DEFAULT_SEARCH_LIMIT
               const directories = isDirectoryPattern(pattern)
+              const depth = directories ? patternDepth(pattern) : undefined
               // An external root has no meaningful relative form: `../../..` round-trips, but it is
               // unreadable in a transcript and useless as an argument to the next tool.
               const rebase = (relative: string, folder = false) => {
@@ -145,35 +163,44 @@ export const Plugin = {
                 const shown = inside ? moved : absolute
                 return RelativePath.make(folder ? shown + path.sep : shown)
               }
-              const swept = yield* ripgrep
-                .glob({
-                  cwd: root,
-                  // A directory pattern cannot be handed to rg: it filters file paths, and a file
-                  // path never ends in a separator. List everything and match the derived parents.
-                  pattern: directories ? "*" : input.pattern,
-                  hidden: input.hidden,
-                  limit: directories ? DIRECTORY_SCAN_LIMIT : limit + 1,
-                  // SiCode: a name search over an unindexed tree is the one that most often runs
-                  // long, so it degrades to a partial list instead of failing outright.
-                  timeoutMs: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
-                })
-                .pipe(
-                  Effect.map((result) => ({
-                    entries: directories
-                      ? parentDirectories(result.entries.map((entry) => entry.path))
-                          .filter((directory) => Glob.match(pattern, directory))
-                          .map((directory) =>
-                            FileSystem.Entry.make({ path: rebase(directory, true), type: "directory" }),
-                          )
-                      : result.entries.map((entry) =>
-                          FileSystem.Entry.make({ ...entry, path: rebase(entry.path) }),
-                        ),
-                    // A capped scan saw only part of the tree, so the directory list may be missing
-                    // parents even when the page itself is short.
-                    capped: directories && result.entries.length >= DIRECTORY_SCAN_LIMIT,
-                    timedOut: result.timedOut,
-                  })),
-                )
+              const scan = (maxDepth: number | undefined) =>
+                ripgrep
+                  .glob({
+                    cwd: root,
+                    // A directory pattern cannot be handed to rg: it filters file paths, and a file
+                    // path never ends in a separator. List everything and match the derived parents.
+                    pattern: directories ? "*" : input.pattern,
+                    hidden: input.hidden,
+                    limit: directories ? DIRECTORY_SCAN_LIMIT : limit + 1,
+                    maxDepth,
+                    // SiCode: a name search over an unindexed tree is the one that most often runs
+                    // long, so it degrades to a partial list instead of failing outright.
+                    timeoutMs: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
+                  })
+                  .pipe(
+                    Effect.map((result) => ({
+                      entries: directories
+                        ? parentDirectories(result.entries.map((entry) => entry.path))
+                            .filter((directory) => Glob.match(pattern, directory))
+                            .map((directory) =>
+                              FileSystem.Entry.make({ path: rebase(directory, true), type: "directory" }),
+                            )
+                        : result.entries.map((entry) => FileSystem.Entry.make({ ...entry, path: rebase(entry.path) })),
+                      // A capped scan saw only part of the tree, so the directory list may be missing
+                      // parents even when the page itself is short.
+                      capped: directories && result.entries.length >= DIRECTORY_SCAN_LIMIT,
+                      timedOut: result.timedOut,
+                    })),
+                  )
+              // A folder can be named from a file one level inside it, so a bounded pattern does not
+              // need the bottom of the tree — but a folder whose every file sits deeper than that
+              // would vanish, and "nothing here" is the answer the model acts on most wrongly. The
+              // bound is therefore only kept when it found something; an empty page re-runs whole.
+              const bounded = yield* scan(directories && depth !== undefined ? depth + 2 : undefined)
+              const swept =
+                bounded.entries.length === 0 && directories && depth !== undefined
+                  ? yield* scan(undefined)
+                  : bounded
               return {
                 entries: swept.entries.slice(0, limit),
                 truncated: swept.entries.length > limit || swept.capped,

@@ -70,6 +70,8 @@ export interface GlobInput {
   readonly signal?: AbortSignal
   /** SiCode: stop at this deadline and keep the paths already found. */
   readonly timeoutMs?: number
+  /** SiCode: bound the walk. A one-level listing of a huge tree does not need the whole tree. */
+  readonly maxDepth?: number
 }
 
 export interface GrepInput {
@@ -220,6 +222,7 @@ const layer = Layer.effect(
             "--files",
             ...(input.hidden ? ["--hidden"] : []),
             ...(input.follow ? ["--follow"] : []),
+            ...(input.maxDepth === undefined ? [] : [`--max-depth=${input.maxDepth}`]),
             `--glob=${input.pattern}`,
             // Positive globs override rg's hidden-file filter; exclude before applying the result limit.
             ...(input.hidden ? [] : ["--glob=!**/.*"]),

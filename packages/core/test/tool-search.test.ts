@@ -260,6 +260,38 @@ describe("search tools", () => {
     ),
   )
 
+  it.live("keeps a directory that only holds a nested tree", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          // A folder whose own files sit two levels down still has to be named: the depth bound
+          // follows the pattern, not the tree, so a short pattern must not lose it.
+          yield* Effect.promise(() => fs.mkdir(path.join(tmp.path, "nested", "deep", "deeper"), { recursive: true }))
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "nested", "deep", "deeper", "x.ts"), "\n"))
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "flat.ts"), "\n"))
+          return yield* withTools(tmp.path, (registry) =>
+            Effect.gen(function* () {
+              const found = yield* executeTool(registry, call("glob", { pattern: "*/" }))
+              expect(found.output).toEqual([
+                { path: "nested" + path.sep, type: "directory" },
+              ])
+            }),
+          )
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("bounds a directory walk only when the pattern has no wildcard segment", () =>
+    Effect.sync(() => {
+      expect(GlobTool.patternDepth("*/")).toBe(1)
+      expect(GlobTool.patternDepth("packages/*/src/")).toBe(3)
+      // `**` can cross any number of levels, so no bound is derivable and the walk stays unbounded.
+      expect(GlobTool.patternDepth("**/src/")).toBeUndefined()
+    }),
+  )
+
   it.live("searches an absolute path outside the location", () => {
     const assertions: Permission.AssertInput[] = []
     return Effect.acquireUseRelease(
