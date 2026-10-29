@@ -38,7 +38,13 @@ export const useSessionLayout = () => {
     dockHeight: () => tabs.regionSize(currentTab(), "dockHeight"),
     setDockHeight: (height: number) => tabs.setRegionSize(currentTab(), "dockHeight", height),
     sideOpened: () => tabs.region(currentTab(), "side"),
-    setSideOpened: (opened: boolean) => tabs.setRegion(currentTab(), "side", opened),
+    setSideOpened: (opened: boolean) => {
+      tabs.setRegion(currentTab(), "side", opened)
+
+      if (!opened) tabs.setRegion(currentTab(), "sideMaximized", false)
+    },
+    sideMaximized: () => tabs.region(currentTab(), "sideMaximized"),
+    setSideMaximized: (maximized: boolean) => tabs.setRegion(currentTab(), "sideMaximized", maximized),
     sessionWidth: () => tabs.regionSize(currentTab(), "sessionWidth"),
     setSessionWidth: (width: number) => tabs.setRegionSize(currentTab(), "sessionWidth", width),
   }

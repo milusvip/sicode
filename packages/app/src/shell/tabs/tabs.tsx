@@ -38,7 +38,7 @@ export type PendingSession = {
 
 export type TabInfo = typeof TabStorage.Info.Type
 
-export type TabRegion = "dock" | "side"
+export type TabRegion = "dock" | "side" | "sideMaximized"
 
 export type TabRegionSize = "dockHeight" | "sessionWidth"
 

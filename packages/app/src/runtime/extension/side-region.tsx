@@ -218,7 +218,11 @@ export function SideRegion(props: {
                             }}
                           />
                           <Show when={tabsVisible()}>
-                            <div class="size-7 shrink-0" aria-hidden />
+                            {/* Reserve space for the absolute maximize + review toggles over the tab strip. */}
+                            <div class="flex h-7 shrink-0 items-center gap-2" aria-hidden>
+                              <div class="size-7" />
+                              <div class="size-7" />
+                            </div>
                           </Show>
                         </div>
                       </div>

@@ -35,6 +35,8 @@ export type TabRegions = {
   setDockHeight(height: number): void
   sideOpened: Accessor<boolean>
   setSideOpened(opened: boolean): void
+  sideMaximized: Accessor<boolean>
+  setSideMaximized(maximized: boolean): void
   sessionWidth: Accessor<number | undefined>
   setSessionWidth(width: number): void
 }
@@ -513,11 +515,27 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           side: {
             opened: regions.sideOpened,
+            maximized: regions.sideMaximized,
             toggle() {
               regions.setSideOpened(!regions.sideOpened())
             },
             close() {
               regions.setSideOpened(false)
+              regions.setSideMaximized(false)
+            },
+            toggleMaximized() {
+              if (!regions.sideOpened()) {
+                regions.setSideOpened(true)
+                regions.setSideMaximized(true)
+
+                return
+              }
+
+              regions.setSideMaximized(!regions.sideMaximized())
+            },
+            setMaximized(maximized: boolean) {
+              if (maximized && !regions.sideOpened()) regions.setSideOpened(true)
+              regions.setSideMaximized(maximized)
             },
           },
           session: {

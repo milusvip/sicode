@@ -115,6 +115,8 @@ export const dict = {
   "command.input.focus": "聚焦輸入框",
   "command.fileTree.toggle": "切換檔案樹",
   "command.review.toggle": "切換檢閱",
+  "command.review.fullscreen": "全螢幕面板",
+  "command.review.exitFullscreen": "顯示工作階段面板",
   "command.message.previous": "上一則訊息",
   "command.message.previous.description": "跳到上一則使用者訊息",
   "command.message.next": "下一則訊息",

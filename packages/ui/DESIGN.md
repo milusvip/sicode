@@ -4,14 +4,14 @@ Values shared by `packages/ui`, `packages/session-ui`, and `packages/app`. Each 
 
 ## Font stack
 
-- Sans: `--font-family-sans` — `思源黑体` only, for Latin and CJK alike. One face draws both scripts, so English and Chinese share a skeleton; handing Latin to a separate family first (the earlier `Inter` + CJK split) makes mixed text read as two typefaces even when the weights match. 思源黑体's Latin comes from Source Sans, scaled to 115% inside the family, so it looks slightly larger and looser than a dedicated UI face at the same point size — that is the accepted cost of one voice. `Source Han Sans SC` and `Noto Sans SC` are the same family under other names (registered via `local()` in `packages/app/src/index.css`), `Noto Sans SC Variable` is the bundled `@fontsource-variable` copy, and the platform stacks (`PingFang SC`, `Microsoft YaHei`) are last-resort fallbacks for machines with none of them.
-- Mono: `--font-family-mono` — IBM Plex Mono, then `ui-monospace` / Consolas, and only then the CJK faces. Fallback is per-glyph, so Chinese comments still land on 思源黑体 through the generic `monospace` (Consolas has no CJK), while a failed Plex webfont cannot hand Latin to the CJK face's proportional glyphs.
+- Sans: `--font-family-sans` — system first, the bundled Noto face last. On macOS this is PingFang SC, on Windows Microsoft YaHei UI / Microsoft YaHei; the Latin in between comes from the platform's own UI face (SF on mac, Segoe UI on Windows). That is the order the reference client uses, and it is why mixed text renders crisper at UI sizes than a bundled CJK webfont did: Chromium under Windows hinted the bundled variable face thin. The cost is a deliberate two-face sentence — Latin and CJK come from different families, so glyph width steps at the script boundary. `思源黑体` (registered via `local()` in `packages/app/src/index.css`), `Source Han Sans SC` and `Noto Sans SC` are one family under several names, `Noto Sans SC Variable` is the bundled `@fontsource-variable` copy, and those only load on a machine with no system CJK face.
+- Mono: `--font-family-mono` — IBM Plex Mono, then `ui-monospace` / Consolas, and only then the CJK faces. Fallback is per-glyph, so Chinese comments still land on the system CJK face through the generic `monospace` (Consolas has no CJK), while a failed Plex webfont cannot hand Latin to the CJK face's proportional glyphs.
 
 `packages/app/src/settings/model.tsx` writes both variables inline on `:root` when settings load, so the strings there override the initial values in `theme.css`. `sansFallback` / `monoFallback` and the two `theme.css` declarations must stay byte-identical; only the runtime one has any effect.
 
 ## Weight
 
-`theme.css` declares `--font-weight-regular: 400`, `--font-weight-medium: 500`, `--font-weight-bold: 670`. Regular is the face's own default, so every install renders body text at exactly 400 without relying on interpolation or the CSS upward-search rule: a static three-weight family (400/500/700) and a variable one (wght 100–900) both land on 400.
+`theme.css` declares `--font-weight-regular: 400`, `--font-weight-medium: 500`, `--font-weight-bold: 670`. Regular is the face's own default, so every install renders body text at exactly 400 without relying on interpolation or the CSS upward-search rule: a static three-weight family (400/500/700) and a variable one (wght 100–900) both land on 400. Bold at `670` only interpolates on a variable face: Microsoft YaHei has no 600, so the browser searches upward and Windows renders bold CJK at 700.
 
 | face | real weights | `400` resolves to |
 | --- | --- | --- |
@@ -81,4 +81,4 @@ Recorded so nobody copies the leftovers as precedent.
 - `font-size` still appears as a literal in roughly 75 places across 10 distinct values. `12.5px`, `11.5px`, and `10.5px` are hand-tuning residue and should collapse into the scale.
 - `13px` and `11px` are the two most common literal sizes and have no token. 13px is legitimate — it has its own line-height rule in all three packages — the gap is that it was never tokenized.
 - `--radius-*` is referenced about 20 times against ~100 literals; the ladder exists but is not the default path yet.
-- `--font-weight-regular: 460` predates the switch to a system font stack and no longer earns its keep on Windows.
+- `--font-weight-regular: 460` predates the switch to a system font stack and no longer earns its keep on Windows. `--font-weight-bold: 600` was chosen for the static MiSans cuts (400/500/600) and went back to `670` with the system stack.

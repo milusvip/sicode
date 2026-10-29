@@ -154,10 +154,23 @@ function SessionScreenContent(props: {
   const regionAnimating = () =>
     sidePresence.animate() || sideMotion().animateRegion || sideMotion().animateDock || bottomDockPresence.animate()
 
+  // Width slides for side open/close and maximize/restore; drag-resize still turns the transition off.
+  const widthTransition = () => !screen.size.active() && (sidePresence.animate() || sideVisible())
+
   const trackSideWidthMotion = (event: TransitionEvent) => {
     if (event.currentTarget !== event.target || event.propertyName !== "width") return
     setStore("sideWidthMotion", event.type === "transitionrun")
   }
+
+  createEffect(
+    on(
+      () => screen.panel.collapsed(),
+      (collapsed, previous) => {
+        if (previous === undefined || collapsed === previous) return
+        setStore("timelineScrollbarHidden", true)
+      },
+    ),
+  )
 
   const hideTimelineScrollbar = () => setStore("timelineScrollbarHidden", true)
 
@@ -400,12 +413,16 @@ function SessionScreenContent(props: {
             classList={{
               "@container relative z-10 min-w-0 shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none transition-[width]": true,
               "duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] motion-reduce:transition-none":
-                !screen.size.active() && sidePresence.animate(),
-              "transition-none": screen.size.active() || !sidePresence.animate(),
+                widthTransition(),
+              "transition-none": !widthTransition(),
+              // Clip while the chat slides away; stay mounted so scroll/composer state survive.
+              "overflow-hidden": screen.panel.collapsed() || store.sideWidthMotion,
             }}
             data-slot="session-chat-panel"
             data-width-animating={store.sideWidthMotion}
             data-scrollbar-hidden={store.timelineScrollbarHidden || store.sideWidthMotion}
+            aria-hidden={screen.panel.collapsed() || undefined}
+            inert={screen.panel.collapsed() || undefined}
             onPointerMove={revealTimelineScrollbar}
             onPointerDown={revealTimelineScrollbar}
             onWheel={revealTimelineScrollbar}

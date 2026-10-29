@@ -140,10 +140,18 @@
 .settings-nav-groups {
   display: flex;
   width: 100%;
+  /* SiCode: 撑满侧栏剩余高度，最后一组（关于）才有地方沉底；内容超长时这一层自己滚。 */
+  flex: 1;
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
   min-height: 0;
+}
+
+/* SiCode: 改版演示稿里「关于」被 margin-top:auto 压在侧栏底部，实装漏了这一步，
+   于是导航组全堆在顶部、侧栏下方空出一大块。 */
+.settings-nav-group:last-child {
+  margin-top: auto;
 }
 
 .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"] {
@@ -183,6 +191,7 @@
 .settings-nav-group {
   display: flex;
   width: 100%;
+  flex-shrink: 0;
   flex-direction: column;
   gap: 4px;
 }

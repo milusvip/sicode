@@ -54,6 +54,7 @@ export const Regions = Schema.Record(
     Persistence.struct({
       dock: Schema.optional(Schema.Boolean),
       side: Schema.optional(Schema.Boolean),
+      sideMaximized: Schema.optional(Schema.Boolean),
       dockHeight: Schema.optional(Schema.Finite),
       sessionWidth: Schema.optional(Schema.Finite),
     }).pipe(Schema.encodeKeys({ dock: "terminal", side: "review", dockHeight: "terminalHeight" })),

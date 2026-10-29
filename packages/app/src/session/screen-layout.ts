@@ -17,6 +17,7 @@ export function createSessionScreenLayout(
   const size = createSizing()
   const view = session.layout.view
   const tabsOpen = createMemo(() => session.isDesktop() && view().side.opened() && !!session.identity.params.id)
+  const sideMaximized = createMemo(() => tabsOpen() && view().side.maximized())
   const dockOpen = createMemo(() => view().dock.opened())
   const dockSide = createMemo(() => session.isDesktop() && settings.general.terminalPlacement() === "side")
   const dockBottom = createMemo(() => session.isDesktop() && settings.general.terminalPlacement() === "bottom")
@@ -26,8 +27,8 @@ export function createSessionScreenLayout(
     () => session.isDesktop() && input.sidebar() && settings.visibility.fileTree() && layout.fileTree.opened(),
   )
 
-  const resizable = createMemo(() => tabsOpen() || dockSideOpen())
-  const besideOpen = createMemo(() => resizable() || fileTreeOpen())
+  const resizable = createMemo(() => !sideMaximized() && (tabsOpen() || dockSideOpen()))
+  const besideOpen = createMemo(() => resizable() || fileTreeOpen() || sideMaximized())
   const [rowSize, setRowSize] = createStore<{ width?: number; height?: number }>({})
   let row: HTMLDivElement | undefined
   createResizeObserver(
@@ -54,6 +55,8 @@ export function createSessionScreenLayout(
   )
 
   const panelWidth = createMemo(() => {
+    if (sideMaximized()) return "0px"
+
     if (!besideOpen()) return "100%"
 
     if (resizable()) return `${resizedWidth()}px`
@@ -95,6 +98,9 @@ export function createSessionScreenLayout(
   const sideContentWidth = createMemo<string>((previous) => {
     const width = available()
 
+    // Fill the flex remainder so maximize/restore slides with the chat width instead of jumping.
+    if (tabsOpen()) return "100%"
+
     if (resizable() && width !== undefined) return `${Math.max(0, width - resizedWidth())}px`
 
     if (fileTreeOpen()) return `${layout.fileTree.width()}px`
@@ -113,11 +119,13 @@ export function createSessionScreenLayout(
       resizable,
       resizedWidth,
       width: panelWidth,
+      collapsed: sideMaximized,
     },
     side: {
       contentWidth: sideContentWidth,
       gap: { height: createMemo(() => (panelLayout().stacked ? "8px" : "0px")) },
       layout: panelLayout,
+      maximized: sideMaximized,
       region: {
         height: createMemo(() => {
           if (!sideRegionOpen()) return "0px"

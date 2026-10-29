@@ -124,6 +124,8 @@ export const dict = {
   "command.fileTree.toggle": "切换文件树",
 
   "command.review.toggle": "切换审查",
+  "command.review.fullscreen": "全屏面板",
+  "command.review.exitFullscreen": "显示会话面板",
 
   "command.message.previous": "上一条消息",
   "command.message.previous.description": "跳转到上一条用户消息",

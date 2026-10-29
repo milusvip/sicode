@@ -45,6 +45,8 @@ export function SessionReviewToggle() {
     if (restoreDock && sideDocked()) view().dock.open()
   }
 
+  const maximized = () => view().side.maximized()
+
   return (
     <SessionHeaderActions
       state={{
@@ -53,6 +55,13 @@ export function SessionReviewToggle() {
         reviewVisible: true,
         reviewOpened: sideColumnOpen(),
         onReviewToggle: toggleSideColumn,
+        maximizeLabel: maximized()
+          ? language.t("command.review.exitFullscreen")
+          : language.t("command.review.fullscreen"),
+        // Fullscreen only applies while the side tab region is open (not dock-only).
+        maximizeVisible: view().side.opened(),
+        maximizeOpened: maximized(),
+        onMaximizeToggle: () => view().side.toggleMaximized(),
       }}
     />
   )
@@ -64,11 +73,37 @@ export type SessionHeaderActionsState = {
   reviewVisible: boolean
   reviewOpened: boolean
   onReviewToggle: () => void
+  maximizeLabel?: string
+  maximizeVisible?: boolean
+  maximizeOpened?: boolean
+  onMaximizeToggle?: () => void
+}
+
+const overlayButtonStyle = {
+  // This fixed control sits above moving panel contents.
+  "--v2-overlay-simple-overlay-hover": "var(--v2-background-bg-layer-01)",
+  "--v2-overlay-simple-overlay-pressed": "var(--v2-background-bg-layer-02)",
 }
 
 export function SessionHeaderActions(props: { state: SessionHeaderActionsState }) {
   return (
     <div class="flex items-center gap-2">
+      <Show when={props.state.maximizeVisible && props.state.onMaximizeToggle && props.state.maximizeLabel}>
+        <Tooltip class="shrink-0" placement="bottom" value={props.state.maximizeLabel}>
+          <IconButton
+            type="button"
+            variant="ghost-muted"
+            size="large"
+            class="shrink-0"
+            style={overlayButtonStyle}
+            state={props.state.maximizeOpened ? "pressed" : undefined}
+            onClick={props.state.onMaximizeToggle}
+            aria-label={props.state.maximizeLabel}
+            aria-pressed={props.state.maximizeOpened}
+            icon={<Icon name={props.state.maximizeOpened ? "collapse" : "outline-maximize"} />}
+          />
+        </Tooltip>
+      </Show>
       <Show when={props.state.reviewVisible}>
         <Tooltip
           class="shrink-0"
@@ -87,11 +122,7 @@ export function SessionHeaderActions(props: { state: SessionHeaderActionsState }
             variant="ghost-muted"
             size="large"
             class="shrink-0"
-            style={{
-              // This fixed control sits above moving panel contents.
-              "--v2-overlay-simple-overlay-hover": "var(--v2-background-bg-layer-01)",
-              "--v2-overlay-simple-overlay-pressed": "var(--v2-background-bg-layer-02)",
-            }}
+            style={overlayButtonStyle}
             state={props.state.reviewOpened ? "pressed" : undefined}
             onClick={props.state.onReviewToggle}
             aria-label={props.state.reviewLabel}

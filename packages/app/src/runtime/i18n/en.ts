@@ -65,6 +65,8 @@ export const dict = {
   "command.input.focus": "Focus input",
   "command.fileTree.toggle": "Toggle file tree",
   "command.review.toggle": "Toggle review",
+  "command.review.fullscreen": "Expand panel",
+  "command.review.exitFullscreen": "Show session panel",
   "command.message.previous": "Previous message",
   "command.message.previous.description": "Go to the previous user message",
   "command.message.next": "Next message",
