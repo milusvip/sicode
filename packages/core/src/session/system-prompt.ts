@@ -24,5 +24,12 @@ export function render(prompt: string, tools: string[]) {
       "- Use the edit tool for targeted changes to existing text files. It replaces the exact text in `oldString` with `newString`, and the values must differ. By default, `oldString` must occur exactly once. If it occurs multiple times, include more surrounding context to make it unique or set `replaceAll` to true to replace every occurrence.",
     )
   }
+  if (tools.includes("browser.preview")) {
+    instructions.push(
+      "- Show files you created or changed with browser.preview: local HTML pages, images, charts, PDFs and SVGs open directly in the side browser as file:// tabs. There is nothing to serve — a static file never needs an HTTP server.",
+      "- To check a page's rendering yourself, preview it first and then screenshot that tab. Do not start a server to verify a static page.",
+      "- Preview a file once, when it is worth looking at — not after every edit — and never open a second tab for the same file.",
+    )
+  }
   return prompt.replace("${OPENCODE_TOOL_GUIDANCE}", instructions.join("\n"))
 }
