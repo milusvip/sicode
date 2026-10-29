@@ -290,6 +290,14 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - `--font-weight-regular` 只管引用该 token 的声明（`utilities.css` 的 `text-*-regular`、`base.css`、各组件 CSS）。上游仍硬编码 `440`（约 77 处，次级文本）和 `530`（约 68 处，标题/标签），这些没随 token 改；在可变字体装机上是真实插值，所以 400 正文和 440/530 层级仍然分得开，但不再是 460/440 那种 20 单位的差距。
 - `sansDefault` 是设置界面「UI 字体」输入框的 placeholder（`general/controllers.ts` → `appearance/appearance.tsx`），单一字体后写 `"思源黑体"` 就完整了；改它连带 `packages/app/src/settings/model.test.ts` 的 4 处前缀断言。`packages/session-ui/component-tests/session-lifecycle.spec.ts` 第 79、83 行 的 `font-family` 断言现为 `/^思源黑体,/`。
 - `.sicode/demos/font-plan-a-vs-b.html` 已从「A/B 方案二选一」改成「定稿 400 / 旧方案 Inter+460」的对照页，并保留 400/460/500 字重切换。
+- WorkBuddy 桌面端（D:\Program Files\WorkBuddy）没有自带 UI webfont：resources/app.asar.unpacked/renderer/assets 里只有 KaTeX 与 SourceCodePro 两类字体文件，UI 正文完全靠系统字体栈。
+- 根规则在 asar 内的 renderer/index.html：`body { font-family: var(--vscode-font-family, "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif); font-size: var(--vscode-font-size, 13px) }`，即基准字号 13px。
+- `--vscode-font-family` 由 VS Code 系主题文件 renderer/assets/default-dark-*.css 写入，值为 `"PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif`；组件层再覆盖，最密集的两条是 `PingFang SC,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif`（55 处）与 `PingFang SC,sans-serif`（51 处）。
+- 结果：macOS 中英都落到 PingFang SC；Windows 上 PingFang SC/-apple-system/BlinkMacSystemFont 都不存在，拉丁落到 Segoe UI，中文由 Chromium 回退到微软雅黑。这是 SiCode 改用「思源黑体」单一字面时的主要观感差异来源。
+- 例外区域：TDesign 系组件用 `--td-font-family: PingFang SC, Microsoft YaHei, Arial Regular`；数字/标题的 TCloudNumber、个别子应用用 Inter / WeChat Sans SS / Poppins / DM Sans；代码块用自带的 Source Code Pro，回退 ui-monospace / SFMono / Menlo / Consolas。
+- 2026-10-29 再改：MiSans 方案整体撤销，回落到 WorkBuddy 那种系统优先栈（即提交 32fe8f6869 的版本）——sans 为 -apple-system / BlinkMacSystemFont / PingFang SC / Microsoft YaHei UI / Microsoft YaHei 前置，思源黑体 + Noto 系（含 @fontsource-variable 的 Noto Sans SC Variable）兜底；`--font-weight-bold` 同时回到 670。依据：用户实测 Windows Chromium 下思源黑体比 WorkBuddy 发虚。代价是 Windows 上 670 被向上取到 700（微软雅黑只有 400/700），加粗中文比 mac 上重。
+- 撤销 MiSans 要同时改的四处，漏一处就会出现「半套字」：`theme.css` 的 --font-family-sans/--font-family-mono 与 `settings/model.tsx` 的 sansFallback/monoFallback 必须逐字节一致（后者在设置加载时内联写到 :root，不一致的那份就是死 CSS）；`packages/app/package.json` 依赖与 `src/index.css` 的 @import 要一起换；`sansDefault`（设置页 placeholder）和 model.test.ts 的期望值跟着改。
+- `packages/app/src/index.css` 里 Noto 的注册只靠 `@import "@fontsource-variable/noto-sans-sc"` 这一行；删掉它，兜底链里的 "Noto Sans SC Variable" 永远匹配不到。
 
 ## 全局右键菜单
 
@@ -840,6 +848,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **ripgrep 取不到时整回合死掉（2026-10-29 修）**：`context-hints.ts` 的 `lookup` 用 `Effect.orElseSucceed` 兜查找失败，但 `ripgrep.ts:162` 是 `yield* failure(...)` —— 在 Effect 里抛 Error 进的是 **defect 通道**，`orElseSucceed` 看不见。后果不只是测试红：一台没有网络的新机器首次启动（`global.bin` 里没有 rg.exe）时，**每一个回合都会因为取不到 ripgrep 而整体失败**。改成 `Effect.catchCause`（failure + defect 都吃）。`layer` 一并导出，测试才能注入会 die 的 Search。
 - **测试侧**：runner 测试的 layer 图经 `Session.node` 拉到 context-hints → Search，默认 Search layer 用 ripgrep 扫全仓建索引（本仓实测 250ms，可接受），但测试环境临时 `XDG_CACHE_HOME` 里没有 rg，框架的网络守卫又把「尝试下载」记为失败 → 97 个用例红。修法是在 `replacements` 里把 `FileSystemSearch.node` 换成返回空数组的 stub（没有 rg 的仓库本来也拿不到线索，这是诚实替身）。修完 234 过 / 1 败，与基线逐条一致。
 - **教训**：任何接进请求路径的可选增强，都要把「依赖不可用」当成必然分支而不是异常——`orElseSucceed` 只兜 error channel，要 `catchCause`。另外别在后台跑全量测试时并发跑别的包测试，Bun 会段错误（RSS 峰值 1.19GB）。
+- **demo 页面不再起 localhost server（2026-10-29 落地）**：真实会话里模型亲口说「本地文件不能直接用浏览器标签打开，我起一个临时静态服务来渲染验证」，然后 `python -m http.server 8722 --bind 127.0.0.1` 后台起服务（数据：`browser.preview` 调用 0 次、`browser.openFile` 0 次、起 server 1 次——模型根本不知道 preview 存在）。而 `browser.preview`（rpc.ts:204，HTML/图片/SVG/PDF 都支持）和 desktop 侧 `openFile`（contract.ts，file:// 标签）一直都有，chromium.ts 的 `fileRoots` 就是放行 file:// 文档的。修法两层：① `system.txt` 的 Communication 区加静态禁令（所有模型都读得到，不起 server 展示静态页面，server 只留给真需要后端的）；② `system-prompt.ts` 的 `render` 按 `tools.includes("browser.preview")` 注入三条指引（用 preview 展示 / 自验渲染先 preview 再 screenshot / 同一文件只 preview 一次别开第二个标签）——沿用该文件既有的「按工具存在性注入」模式，web 模式没有 browser 工具就不注入。测试 `test/system-prompt.test.ts` 5 条锁住两边行为。
 
 ## 会话时间线 / 回合产出
 
@@ -1218,3 +1227,15 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 为什么每步请求都重复注入而不是只做一次：synthetic 消息不落盘，回合内第 3 步编辑时如果不再注入，模型手里就没有这些值了；而注入位置固定在用户消息之后，前缀稳定，命中提示词缓存。一次性注入（像 context-hints 那样）适合「首步选文件」，不适合「第 N 步写组件」。
 - 验证：`test/design-hint.test.ts` 13 项（表格/规则/caveat 保留，Known drift 与非 token 表丢弃，章节排序，按整节裁剪，空文档返回 undefined，三种触发与两种不触发，四类 inject 行为）；core typecheck 1744 文件 0 错误；相关 6 个测试文件 81 pass。
 - 未验证：模型拿到这些值后是否真的少犯「自创字号 / 乱加圆角 / 到处加阴影」的错。要等真实 UI 会话对比。
+
+## 浏览器只读模式（browser.read / browser.write）
+
+- 操作在 `operation()` 上标 `access: read|write`；权限名拆成 `browser.read` / `browser.write`。
+- 默认 deny 两条；attach 的 `access` 默认 `full`（兼容老面板），面板 UI 默认关=只读，就地 `rpc.access` 重算权限，不重建 attachment。
+- evaluate=写；navigate/tabs.open/reload/scroll=读。只读下写工具被 whollyDisabled 从工具表移除。
+
+## 界面字体
+
+- **system-first 栈 = workbuddy 参考实现（2026-10-29 固化，提交 064ba80a4a）**：当前 `--font-family-sans` = `-apple-system, BlinkMacSystemFont, "PingFang SC", Helvetica, Arial, "Microsoft YaHei", "微软雅黑", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif`（mono 栈不变，真 mono 脸在前、CJK 兜底在后）。设计意图：mac 落 PingFang、Windows 落 Microsoft YaHei，英文由 Helvetica/Arial 兜（不走 CJK 脸的拉丁字形），打包的 Noto variable 只是**最后兜底**（Linux/无系统 CJK 脸的机器）——UI 字号下 Noto 在 Windows Chromium 里明显比系统 CJK 脸细，所以它绝不能排前面。
+- **三个坑**：① `"Microsoft YaHei UI"` 与 `"Microsoft YaHei"` 是**不同字体文件**，Windows 优先解析前者——曾因它导致 UI 跟参考实现漂移，已从栈里删除；② `packages/app/src/settings/model.tsx` 的 effect 在 settings 加载时把同一变量**内联写到 :root**，覆盖 theme.css 初值，两处必须 byte-identical（比对方法：正则提取两份栈、压缩空白后全等）；③ `stack(font, base)` 把用户设置存的值拼在 base **前面**——老用户在设置里存过 "思源黑体" 会让新栈完全架空，排查「改了没效果」先查这里。
+- **参考实现的真实栈提取法**：WorkBuddy 装在 `D:/Program Files\WorkBuddy\resources\app.asar.unpacked\renderer/assets/dist-*.css`，`grep -oh "font-family:[^;}]*"` 排序即得（它家用 Source Code Pro 作 mono）。
