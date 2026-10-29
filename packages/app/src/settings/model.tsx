@@ -57,12 +57,15 @@ export const terminalDefault = "JetBrainsMono Nerd Font Mono"
 const monoFallback =
   '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace, "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC"'
 
-// SiCode: was Source Han Sans-first for cross-platform consistency; user found its Windows
-// Chromium rendering less crisp than workbuddy's, so the stack now mirrors workbuddy's
-// system-first order — mac gets PingFang, Windows gets Microsoft YaHei, bundled Noto only as
-// last-resort fallback (Linux / machines without YaHei).
+// SiCode: this is what the UI actually renders — the effect below writes it inline on :root, so it
+// overrides whatever --font-family-sans in theme.css says. The two used to disagree silently:
+// theme.css led with the system faces while this led with 思源黑体, and only this one ever showed
+// up on screen. On a machine without 思源黑体 that resolves to the bundled Noto variable webfont,
+// which is a variable face — so the 460 weight is real there, unlike Microsoft YaHei, whose
+// 400/700-only cuts snap 460 straight back to 400. That is the look the UI shipped with for weeks;
+// aligning the two on the system-first stack swapped it for YaHei 400 and read thin.
 const sansFallback =
-  '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif'
+  '"思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
 
 const terminalFallback =
   '"JetBrainsMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
