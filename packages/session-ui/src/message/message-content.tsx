@@ -27,6 +27,12 @@ import { Button } from "@opencode/ui/button"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { BasicTool } from "../components/basic-tool"
 import { reasoningHeading } from "../timeline/projection"
+import {
+  streamPaceAdvance,
+  streamPaceNext,
+  TEXT_RENDER_DRAIN_MS,
+  TEXT_RENDER_PACE_MS,
+} from "./stream-pace"
 import { formatElapsed } from "../timeline/work-shell"
 import { Card } from "@opencode/ui/card"
 import type {
@@ -106,61 +112,16 @@ function MessageActionButton(
   )
 }
 
-// SiCode: the numbers below decide what streaming *looks* like, not what it delivers.
-// Measured on this machine, a step arrives at ~257 output tokens/s (p90 328), so a whole answer is
-// on disk in under a second — at a 24 ms frame that is 7–10 characters per frame. Drawn as fast as
-// it lands the text reads as blocks jumping in, not as writing, so it is drawn at a steady pace
-// instead and a finished answer keeps draining for a moment.
-const TEXT_RENDER_PACE_MS = 24
-
-// ~3 characters per frame, i.e. ~125 characters/s. Above this the eye reads chunks; far below it
-// the answer visibly lags the tool calls already running beneath it.
-const TEXT_RENDER_PER_FRAME = 3
-
-// A long answer must not fall behind for seconds: past this backlog the pace follows what arrived.
-const TEXT_RENDER_BACKLOG = 1200
-
-// After the stream ends the remainder still writes out, but only this long. Past it the text snaps,
-// because a line still typing above a finished turn is worse than a jump.
-const TEXT_RENDER_DRAIN_MS = 1200
-
-const TEXT_RENDER_SNAP = /[\s.,!?;:)\]]/
-
-// How many characters this frame should reveal. While streaming the pace is fixed; only a backlog
-// that would otherwise cost seconds is allowed to run faster.
-function advance(pending: number, deadline: number | undefined) {
-  if (deadline === undefined) {
-    if (pending <= TEXT_RENDER_BACKLOG) return Math.min(pending, TEXT_RENDER_PER_FRAME)
-
-    return Math.max(TEXT_RENDER_PER_FRAME, Math.min(64, Math.ceil(pending / 8)))
-  }
-
-  // Draining: spread what is left over the time the drain is allowed to take, never slower than
-  // one character a frame, and give up the pretence once the deadline is here.
-  if (Date.now() >= deadline) return pending
-  const frames = Math.max(1, Math.ceil((deadline - Date.now()) / TEXT_RENDER_PACE_MS))
-
-  return Math.max(1, Math.ceil(pending / frames))
-}
-
-function next(text: string, start: number, count: number) {
-  const end = Math.min(text.length, start + Math.max(1, count))
-  // Land just past a break when one is near, so a frame never stops halfway through a word.
-  const max = Math.min(text.length, end + 8)
-
-  for (let i = end; i < max; i++) {
-    if (TEXT_RENDER_SNAP.test(text[i] ?? "")) return i + 1
-  }
-
-  return end
-}
-
+// SiCode: the reveal pace lives in ./stream-pace so the curve can be tested as a pure function.
 function createPacedValue(getValue: () => string, live?: () => boolean, onSettled?: (settled: boolean) => void) {
   const [value, setValue] = createSignal(getValue())
   let shown = getValue()
   let timeout: ReturnType<typeof setTimeout> | undefined
   // Set once the source stops growing: the rest is still written out, on a clock.
   let deadline: number | undefined
+  // Wall clock of the previous frame — the reveal is paced by real elapsed time, so a late timer
+  // (a busy frame, a background tab) reveals proportionally more instead of falling behind.
+  let at = 0
 
   const clear = () => {
     if (!timeout) return
@@ -183,6 +144,9 @@ function createPacedValue(getValue: () => string, live?: () => boolean, onSettle
   const run = () => {
     timeout = undefined
     const text = getValue()
+    const now = Date.now()
+    const elapsed = at === 0 ? TEXT_RENDER_PACE_MS : now - at
+    at = now
 
     // A snapshot that no longer extends what is drawn (retry, edit, reload) is not a stream.
     if (!text.startsWith(shown) || text.length < shown.length) {
@@ -197,7 +161,15 @@ function createPacedValue(getValue: () => string, live?: () => boolean, onSettle
       return
     }
 
-    const end = next(text, shown.length, advance(text.length - shown.length, deadline))
+    // Past the drain backstop the curve is no longer worth watching; a finished turn should not
+    // still be typing above the tool calls it started.
+    if (deadline !== undefined && now >= deadline) {
+      settle(text)
+
+      return
+    }
+
+    const end = streamPaceNext(text, shown.length, streamPaceAdvance(text.length - shown.length, elapsed))
     sync(text.slice(0, end))
 
     if (end < text.length) timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
@@ -229,6 +201,7 @@ function createPacedValue(getValue: () => string, live?: () => boolean, onSettle
     }
 
     if (timeout) return
+    at = Date.now()
     timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
   })
 
