@@ -246,7 +246,77 @@ describe("SessionStats", () => {
       expect(future._tag).toBe("SessionStats.InvalidRangeError")
     }),
   )
+
+  it.effect("splits a step into queue and generation once first-output timestamps exist", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      yield* db
+        .insert(ProjectTable)
+        .values([{ id: projectID, worktree: AbsolutePath.make("/stats"), name: "stats", sandboxes: [] }])
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionTable)
+        .values([{ id: sessionID, project_id: projectID, slug: "timing", directory: "/stats", version: "test" }])
+        .run()
+        .pipe(Effect.orDie)
+      const at = Date.UTC(2026, 2, 1, 10)
+      yield* db
+        .insert(SessionMessageTable)
+        .values([
+          // queue 1s, generation 2s, settled 0.5s after the stream
+          messageRow(sessionID, 1, timed("msg_timing_a", at, { firstOutput: 1_000, streamed: 3_000, completed: 3_500 })),
+          // queue 5s, generation 7s, settled 0.5s after the stream
+          messageRow(sessionID, 2, timed("msg_timing_b", at + 60_000, { firstOutput: 5_000, streamed: 12_000, completed: 12_500 })),
+          // recorded before the probe existed: no first output, so it only contributes to `step`
+          messageRow(sessionID, 3, timed("msg_timing_legacy", at + 120_000, { streamed: 2_000, completed: 2_000 })),
+        ])
+        .run()
+        .pipe(Effect.orDie)
+
+      const stats = yield* SessionStats.get({
+        from: Date.UTC(2026, 2, 1),
+        to: Date.UTC(2026, 3, 1),
+        timezone: "UTC",
+        tools: "none",
+      })
+
+      expect(stats.models).toHaveLength(1)
+      expect(stats.models[0].steps).toBe(3)
+      expect(stats.models[0].latency).toEqual({
+        // Only the two probed steps can be split; the legacy one still counts toward `step`.
+        sampled: 2,
+        queueP50: 3_000,
+        generationP50: 4_500,
+        stepP50: 3_500,
+        cacheRead: 4 / 15,
+      })
+    }),
+  )
 })
+
+/** An assistant message whose timing is fully controlled, unlike `assistant()` which only sets created/completed. */
+function timed(
+  id: string,
+  created: number,
+  time: { firstOutput?: number; streamed: number; completed: number },
+) {
+  return SessionMessage.Assistant.make({
+    id: SessionMessage.ID.make(id),
+    type: "assistant",
+    agent: Agent.ID.make("build"),
+    model: { id: Model.ID.make("sonnet"), providerID: Provider.ID.make("anthropic") },
+    content: [],
+    cost: Money.USD.make(0),
+    tokens: { input: 10, output: 5, reasoning: 2, cache: { read: 4, write: 1 } },
+    time: {
+      created: DateTime.makeUnsafe(created),
+      ...(time.firstOutput === undefined ? {} : { firstOutput: DateTime.makeUnsafe(created + time.firstOutput) }),
+      streamed: DateTime.makeUnsafe(created + time.streamed),
+      completed: DateTime.makeUnsafe(created + time.completed),
+    },
+  })
+}
 
 function assistant(
   id: string,

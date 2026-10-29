@@ -5,7 +5,7 @@ import type { Model } from "@opencode/schema/model"
 import type { RelativePath } from "@opencode/schema/schema"
 import type { Snapshot } from "@opencode/schema/snapshot"
 import type { TokenUsage } from "@opencode/schema/token-usage"
-import { Effect, Fiber, Iterable } from "effect"
+import { Clock, Effect, Fiber, Iterable } from "effect"
 import { isReadonlyArrayNonEmpty } from "effect/Array"
 import { Bus } from "../../bus.js"
 import { SessionEvent } from "../event.js"
@@ -60,6 +60,8 @@ const INPUT_FAILURES = {
 export interface StepRecord {
   /** The model produced visible output this attempt, which bars transparent retries and overflow recovery. */
   readonly outputStarted: boolean
+  /** SiCode: epoch millis of the first output event; the queue+prefill half of the step's latency. */
+  readonly firstOutput?: number
   readonly providerFailed: boolean
   /** The step's recorded assistant failure, if any. */
   readonly failure?: SessionError.Error
@@ -115,8 +117,22 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   let stepStarted = false
   let providerFailed = false
   let outputStarted = false
+  let firstOutput: number | undefined
   let stepFailure: SessionError.Error | undefined
   let stepSettlement: StepRecord["finish"]
+
+  /**
+   * SiCode: marks the step as producing output and stamps when the first event arrived. The check and the mark stay
+   * adjacent with no yield between them (see the concurrency invariant above); only the clock read follows the mark,
+   * and repeating the read cannot change the recorded value.
+   */
+  const markOutput = Effect.fnUntraced(function* () {
+    if (!outputStarted) {
+      outputStarted = true
+      const now = yield* Clock.currentTimeMillis
+      firstOutput ??= now
+    }
+  })
 
   const startAssistant = Effect.fnUntraced(function* () {
     if (stepStarted) return assistantMessageID
@@ -414,6 +430,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     readonly tokens?: TokenUsage.Info
     readonly snapshot?: Snapshot.ID
     readonly files?: readonly RelativePath[]
+    readonly firstOutput?: number
   }) {
     if (stepFailure === undefined) return
     const assistantMessageID = yield* startAssistant()
@@ -438,7 +455,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         yield* startAssistant()
         return
       case "text-start":
-        outputStarted = true
+        yield* markOutput()
         const startedTextOrdinal = yield* text.start(event.id, native(event.providerMetadata))
         yield* publishPendingDeltas()
         yield* bus.publish(SessionEvent.Text.Started, {
@@ -454,7 +471,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         yield* text.end(event.id, native(event.providerMetadata), event.text)
         return
       case "reasoning-start":
-        outputStarted = true
+        yield* markOutput()
         const startedReasoningOrdinal = yield* reasoning.start(event.id, native(event.providerMetadata))
         yield* publishPendingDeltas()
         yield* bus.publish(SessionEvent.Reasoning.Started, {
@@ -471,7 +488,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         yield* reasoning.end(event.id, native(event.providerMetadata), event.text)
         return
       case "tool-input-start":
-        outputStarted = true
+        yield* markOutput()
         yield* startToolInput(event)
         return
       case "tool-input-delta": {
@@ -487,11 +504,11 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
         yield* endToolInput(event)
         return
       case "tool-input-error":
-        outputStarted = true
+        yield* markOutput()
         yield* failMalformedToolInput(event)
         return
       case "tool-call": {
-        outputStarted = true
+        yield* markOutput()
         const tool = tools.get(event.id) ?? (yield* startToolInput(event))
         if (toolInput.has(event.id)) yield* endToolInput(event)
         if (tool.name !== event.name)
@@ -643,6 +660,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     /** Immutable snapshot of everything recorded for this step so far. */
     record: (): StepRecord => ({
       outputStarted,
+      firstOutput,
       providerFailed,
       failure: stepFailure,
       finish: stepSettlement,

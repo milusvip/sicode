@@ -244,7 +244,8 @@ export const make = Effect.gen(function* () {
                     .pipe(Effect.orElseSucceed(() => undefined))
               : undefined
           const usage = record.finish ? SessionUsage.record(record.finish.usage, input.model.cost) : undefined
-          if (record.failure) yield* publisher.publishStepFailure({ ...usage, snapshot, files })
+          if (record.failure)
+            yield* publisher.publishStepFailure({ ...usage, snapshot, files, firstOutput: record.firstOutput })
           if (record.finish && usage && !record.failure)
             yield* bus.publish(SessionEvent.Step.Ended, {
               sessionID: input.sessionID,
@@ -255,6 +256,7 @@ export const make = Effect.gen(function* () {
               ...usage,
               snapshot,
               files,
+              firstOutput: record.firstOutput,
             })
         }
 

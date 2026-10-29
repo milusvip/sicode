@@ -232,6 +232,8 @@ export const Assistant = Schema.Struct({
   retry: AssistantRetry.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,
+    /** SiCode: when the provider's first output arrived; `undefined` when the step produced none. */
+    firstOutput: DateTimeUtcFromMillis.pipe(optional),
     /** When the provider response body ended, before tool settlement. */
     streamed: DateTimeUtcFromMillis.pipe(optional),
     completed: DateTimeUtcFromMillis.pipe(optional),

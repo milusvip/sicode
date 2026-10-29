@@ -112,6 +112,51 @@ describe("stats rendering", () => {
     expect(output.split(/\r?\n/).every((line) => line.length <= 48)).toBe(true)
   })
 
+  test("keeps the latency section inside a narrow terminal", () => {
+    const output = renderStats(
+      {
+        ...stats,
+        models: [
+          // A full cache hit is the widest the `cache` column can get.
+          { ...stats.models[0], latency: { sampled: 6, queueP50: 4_100, generationP50: 2_500, stepP50: 6_900, cacheRead: 1 } },
+        ],
+      },
+      options({ latency: true, width: 48 }),
+    )
+    expect(output).toContain("queue 4.1s · gen 2.5s · step 6.9s · cache 100%")
+    expect(output.split(/\r?\n/).every((line) => line.length <= 48)).toBe(true)
+  })
+
+  test("shows where each step's wall clock went", () => {
+    const output = renderStats(
+      {
+        ...stats,
+        models: [
+          {
+            ...stats.models[0],
+            latency: { sampled: 4, queueP50: 4_100, generationP50: 2_500, stepP50: 6_900, cacheRead: 0.91 },
+        },
+        ],
+      },
+      options({ latency: true }),
+    )
+    expect(output).toContain("LATENCY")
+    expect(output).toContain("anthropic/sonnet")
+    expect(output).toContain("4.1s")
+    expect(output).toContain("91%")
+    expect(output).toContain("4 of 6 steps sampled")
+  })
+
+  test("distinguishes missing first-output data from missing latency", () => {
+    const output = renderStats(
+      { ...stats, models: [{ ...stats.models[0], latency: { sampled: 0, stepP50: 6_900 } }] },
+      options({ latency: true }),
+    )
+    expect(output).toContain("need the newer build")
+    // The step duration is still known even when it cannot be split.
+    expect(output).toContain("6.9s")
+  })
+
   test("renders a concise empty state", () => {
     const output = renderStats(
       { ...stats, sessions: 0, subagents: 0, prompts: 0, steps: 0, activeDays: 0, streak: 0, activity: [] },
@@ -163,6 +208,7 @@ function options(input: Partial<Parameters<typeof renderStats>[1]> = {}): Parame
     models: false,
     tools: false,
     cost: false,
+    latency: false,
     limit: 5,
     color: false,
     width: 80,

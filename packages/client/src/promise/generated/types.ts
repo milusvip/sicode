@@ -82,6 +82,14 @@ export type SessionStatsToolUsage = {
 
 export type SessionStatsActivity = { date: string; steps: number }
 
+export type SessionStatsLatency = {
+  sampled: number
+  queueP50?: number
+  generationP50?: number
+  stepP50?: number
+  cacheRead?: number
+}
+
 export type PromptBase64 = string
 
 export type PromptFileSource = { type: "inline" } | { type: "uri"; uri: string }
@@ -911,7 +919,13 @@ export type ReferenceSource = ReferenceLocalSource | ReferenceGitSource
 
 export type WorktreeList = Array<WorktreeDirectory>
 
-export type SessionStatsModelUsage = { model: ModelRef; steps: number; tokens: TokenUsageInfo; cost: MoneyUSD }
+export type SessionStatsModelUsage = {
+  model: ModelRef
+  steps: number
+  tokens: TokenUsageInfo
+  cost: MoneyUSD
+  latency?: SessionStatsLatency
+}
 
 export type SessionMessageModelSelected = {
   id: SessionMessageID
@@ -1284,6 +1298,7 @@ export type SessionStepEnded = {
     tokens: TokenUsageInfo
     snapshot?: SnapshotID
     files?: Array<RelativePath>
+    firstOutput?: number
   }
 }
 
@@ -1305,6 +1320,7 @@ export type SessionStepFailed = {
     tokens?: TokenUsageInfo
     snapshot?: SnapshotID
     files?: Array<RelativePath>
+    firstOutput?: number
   }
 }
 
@@ -2452,7 +2468,7 @@ export type SessionInboxInfo = SessionInboxUser | SessionInboxSynthetic | Sessio
 export type SessionMessageAssistant = {
   id: SessionMessageID
   metadata?: { [x: string]: JsonValue }
-  time: { created: number; streamed?: number; completed?: number }
+  time: { created: number; firstOutput?: number; streamed?: number; completed?: number }
   type: "assistant"
   agent: AgentID
   model: ModelRef

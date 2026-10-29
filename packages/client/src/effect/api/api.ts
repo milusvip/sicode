@@ -199,6 +199,15 @@ export type SessionStatsOutput = {
       readonly cache: { readonly read: number; readonly write: number }
     }
     readonly cost: Money.USD
+    readonly latency?:
+      | {
+          readonly sampled: number
+          readonly queueP50?: number | undefined
+          readonly generationP50?: number | undefined
+          readonly stepP50?: number | undefined
+          readonly cacheRead?: number | undefined
+        }
+      | undefined
   }>
 }
 export type SessionStatsOperation<E = never> = (input?: SessionStatsInput) => Effect.Effect<SessionStatsOutput, E>
@@ -837,6 +846,7 @@ export type SessionLogOutput =
             }
             readonly snapshot?: Snapshot.ID | undefined
             readonly files?: ReadonlyArray<RelativePath> | undefined
+            readonly firstOutput?: number | undefined
           }
         }
       | {
@@ -872,6 +882,7 @@ export type SessionLogOutput =
               | undefined
             readonly snapshot?: Snapshot.ID | undefined
             readonly files?: ReadonlyArray<RelativePath> | undefined
+            readonly firstOutput?: number | undefined
           }
         }
       | {

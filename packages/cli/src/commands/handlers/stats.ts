@@ -27,7 +27,7 @@ const handler = Effect.fn("cli.stats")(function* (input: Runtime.Input<typeof Co
             .then((location) => location.project.id),
         )
       : project
-  const details = input.models || input.tools || input.cost || input.full
+  const details = input.models || input.tools || input.cost || input.latency || input.full
   const stats = yield* request(server.endpoint.url, (signal) =>
     client.session.stats(
       {
@@ -48,6 +48,7 @@ const handler = Effect.fn("cli.stats")(function* (input: Runtime.Input<typeof Co
         models: input.models || input.full,
         tools: input.tools || input.full,
         cost: input.cost || input.full,
+        latency: input.latency || input.full,
         limit: input.limit,
         color: process.stdout.isTTY && process.env.NO_COLOR === undefined,
         width: process.stdout.columns ?? 80,
@@ -82,6 +83,7 @@ type RenderOptions = {
   models: boolean
   tools: boolean
   cost: boolean
+  latency: boolean
   limit: number
   color: boolean
   width: number
@@ -106,7 +108,7 @@ export function renderStats(stats: SessionStatsInfo, options: RenderOptions) {
     : toolRate === undefined
       ? "no tool calls"
       : `${style(formatPercent(toolRate), primary, options.color)} tool success`
-  const details = options.models || options.tools || options.cost
+  const details = options.models || options.tools || options.cost || options.latency
   const empty = stats.sessions === 0 && stats.prompts === 0 && stats.steps === 0
   const heading = `${style("opencode stats", primary, options.color)} ${style(`· ${options.label} · ${options.scope}`, "2", options.color)}`
   const lines = details
@@ -132,6 +134,8 @@ export function renderStats(stats: SessionStatsInfo, options: RenderOptions) {
         ]
 
   if (options.cost) lines.push(...(lines.length > 0 ? [""] : []), ...renderCost(stats))
+  if (options.latency)
+    lines.push(...(lines.length > 0 ? [""] : []), ...renderLatency(stats, options.limit, options.width))
   if (options.models)
     lines.push(...(lines.length > 0 ? [""] : []), ...renderModels(stats, options.limit, options.width))
   if (options.tools) lines.push(...(lines.length > 0 ? [""] : []), ...renderTools(stats, options.limit, options.width))
@@ -233,6 +237,70 @@ function renderModels(stats: SessionStatsInfo, limit: number, width: number) {
       ),
     ),
     ...(more > 0 ? ["", `+${more.toLocaleString("en-US")} more model${more === 1 ? "" : "s"}`] : []),
+  ]
+}
+
+function renderLatency(stats: SessionStatsInfo, limit: number, width: number) {
+  const measured = stats.models.filter((item) => item.latency !== undefined)
+  if (measured.length === 0) return ["LATENCY", "  no model usage"]
+  const total = measured.reduce((sum, item) => sum + item.steps, 0)
+  const sampled = measured.reduce((sum, item) => sum + (item.latency?.sampled ?? 0), 0)
+  const rows = measured.slice(0, limit)
+  const more = measured.length - rows.length
+  const name = (item: SessionStatsInfo["models"][number]) =>
+    `${item.model.providerID}/${item.model.id}${item.model.variant ? `#${item.model.variant}` : ""}`
+  const duration = (value: number | undefined) => (value === undefined ? "—" : formatDuration(value))
+  const cached = (item: SessionStatsInfo["models"][number]) =>
+    item.latency?.cacheRead === undefined ? "—" : `${Math.round(item.latency.cacheRead * 100)}%`
+  const narrow = width < 72
+  // Steps recorded before the first-output probe existed cannot be split, so say so instead of
+  // letting a `—` column read as "no latency".
+  const note =
+    total === 0
+      ? undefined
+      : sampled === 0
+        ? narrow
+          ? "no first-output timestamps yet"
+          : "no step here carries a first-output timestamp yet; queue and gen need the newer build"
+        : sampled < total
+          ? narrow
+            ? `${formatNumber(sampled)}/${formatNumber(total)} sampled`
+            : `${formatNumber(sampled)} of ${formatNumber(total)} steps sampled; the rest predate the probe`
+          : undefined
+  const footer = [
+    ...(note === undefined ? [] : ["", `  ${note}`]),
+    ...(more > 0 ? ["", `  +${more.toLocaleString("en-US")} more model${more === 1 ? "" : "s"}`] : []),
+  ]
+  const title = "LATENCY"
+  const hint = narrow
+    ? "medians · queue = dispatch to first output"
+    : "queue = dispatch to first output · gen = first output to end of stream · cache = prefix cache read share"
+  if (narrow)
+    return [
+      title,
+      `  ${hint}`,
+      ...rows.flatMap((item) => [
+        truncate(name(item), width),
+        `  queue ${duration(item.latency?.queueP50)} · gen ${duration(item.latency?.generationP50)} · step ${duration(item.latency?.stepP50)} · cache ${cached(item)}`,
+      ]),
+      ...footer,
+    ]
+  const line = (model: string, queue: string, gen: string, step: string, cache: string) =>
+    `${truncate(model, 34).padEnd(34)}${queue.padStart(9)}${gen.padStart(9)}${step.padStart(9)}${cache.padStart(9)}`
+  return [
+    title,
+    `  ${hint}`,
+    line("model", "queue", "gen", "step", "cache"),
+    ...rows.map((item) =>
+      line(
+        name(item),
+        duration(item.latency?.queueP50),
+        duration(item.latency?.generationP50),
+        duration(item.latency?.stepP50),
+        cached(item),
+      ),
+    ),
+    ...footer,
   ]
 }
 

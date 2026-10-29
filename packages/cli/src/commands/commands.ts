@@ -350,6 +350,10 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         ),
         models: Flag.Boolean("models").pipe(Flag.withDescription("Show model usage"), Flag.withDefault(false)),
         tools: Flag.Boolean("tools").pipe(Flag.withDescription("Show tool reliability"), Flag.withDefault(false)),
+        latency: Flag.Boolean("latency").pipe(
+          Flag.withDescription("Show how much of each step's wall clock was queue and prefill rather than generation"),
+          Flag.withDefault(false),
+        ),
         cost: Flag.Boolean("cost").pipe(Flag.withDescription("Show cost and token details"), Flag.withDefault(false)),
         full: Flag.Boolean("full").pipe(Flag.withDescription("Show every detailed section"), Flag.withDefault(false)),
         limit: Flag.Int("limit").pipe(

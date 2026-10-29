@@ -370,6 +370,12 @@ export namespace Step {
       tokens: TokenUsage.Info,
       snapshot: Snapshot.ID.pipe(optional),
       files: Schema.Array(RelativePath).pipe(optional),
+      /**
+       * SiCode: when the provider's first output event arrived. Paired with `Step.Started`'s `started`, this splits a
+       * step into queue+prefill (started→firstOutput) and generation (firstOutput→streamed) without inference.
+       * Absent when the step never produced output, which is exactly the case worth telling apart.
+       */
+      firstOutput: NonNegativeInt.pipe(optional),
     },
   })
   export type Ended = typeof Ended.Type
@@ -388,6 +394,8 @@ export namespace Step {
       tokens: TokenUsage.Info.pipe(optional),
       snapshot: Snapshot.ID.pipe(optional),
       files: Schema.Array(RelativePath).pipe(optional),
+      /** SiCode: see `Step.Ended.firstOutput`. */
+      firstOutput: NonNegativeInt.pipe(optional),
     },
   })
   export type Failed = typeof Failed.Type

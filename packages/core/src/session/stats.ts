@@ -8,7 +8,7 @@ import { Project } from "@opencode/schema/project"
 import { Provider } from "@opencode/schema/provider"
 import { Event } from "@opencode/schema/event"
 import { SessionEvent } from "@opencode/schema/session-event"
-import { ToolMode } from "@opencode/schema/session-stats"
+import { ToolMode, type Latency as StatsLatency } from "@opencode/schema/session-stats"
 import { TokenUsage } from "@opencode/schema/token-usage"
 import { Database } from "../database/database.js"
 import { EventTable } from "../event/sql.js"
@@ -38,6 +38,9 @@ type MessageRow = {
   cacheRead: number | null
   cacheWrite: number | null
   cost: number | null
+  timeStreamed: number | null
+  timeCompleted: number | null
+  timeFirstOutput: number | null
 }
 
 type ToolRow = {
@@ -58,6 +61,16 @@ type ModelAggregate = {
   steps: number
   tokens: Tokens
   cost: number
+  latency: LatencySample
+}
+
+/** Raw per-step timings kept until the end so the report can take medians instead of averages. */
+type LatencySample = {
+  queue: number[]
+  generation: number[]
+  step: number[]
+  prompt: number
+  cacheRead: number
 }
 
 type ToolAggregate = {
@@ -133,7 +146,10 @@ export const get = Effect.fn("SessionStats.get")(function* (input: Input = {}) {
             json_extract(message.data, '$.tokens.reasoning') AS reasoning,
             json_extract(message.data, '$.tokens.cache.read') AS cacheRead,
             json_extract(message.data, '$.tokens.cache.write') AS cacheWrite,
-            json_extract(message.data, '$.cost') AS cost
+            json_extract(message.data, '$.cost') AS cost,
+            json_extract(message.data, '$.time.streamed') AS timeStreamed,
+            json_extract(message.data, '$.time.completed') AS timeCompleted,
+            json_extract(message.data, '$.time.firstOutput') AS timeFirstOutput
           FROM ${SessionMessageTable} AS message
           JOIN ${SessionTable} AS session ON session.id = message.session_id
           WHERE message.type IN ('user', 'assistant')
@@ -172,11 +188,13 @@ export const get = Effect.fn("SessionStats.get")(function* (input: Input = {}) {
                   steps: 0,
                   tokens: emptyTokens(),
                   cost: 0,
+                  latency: emptyLatency(),
                 }
                 models.set(key, model)
                 model.steps++
                 model.cost += row.cost ?? 0
                 addTokens(model.tokens, tokens)
+                addLatency(model.latency, row)
               })
             }),
           ),
@@ -342,7 +360,13 @@ export const get = Effect.fn("SessionStats.get")(function* (input: Input = {}) {
     activity: days.map(([date, steps]) => ({ date, steps })),
     models: [...models.values()]
       .sort((a, b) => TokenUsage.total(b.tokens) - TokenUsage.total(a.tokens))
-      .map((model) => ({ ...model, cost: Money.USD.make(model.cost) })),
+      .map((model) => ({
+        model: model.model,
+        steps: model.steps,
+        tokens: model.tokens,
+        cost: Money.USD.make(model.cost),
+        latency: latencyInfo(model.latency),
+      })),
   }
 })
 
@@ -368,6 +392,37 @@ function rowTokens(row: MessageRow): Tokens {
 
 function emptyTokens(): Tokens {
   return { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+}
+
+function emptyLatency(): LatencySample {
+  return { queue: [], generation: [], step: [], prompt: 0, cacheRead: 0 }
+}
+
+/**
+ * SiCode: `created` is when the request was dispatched, `firstOutput` when the provider produced its
+ * first token, `streamed` when the body ended, `completed` after tools settled. Subtracting the two
+ * middle ones is the only way to tell a slow endpoint apart from a slow model without guessing.
+ */
+function addLatency(sample: LatencySample, row: MessageRow) {
+  sample.prompt += (row.input ?? 0) + (row.cacheRead ?? 0) + (row.cacheWrite ?? 0)
+  sample.cacheRead += row.cacheRead ?? 0
+  if (row.timeStreamed === null) return
+  const settled = row.timeCompleted ?? row.timeStreamed
+  sample.step.push(settled - row.timeCreated)
+  if (row.timeFirstOutput === null) return
+  sample.queue.push(row.timeFirstOutput - row.timeCreated)
+  sample.generation.push(row.timeStreamed - row.timeFirstOutput)
+}
+
+function latencyInfo(sample: LatencySample): StatsLatency {
+  const cacheRead = sample.prompt > 0 ? sample.cacheRead / sample.prompt : undefined
+  return {
+    sampled: sample.queue.length,
+    queueP50: median(sample.queue),
+    generationP50: median(sample.generation),
+    stepP50: median(sample.step),
+    cacheRead,
+  }
 }
 
 function addTokens(target: Tokens, source: TokenUsage.Info) {

@@ -265,6 +265,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
       "session.step.ended": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           draft.time.completed = created
+          if (event.data.firstOutput !== undefined) draft.time.firstOutput = DateTime.makeUnsafe(event.data.firstOutput)
           draft.finish = event.data.finish
           draft.rawFinish = event.data.rawFinish
           draft.native = castDraft(event.data.native)
@@ -276,6 +277,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
       "session.step.failed": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           draft.time.completed = created
+          if (event.data.firstOutput !== undefined) draft.time.firstOutput = DateTime.makeUnsafe(event.data.firstOutput)
           draft.finish = event.data.finish ?? "error"
           draft.rawFinish = event.data.rawFinish
           draft.native = castDraft(event.data.native)

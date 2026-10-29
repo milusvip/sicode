@@ -3918,10 +3918,23 @@ describe("SessionRunnerLLM", () => {
     expect(events.indexOf("session.step.streamed.1")).toBeLessThan(events.indexOf("session.tool.success.2"))
     expect(events.indexOf("session.tool.success.2")).toBeLessThan(events.indexOf("session.step.ended.1"))
     expect(events.filter((type) => type === "session.step.streamed.1")).toHaveLength(2)
+    // SiCode: the first output timestamp splits queue+prefill from generation, so it has to reach the store.
+    const ended = requireAssistant(yield* s.context)
+    expect(ended.time.firstOutput).toBeDefined()
+    expect(DateTime.toEpochMillis(ended.time.firstOutput!)).toBe(
+      DateTime.toEpochMillis(ended.time.created) + 2_000,
+    )
+    expect(DateTime.toEpochMillis(ended.time.firstOutput!)).toBeLessThanOrEqual(
+      DateTime.toEpochMillis(ended.time.streamed!),
+    )
     yield* replaySessionProjection(sessionID)
     const replayed = (yield* s.context).find((message) => message.id === assistant.id)
     expect(replayed).toMatchObject({
-      time: { created: assistant.time.created, streamed: assistant.time.streamed },
+      time: {
+        created: assistant.time.created,
+        firstOutput: ended.time.firstOutput,
+        streamed: assistant.time.streamed,
+      },
       tokens: { output: 20, reasoning: 80 },
     })
   })
