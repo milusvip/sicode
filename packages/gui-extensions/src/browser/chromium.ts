@@ -120,6 +120,40 @@ function zoomStep(current: number, direction: "in" | "out" | "reset") {
   return zoomSteps.findLast((step) => step < current - 0.001) ?? current
 }
 
+// SiCode: every browser pane gets its own partition (`opencode-browser-<uuid>`), and a partition
+// session is a separate network stack that does not inherit the OS proxy — so the side browser went
+// direct and could not reach anything that needs the proxy, while the system browser could. Chromium
+// still knows the OS proxy (registry and any PAC), so resolve it once through the default session
+// and pin it onto the partition's. Local traffic stays direct regardless: this app talks to its own
+// sidecar over loopback, and the upstream `proxy-bypass-list <-loopback>` switch would otherwise
+// send those requests through the proxy too.
+let resolved: Promise<string | undefined> | undefined
+
+function systemProxyRules() {
+  resolved ??= (async () => {
+    try {
+      const answer = await electron.session.defaultSession.resolveProxy("https://example.com")
+      const entry = answer
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.toUpperCase().startsWith("PROXY "))
+      const host = entry?.slice(6).trim()
+
+      return host ? `http://${host}` : undefined
+    } catch {
+      return undefined
+    }
+  })()
+
+  return resolved
+}
+
+async function applySystemProxy(session: Electron.Session) {
+  const rules = await systemProxyRules()
+  if (!rules) return
+  session.setProxy({ proxyRules: rules, proxyBypassRules: "<local>,localhost,127.0.0.1,[::1]" })
+}
+
 export type BrowserPage = ReturnType<typeof createBrowserPage>
 
 export function createBrowserPage(
@@ -172,6 +206,7 @@ export function createBrowserPage(
   })
 
   const contents = view.webContents
+  void applySystemProxy(contents.session)
   const detachNetwork = options.network?.attach(contents)
   contents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return
@@ -624,6 +659,7 @@ export function createBrowserPage(
       )
 
       if (closed) throw new Error("Browser tab was closed. Open the page again to write cookies.")
+
       if (page) contents.reload()
 
       // SiCode: whether the site accepted the session is otherwise invisible. Read the two signals
@@ -637,6 +673,7 @@ export function createBrowserPage(
       const names = new Set(cookies.map((cookie) => cookie.name))
       const readable = await contents.session.cookies.get({ url: contents.getURL() }).catch(() => [])
       const kept = readable.filter((cookie) => names.has(cookie.name)).length
+
       const form = await cdp
         .send("Runtime.evaluate", {
           expression: "!!document.querySelector('input[type=password]')",
@@ -961,6 +998,7 @@ export function createBrowserPage(
         await waitFor(
           async () => {
             if (action.condition === "load") return !contents.isLoading()
+
             if (action.condition === "response") return diagnostics.completedSince({ urlContains: text, since })
             const context = action.frameID ? contexts.get(action.frameID) : undefined
 
@@ -997,14 +1035,18 @@ export function createBrowserPage(
           throw new Error(
             "Choose either ref for an element screenshot or fullPage:true for the whole page. Remove the other argument before retrying.",
           )
-        await waitFor(() => view.getVisible() && win.isVisible() && !win.isMinimized(), signal, 3_000).catch(
-          (error) => {
-            if (signal.aborted) throw error
-            throw new Error(
-              "Screenshot needs a visible tab. Call browser.tabs.focus and keep its desktop window visible.",
-            )
-          },
-        )
+
+        // Capture works for hidden/minimized tabs: no tabs.focus, no window raise.
+        // Reject only when there is no real document (about:blank or failed load).
+        if (closed || !content)
+          throw new Error(
+            "This tab has no document to capture yet (blank page or failed load). Navigate to a page first, then take the screenshot.",
+          )
+
+        // Before rect() and getLayoutMetrics, so a closed window reports this instead of a native throw.
+        if (win.isDestroyed())
+          throw new Error("This tab's desktop window was closed. Open the page again, then take the screenshot.")
+
         const element = action.ref ? await rect(target(action.ref), true) : undefined
         const metrics = await cdp.send("Page.getLayoutMetrics")
 
@@ -1033,7 +1075,12 @@ export function createBrowserPage(
 
         if (bounds.width * bounds.height * (scale * pixelRatio) ** 2 > 16_000_000)
           throw new Error("Screenshot exceeds 16 megapixels; capture an element or use a smaller maxWidth.")
+
         const format = action.format ?? "jpeg"
+
+        // A hidden tab is never laid out by the renderer, so it may have no composed frame
+        // to read back. capturePage keeps the page hidden while forcing one (see rect()).
+        if (!view.getVisible()) await contents.capturePage(undefined, { stayHidden: false, stayAwake: true })
 
         const capture = await cdp.send("Page.captureScreenshot", {
           format,
@@ -1042,7 +1089,14 @@ export function createBrowserPage(
           clip: { ...bounds, scale },
         })
 
-        const id = await files.save(`screenshot.${format}`, `image/${format}`, Buffer.from(capture.data, "base64"), [
+        const bytes = Buffer.from(capture.data, "base64")
+
+        if (bytes.byteLength === 0)
+          throw new Error(
+            "Chromium returned an empty screenshot frame for this tab. Repeating the capture will produce the same empty frame; report the capture failure instead. If the tab is still loading, wait for it to finish before deciding.",
+          )
+
+        const id = await files.save(`screenshot.${format}`, `image/${format}`, bytes, [
           ...captureSources,
           ...sourceURLs(),
         ])
@@ -1250,6 +1304,7 @@ export function createBrowserPage(
 
     return frameTree().then((tree) => {
       if (frameCache?.at === at && at === revision) frameCache = { at, tree }
+
       return tree
     })
   }
@@ -1330,6 +1385,7 @@ export function createBrowserPage(
   async function rect(element: Element, scroll = false) {
     if (scroll) {
       await cdp.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: element.backendID }, element.sessionID)
+
       // Force a compositor update after scrolling. requestAnimationFrame can
       // stall in a hidden WebContentsView, even with background throttling off.
       // A visible page repaints on its own; capturing it wastes a full frame per action.
@@ -1391,6 +1447,7 @@ export function createBrowserPage(
 
   async function click(element: Element, button = "left", count = 1, modifiers: readonly string[] = []) {
     const position = await point(element)
+
     // Synthetic input lands on whatever is topmost at the point, which would report success while
     // a cookie banner or overlay swallowed it. check and fill read back their result; click
     // verifies first: the element, or a node inside its shadow tree, must be hit at its center.
