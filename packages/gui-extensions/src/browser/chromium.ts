@@ -23,8 +23,11 @@ import type { PaneElement } from "./ipc"
 
 type Element = { backendID: number; frameID: string; sessionID?: string }
 
-/** State every page of the pane shares: the element ref allocator and the app-wide trace recording. */
-export type Shared = { ref: () => string; recording?: Recording }
+/**
+ * State every page of the pane shares: the element ref allocator, the app-wide trace recording, and
+ * the resolved OS proxy. The pane creates one of these per window, so nothing here outlives it.
+ */
+export type Shared = { ref: () => string; recording?: Recording; proxy?: Promise<string | undefined> }
 
 // Captures and downloads belong to the tab, not whichever document it now shows; navigate replaces it anyway.
 const retainedOperations: readonly Browser.Method[] = [
@@ -126,11 +129,10 @@ function zoomStep(current: number, direction: "in" | "out" | "reset") {
 // still knows the OS proxy (registry and any PAC), so resolve it once through the default session
 // and pin it onto the partition's. Local traffic stays direct regardless: this app talks to its own
 // sidecar over loopback, and the upstream `proxy-bypass-list <-loopback>` switch would otherwise
-// send those requests through the proxy too.
-let resolved: Promise<string | undefined> | undefined
-
-function systemProxyRules() {
-  resolved ??= (async () => {
+// send those requests through the proxy too. The promise lives on the pane's shared state so a
+// window that is closed, or an extension that is disabled and reloaded, does not keep it around.
+function systemProxyRules(shared: Shared) {
+  shared.proxy ??= (async () => {
     try {
       const answer = await electron.session.defaultSession.resolveProxy("https://example.com")
       const entry = answer
@@ -145,11 +147,11 @@ function systemProxyRules() {
     }
   })()
 
-  return resolved
+  return shared.proxy
 }
 
-async function applySystemProxy(session: Electron.Session) {
-  const rules = await systemProxyRules()
+async function applySystemProxy(session: Electron.Session, shared: Shared) {
+  const rules = await systemProxyRules(shared)
   if (!rules) return
   session.setProxy({ proxyRules: rules, proxyBypassRules: "<local>,localhost,127.0.0.1,[::1]" })
 }
@@ -206,7 +208,7 @@ export function createBrowserPage(
   })
 
   const contents = view.webContents
-  void applySystemProxy(contents.session)
+  void applySystemProxy(contents.session, options.shared)
   const detachNetwork = options.network?.attach(contents)
   contents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return
