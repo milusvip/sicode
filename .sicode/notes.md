@@ -611,6 +611,9 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 新工具 `tool/plugin/callgraph.ts`：`callers`/`callees`/`impact` 三合一，注册在 `plugin/internal.ts`（grep 之后），system.txt 的 `# Parallelizing search` 段加「结构问题用 callgraph 别 grep」。
 - 实测（本仓）：`callers makeLocationNode` → 30+ 文件命中；`callers searchGuidance` → system-prompt.ts；冷查询 450~570ms（含 refresh）。首次 query 会遇到 v1→v2 缓存迁移的一次性空结果，属预期。
 - 诚实登记：调用边是「按符号名」的近似（overload/动态分发会错），工具描述和 render 文案都写明「确认前先 read」。
+- callgraph impact 曾雪崩（已修）：原实现走「谁调用了定义文件里的**所有**符号」传递闭包，`makeLocationNode` 定义在 app-node.ts（同文件还导出 tags/makeGlobalNode 等），结果 impact 返回 2767 个文件（连 .mjs 探针都算进去）。根因是按 bare name 匹配时传递闭包本身无定义。修法：impact 降级为「直接 callers」（一跳），render/工具描述都写明「direct callers, re-run for next hop」。修后 `impact makeLocationNode` = 59 个真实调用文件，与 callers 一致。
+- 重要校准（用户用 SiCode 实测三份对话）：`makeLocationNode` 真实调用点 59 个（callgraph 提取，不含 import），grep 含 import 是 79 文件/87 调用点。这验证了 callgraph 的 `calls` 提取**正确排除了 import**（import 不产生 call 节点）——比 grep 更准。模型之前「callgraph 是 import 噪声」的判断是错的，实际 callgraph 已经是对的，只有 impact 雪崩是真 bug。
+- 教训：callgraph 工具上线后第一次真实使用就暴露了 impact 雪崩，说明单元测试（用 4 个文件的小 state）没覆盖「hub 文件导出多个符号」的雪崩场景。后续测试要加「定义文件多符号」的用例。
 
 ## 侧边栏文件树
 
