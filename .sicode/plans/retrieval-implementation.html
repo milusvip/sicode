@@ -53,14 +53,14 @@
   <span class="metric">③ 同类任务的总轮数</span>
 </div>
 
-<h2>动作 0：CodeGraph 验证（第一个做，半天出结构层结论）</h2>
+<h2>动作 0：CodeGraph 验证 <span class="badge gray">已跳过（被自研工具真实验证替代）</span></h2>
 
 <div class="card phase">
   <h3>为什么排第一 <span class="badge green">收益证据最硬</span></h3>
   <ul>
     <li>结构层是唯一有<b>独立复现数据</b>的方向：追调用链任务步数 −34%、成本 −16%（rustman 10-27 实测）</li>
-    <li>装上就测：<code>npx @colbymchenry/codegraph</code> 自动识别 opencode；拿黄金问题集跑「改这个签名影响哪些文件」「这条调用链怎么走」两类任务</li>
-    <li>两个产出：① 结构层（3a/3b）的基线对照数据 ② 它「哪里好用哪里不好用」的设计清单（直接修正 3a 设计，绕开它踩过的坑）</li>
+    <li><b>实际未装</b>：本打算装 <code>npx @colbymchenry/codegraph</code> 跑黄金问题集，但最终直接用 SiCode 自己的 <code>callgraph</code> 工具在真实任务上验证了（见「真实任务验证」节），外部对照的价值已降、跳过</li>
+    <li>两个原产出（基线对照数据 / 设计清单）改为由自研工具的前后对比数据替代</li>
   </ul>
 </div>
 
@@ -141,11 +141,12 @@
   </ul>
 </div>
 
-<h2>内部验证：CodeGraph 作为设计参考（不面向用户）</h2>
+<h2>内部验证：CodeGraph 作为设计参考 <span class="badge gray">已跳过</span></h2>
 <div class="card">
   <ul>
     <li>本机装 <b>CodeGraph</b>（<code>npx @colbymchenry/codegraph</code>）——<b>v4 角色变更：不是给用户的替代品，是我们自研前的设计参考</b></li>
-    <li>拿黄金问题集跑它的 callers/impact/context，产出两份东西：① 我们结构层的基线对照数据 ② 它「哪里好用哪里不好用」的清单（直接修正 3a 设计）</li>
+    <li><b>实际未执行</b>：3a 直接落地后，用自研 callgraph 工具在真实任务上做了前后对比验证（见上节），CodeGraph 的外部对照不再必要，跳过</li>
+    <li>若日后要补，装好后拿黄金问题集跑 callers/impact/context，对比我们自研调用边的命中率与覆盖</li>
   </ul>
 </div>
 
@@ -173,7 +174,7 @@
 <h2>收益栈总览（定稿：按预期收益排序）</h2>
 <table>
   <tr><th>#</th><th>动作</th><th>预期收益（证据强度）</th><th>解决哪一半问题</th></tr>
-  <tr><td class="big">0</td><td>CodeGraph 内部验证</td><td>产出基线 + 设计清单（结构任务 −34% 为其量级参考）</td><td>为 3a/3b 修正设计</td></tr>
+  <tr><td class="big">0</td><td>CodeGraph 内部验证 <span class="badge gray">跳过</span></td><td>被自研 callgraph 真实验证替代（结构任务 −34% 为其量级参考）</td><td>为 3a/3b 修正设计</td></tr>
   <tr><td class="big">1a</td><td>查询扩展指引 <span class="badge green">✅</span></td><td>已落地，待 A/B（预估 −30~50%，无文献数）</td><td>中文意图 → 英文代码断链</td></tr>
   <tr><td class="big">1b</td><td>BM25F 分字段加权 <span class="badge green">✅</span></td><td>已落地，待 A/B（词法命中率 +20%，Cody 内部口径）</td><td>半猜半搜命中率</td></tr>
   <tr><td class="big">二</td><td>搜索子代理 <span class="badge green">✅</span></td><td>已落地（轮数下降 + 长会话稳定性，无独立数字）</td><td>上下文污染</td></tr>
