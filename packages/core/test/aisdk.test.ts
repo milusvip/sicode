@@ -24,7 +24,7 @@ import {
 import { LLMClient, RequestExecutor } from "@opencode/ai/route"
 import { compileRequest } from "@opencode/ai/route/client"
 import { expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { testEffect } from "./lib/effect"
 
@@ -323,6 +323,26 @@ it.effect("maps package-specific AI SDK provider option keys", () =>
       const prepared = yield* compileRequest(LLM.request({ model: resolved, prompt: "Hello" }))
       expect(prepared.body.providerOptions).toEqual({ [key]: settings })
     }
+  }),
+)
+
+// SiCode: pins the path a user's provider `settings` takes into the request body. `baseURL` is
+// connection material and must not leak into provider options, while `reasoningEffort` must
+// survive both the settings schema and the flattening that happens before the route defaults.
+it.effect("carries a configured reasoningEffort through the settings schema into the request body", () =>
+  Effect.gen(function* () {
+    const aisdk = yield* AISDK.Service
+    yield* aisdk.hook.sdk((event) => {
+      event.sdk = { languageModel: () => ({ provider: event.model.providerID }) }
+    })
+
+    const settings = Schema.decodeUnknownSync(Provider.Settings)({
+      baseURL: "https://m-c-api.com/v1",
+      reasoningEffort: "none",
+    })
+    const resolved = yield* aisdk.model(model("@ai-sdk/openai-compatible", settings))
+    const prepared = yield* compileRequest(LLM.request({ model: resolved, prompt: "Hello" }))
+    expect(prepared.body.providerOptions).toEqual({ "test-provider": { reasoningEffort: "none" } })
   }),
 )
 
