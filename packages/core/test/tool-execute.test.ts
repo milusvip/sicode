@@ -119,6 +119,17 @@ test("foreign typed failures settle as Tool.Error at the untrusted boundary", as
   expect(error.message).toBe("transport died")
 })
 
+test("an execution that calls nothing and returns nothing says so", async () => {
+  const codeMode = createCodeMode(new Map())
+  const idle = await Effect.runPromise(codeMode.execute({ code: "const unused = 1 + 1" }, context))
+  expect(idle.output.output).toContain("called no tools and returned no value")
+  expect(idle.metadata).toEqual({ toolCalls: [] })
+
+  // A program that returns a value is a real answer even when it touches no tools.
+  const computed = await Effect.runPromise(codeMode.execute({ code: "return 1 + 1" }, context))
+  expect(computed.output.output).toBe("2")
+})
+
 test("execute supports callable namespace tools", async () => {
   const callable: Info = {
     name: "admin",

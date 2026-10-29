@@ -122,7 +122,15 @@ export const create = (
         const collected = (yield* Ref.get(files))
           .toSorted((left, right) => left.index - right.index)
           .flatMap((item) => item.files)
-        const output = formatResult(result)
+        // SiCode: a program that called nothing and produced nothing is a wasted step -- the model only
+        // finds out on the next turn ("that call did nothing useful"). Say it in the result instead of
+        // handing back a bare `undefined`, which reads like a successful run.
+        const idle = result.ok && toolCalls.length === 0 && emptyValue(result.value)
+        const output = idle
+          ? [formatResult(result), "Note: this execution called no tools and returned no value."]
+              .filter((part) => part !== "")
+              .join("\n\n")
+          : formatResult(result)
         const value: typeof ExecuteOutput.Type = {
           output,
           toolCalls,
@@ -347,6 +355,12 @@ function formatResult(result: CodeMode.Result) {
 function formatValue(value: CodeMode.DataValue) {
   if (typeof value === "string") return value
   return JSON.stringify(value, null, 2) ?? String(value)
+}
+
+// `null`, `undefined`, and `""` are what a program returns when it assigned something and forgot to
+// return it, or when the last statement had no value. They carry no information for the model.
+function emptyValue(value: CodeMode.DataValue) {
+  return value === null || value === undefined || value === ""
 }
 
 function outputFiles(content: ReadonlyArray<Content>): Array<typeof ExecuteFile.Type> {
