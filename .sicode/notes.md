@@ -482,6 +482,20 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - RE/破解授权段落决定不改：8 个 prompt 文件（system.txt + 7 个 provider txt）每份都带 RE+Authorization，system.txt 那份是「无命中」模型（自定义 provider / GLM / Qwen / 本地）的唯一来源；删掉或改成按需注入，意图检测漏判就是灾难性失败（模型道德拒绝正当任务、不可自动恢复）。append 模式（anthropic/deepseek）会读到两份，属可接受啰嗦。
 - `<authorization>` 块从未被注入：全仓 grep 只存在于 .txt 引用里，没有任何代码把它塞进 session 的 system 数组，8 处都是死引用。观察项 —— RE 段其余条文独立生效，不影响现有能力。
 - 提示词体积：system.txt 1424 tok、工具静态 description 合计 609 tok，整体走极精简路线；RE 段在 system.txt 占 26% 篇幅、在 kimi/trinity/meta 里排到 74% 之后。
+- 2026-10-30 复测（4 会话 / 16 回合 / 178 步，deepseek-v4.1-flash）：步耗时中位 6.9 秒 = 生成 2.5 秒（42%）+ 固定成本 4.2 秒（58%）。这是"想得久"体感的来源：屏幕上一半时间没有输出。
+- 固定成本的主因是端点而非上下文：同模型不同端点步耗时中位 m-c-api 5.8~10.4 秒 / lianyi 12.9 / deepseek1 21.9，后两者在同一会话内交替出现，排除了任务难度混淆。按上下文分桶（9k→170k）固定成本 3.3/4.3/5.8/7.0/3.7/3.6 秒非单调；会话内中心化后上下文系数 0.016 秒/10k，控制输出后≈0。**与 perf/session-speed-report.html 的 0.08 秒/1k 冲突，等 TTFT 埋点后 A/B 定论，暂不把压上下文当主线。**
+- 缓存：每步 prompt 中位 78153 token，缓存读占 90.7%，缓存写 0（DeepSeek 隐式前缀缓存）。命中 <60% 的步固定成本 6.6 秒，≥95% 的 4.0 秒——缓存只解释 15% 的步。
+- reasoning 是长尾不是普遍现象：中间步 reasoning 中位 53 token，但 27 步 >800 token（25 个在中间步）且中位 21.9 秒。所以 per-step effort 应压中间步上限，不能全局降。
+- 71% 的步只发 1 个工具调用 → 一次往返换一个工具结果。减少请求次数（扇出 / 只读批处理）比减 token 更值钱。
+- 观测缺口：没有 firstToken 时间戳，无法直接拆"排队+prefill"与"生成"，本次只能靠回归反推。补点在 `session/runner/publish-llm-event.ts`，随 `SessionEvent.Step.Ended` 落库。
+- 已排除：本地 CPU/磁盘（`git status` 全仓 0.2 秒，快照在 `runner/step.ts:76` 已 fork 到请求之外）、执行侧整体只占单步 21%（0.9 秒）、工具并发（`step.ts:122` 已按 tool-call 到达即 fork）。
+- 方案落在 `perf/latency-plan.md`：P0 补 firstToken 埋点 + `stats latency`；P1 端点健康表每回合一次路由；P2 每步 effort 路由（`runner/model.ts:98` 现在是会话级，`runner/llm.ts:277` 是重解析点）；P3 探索扇出复用 `session/subagent-job.ts`。
+- 单轮耗时归因（2026-10-30，`ses_e7785b80dffdNl7gSFw0V44YgT`，115 轮 deepseek-v4.1-flash 走 m-c-api）：平均 14.5s/轮 = 模型段 11.1s + 工具段 4.3s。**通道不是瓶颈**——用户后台日志显示首字 1.56~5.05s，一条 API 14.6s 与本会话单轮 14.5s 完全吻合，说明 SiCode 调度/工具层无额外拖慢。上下文大小也几乎无关（耗时↔总上下文相关 0.15，因缓存命中后每轮仅 5000 token 需真 prefill），所以「压缩阈值前移」在此场景**无收益，已撤回不做**。
+- 真凶是 **reasoning**：111 个计费回合里 output 平均 355 token、reasoning 平均 371 token（**占 104%，比说出来的还多**），合计 41,174 token。最极端一轮想 6556 token、只说 200 token、耗时 69.9s。按实测速度（端到端约 50 tok/s）估算，reasoning 归零可省 7.4s/轮 × 115 轮 ≈ 14 分钟。
+- 关思考的实测（直接打 m-c-api）：`reasoning_effort: "none"` → reasoning 字符归零、completion 从 111 降到 56 ✓；`thinking: {type:"disabled"}` → 无效（reasoning 仍在）✗。传参形态也实测过：`{"m-c-api": {reasoningEffort:"none"}}` 生效，扁平 `{reasoningEffort:"none"}` 被 @ai-sdk/openai-compatible **静默丢弃**（它只读 provider 名命名空间）。
+- **零代码改动即可**：provider 的 `settings` 里写 `"reasoningEffort": "none"` 就生效。链路是 `Provider.Settings`（StructWithRest 保留额外键，`packages/schema/src/provider.ts:53`）→ `requestSettings` 不过滤该键（`packages/core/src/aisdk.ts:453`）→ `route.defaults.providerOptions`（`aisdk.ts:402`）→ `resolveRequestOptions` 合并（`packages/ai/src/route/client.ts:260`）→ `requestProviderOptions` 包成 `{[optionKey]: …}`（`aisdk.ts:465`）。第 `packages/core/test/aisdk.test.ts` 的 "maps package-specific AI SDK provider option keys" 早已覆盖后半段。
+- **我踩的坑（记住别再犯）**：查链路时只看到 `defaults.providerOptions` 是扁平的，就断定「配置传不到请求」，改了 `aisdk.ts:402` 去镜像嵌套键 —— 破坏 6 个测试，因为包成嵌套的那一步发生在 `requestProviderOptions`，不在 defaults。**教训：改这类分层透传前先跑既有测试，它往往已经写着答案。** 回退后新增一条测试（经 `Provider.Settings` schema 解码 → compileRequest）钉住「配置里的 reasoningEffort 能到请求体、baseURL 不能」。
+- 风险如实登记：`none` 对纯检索类任务（本会话）无损，但复杂推理/改码任务可能降质，需要 A/B。目前只能改配置文件 + 重启，**没有 UI 或会话级开关**，这是产品化缺口。
 
 ## 代码检索 / LSP
 
