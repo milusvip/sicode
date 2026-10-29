@@ -268,7 +268,9 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
     })),
   ])
 
-  const variants = createMemo(() => ["default", ...adapter.controls().model.selection.variant.list()])
+  // SiCode: the slider reads left to right from least to most effort, so the implicit
+  // "no overlay" choice belongs after the explicit levels instead of in front of them.
+  const variants = createMemo(() => [...adapter.controls().model.selection.variant.list(), "default"])
 
   const variantLabel = (value: string) => {
     const key = variantLabelKeys.get(value)
