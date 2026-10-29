@@ -513,6 +513,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 配置写法（`~/.config/opencode/opencode.jsonc`）：`models.<id>.variants` 是**数组**，元素 `{id, settings?, headers?, body?}`（`packages/schema/src/config/provider.ts:107` 的 `Schema.Struct({id,...ModelOverlays}).pipe(Schema.Array)`；注意 app 层测试里见过的 `variants: {low:{}}` 是 UI 的 Record 表示，不是配置格式）。实测 `withVariant(model,"none")` → `settings={reasoningEffort:"none"}`，不选 → `settings=undefined`。
 - **m-c-api 的 deepseek-v4.1-flash 只有「关」是真的**：简单 prompt（3+4）下 reasoning 字符 unset 31 / none **0** / low 51 / medium 45 / high 81——波动比梯度大，unset 反比 low 少；复杂 prompt 下 minimal~high 全部把 3000 token 打满、无差别。所以只配 `[{id:"none"}]` 一档，滑条显示「默认 / 关闭」。**别给用户配 low/medium/high，那是假档位。**
 - 踩坑记录：第一次用复杂 prompt 测档位，所有档位 completion 都打满 `max_tokens`，误判成「全部满额思考」——实际是被截断导致看不出差异，换简单 prompt 才看到梯度。**测 reasoning effort 必须保证不撞 max_tokens。**
+- **修正上一条（结论反转，2026-10-30）**：原来写「m-c-api 的 deepseek-v4.1-flash 只有 none 有效、low/medium/high 没梯度」——**那是错的**，测法有问题。用「3+4 等于几」这类题思考只有 100~200 字，而单次波动就有 44~103 字，噪声盖过信号；第一次用复杂题又撞了 max_tokens=3000 被截断，所有档位都看成「打满」。换成需要真推理的题（17 只羊），每档跑 8 次：**none=0、low 均值 327（中位 299）、medium 358（349）、high 442（522）**，梯度明确。所以四档全配成 variants，滑条顺序「默认 → 关闭 → 低 → 中 → 高」。
+- **教训（比结论本身值钱）**：测 reasoning effort 必须 ① 用需要思考的任务（算术题思考量太小）② 保证不撞 max_tokens（撞了就全是「满额」）③ 至少 8 次采样看中位数（单次差异会被波动吃掉）。三档真实差异只有 30~80 字（约 35%），用户体感上不会明显，真正省时间的是「关闭」。
 
 ## 代码检索 / LSP
 
