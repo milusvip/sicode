@@ -14,6 +14,7 @@ export default {
   "view.fullscreen": "Enter full screen",
   "view.exitFullscreen": "Exit full screen",
   "view.binary": "Binary file · {{size}}",
+  "view.revealInFolder": "Open containing folder",
   "view.table.rows.one": "{{count}} row",
   "view.table.rows.other": "{{count}} rows",
   "view.table.columns.one": "{{count}} column",

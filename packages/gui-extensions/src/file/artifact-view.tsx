@@ -20,13 +20,14 @@ import { SegmentedControl, SegmentedControlItem } from "@opencode/ui/segmented-c
 import { ScrollView } from "@opencode/ui/scroll-view"
 import { Markdown } from "@opencode/session-ui/markdown"
 import { MarkdownProvider, useMarkdown } from "@opencode/session-ui/context/markdown"
+import { showToast } from "@opencode/ui/toast"
 import { artifactKind, type ArtifactKind } from "@opencode/util/artifact"
 import { getDirectory, getFilename } from "@opencode/util/path"
 import { createKeyed, useExtension, type FileContent, type MountedSession } from "../sdk"
 import { blobUrlFromContent, bytesFromContent, contentBytes, parseDelimited, resolveArtifactPath } from "./artifact"
 import { current, useShared } from "./context"
 import { FileViewer } from "./contract"
-import { workspaceFileUrl } from "./path"
+import { resolveOpenInAppPath, workspaceFileUrl } from "./path"
 
 type ArtifactMode = "preview" | "source"
 
@@ -127,6 +128,30 @@ export default function ArtifactView(props: {
 
   const size = () => formatBytes(locale.locale(), contentBytes(props.content))
 
+  // Nothing this view renders can open a binary, so the placeholder hands it to the system file manager, which
+  // shows the folder with the file already selected. Only the desktop can reach the filesystem, and only a local
+  // session's paths are on this machine.
+  const canReveal = () => !!ctx.desktop && props.session.server.local && !!props.path
+
+  const reveal = () => {
+    const desktop = ctx.desktop
+    const root = ctx.screen.current()?.file.root
+
+    if (!desktop || root === undefined) return
+
+    const failed = (cause?: unknown) =>
+      showToast({
+        variant: "error",
+        title: ctx.t("common.requestFailed"),
+        description: cause instanceof Error ? cause.message : props.path,
+      })
+
+    desktop.reveal(resolveOpenInAppPath(root, props.path)).then((revealed) => {
+      // A missing file is the usual reason: the tab outlived the file on disk.
+      if (!revealed) failed()
+    }, failed)
+  }
+
   // A kind the file view does not render itself goes to the first extension viewer that lists it.
   const viewer = createMemo(() => {
     const value = kind()
@@ -163,7 +188,16 @@ export default function ArtifactView(props: {
         }
       />
       <Show when={!previewable() || state().mode === "preview"} fallback={props.source}>
-        <Switch fallback={<ArtifactBinary path={props.path} size={size()} reason={state().reason} />}>
+        <Switch
+          fallback={
+            <ArtifactBinary
+              path={props.path}
+              size={size()}
+              reason={state().reason}
+              onReveal={canReveal() ? reveal : undefined}
+            />
+          }
+        >
           <Match when={kind() === "image" || kind() === "svg"}>
             <ArtifactImage path={props.path} content={props.content} {...media} />
           </Match>
@@ -191,6 +225,7 @@ export default function ArtifactView(props: {
                 content={props.content}
                 onDetails={(details) => change({ info: { details } })}
                 onError={fail}
+                onReveal={canReveal() ? reveal : undefined}
               />
             )}
           </Match>
@@ -848,6 +883,7 @@ function ArtifactViewer(props: {
   content: FileContent
   onDetails: (details: readonly string[]) => void
   onError: (reason?: string) => void
+  onReveal?: () => void
 }) {
   // Checked together, so the check only ever reads bytes freshly decoded, never ones the viewer has moved away.
   const decoded = createMemo(() => {
@@ -859,7 +895,9 @@ function ArtifactViewer(props: {
   return (
     <Show
       when={!decoded().problem}
-      fallback={<ArtifactBinary path={props.path} size={props.size} reason={decoded().problem} />}
+      fallback={
+        <ArtifactBinary path={props.path} size={props.size} reason={decoded().problem} onReveal={props.onReveal} />
+      }
     >
       <ErrorBoundary
         // Taking the error makes Solid call this once per error, untracked, rather than render it as a reactive child.
@@ -867,7 +905,7 @@ function ArtifactViewer(props: {
           // Fails the file as a rejection does: its details leave the toolbar, and a reloaded file mounts a new viewer.
           props.onError()
 
-          return <ArtifactBinary path={props.path} size={props.size} />
+          return <ArtifactBinary path={props.path} size={props.size} onReveal={props.onReveal} />
         }}
       >
         <Dynamic
@@ -881,7 +919,11 @@ function ArtifactViewer(props: {
   )
 }
 
-function ArtifactBinary(props: { path: string; size: string; reason?: string }) {
+/**
+ * The last resort for a file nothing can show. Its content cannot be read here at all, so the one action worth
+ * offering is the system's own: the folder opens with the file selected, and the OS decides how to view it.
+ */
+function ArtifactBinary(props: { path: string; size: string; reason?: string; onReveal?: () => void }) {
   const ctx = useExtension()
 
   return (
@@ -891,6 +933,11 @@ function ArtifactBinary(props: { path: string; size: string; reason?: string }) 
         <div class="text-14-medium text-text-strong">{getFilename(props.path)}</div>
         <div class="text-13-regular text-text-weak">{ctx.t("view.binary", { size: props.size })}</div>
         <Show when={props.reason}>{(reason) => <div class="text-13-regular text-text-weak">{reason()}</div>}</Show>
+        <Show when={props.onReveal}>
+          <Button size="small" variant="outline" icon="folder" class="mt-1" onClick={() => props.onReveal?.()}>
+            {ctx.t("view.revealInFolder")}
+          </Button>
+        </Show>
       </div>
     </div>
   )

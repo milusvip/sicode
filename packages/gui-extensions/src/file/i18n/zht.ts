@@ -14,6 +14,7 @@ export default {
   "view.fullscreen": "進入全螢幕",
   "view.exitFullscreen": "離開全螢幕",
   "view.binary": "二進位檔案 · {{size}}",
+  "view.revealInFolder": "開啟所在資料夾",
   "view.table.rows.one": "{{count}} 行",
   "view.table.rows.other": "{{count}} 行",
   "view.table.columns.one": "{{count}} 欄",
