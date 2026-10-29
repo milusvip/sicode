@@ -287,19 +287,17 @@ export function LeftSidebar() {
     )
   }
 
-  /** Every live row the column currently shows, so "select all" means what is on screen. */
+  /** Every live row the column currently shows: the widest scope the batch bar can pick. */
   const selectable = createMemo<SelectedRow[]>(() =>
     visibleGroups().flatMap((group) => group.sessions.map((session) => ({ key: group.key, session }))),
   )
 
-  const allSelected = () => {
-    const rows = selectable()
+  /** The rows of the project in view: the narrow scope, and the one most clean-ups actually mean. */
+  const currentRows = createMemo<SelectedRow[]>(() => {
+    const group = current()
 
-    return rows.length > 0 && rows.every((row) => isSelected(row.key, row.session))
-  }
-
-  const toggleAllSelected = () =>
-    setSelection("ids", allSelected() ? [] : selectable().map((row) => rowID(row.key, row.session)))
+    return group ? group.sessions.map((session) => ({ key: group.key, session })) : []
+  })
 
   /** Resolves the stored ids back to rows: deletion and archiving may have removed some of them. */
   const selectedRows = () => {
@@ -351,6 +349,57 @@ export function LeftSidebar() {
 
       return map
     }, new Map<string, BatchGroup>())
+
+  /** How many projects the current selection spans: the unit an irreversible batch is measured in. */
+  const selectedProjects = () => byLocation(selectedRows()).size
+
+  /** Counted from the rows rather than the stored ids, so a leftover that no longer resolves never inflates it. */
+  const selectedCount = () => selectedRows().length
+
+  /** Picking a scope replaces the selection rather than adding to it — one click, one meaning. */
+  const selectRows = (rows: readonly SelectedRow[]) =>
+    setSelection("ids", rows.map((row) => rowID(row.key, row.session)))
+
+  /**
+   * "Select all" used to be one unparameterised click over every group in the column, and that is
+   * both the rare intent and the dangerous one: the column shows two or three projects and scrolls,
+   * so most of what it grabbed was never on screen while the delete button next to it is final.
+   * A scope menu asks the question the action actually has — *which* sessions — and carries a count
+   * per scope, so the size of the batch is known before the click instead of after the dialog.
+   *
+   * "This project" is dropped when the column holds a single project: there it would select exactly
+   * what "all" selects, and one outcome offered twice reads as two different ones.
+   */
+  const openScopeMenu = (event: MouseEvent) => {
+    const all = selectable()
+    const inProject = currentRows()
+    const items: MenuItem[] = []
+
+    if (groups().length > 1 && inProject.length > 0)
+      items.push({
+        icon: "folder",
+        label: language.t("dock.select.scope.project"),
+        shortcut: String(inProject.length),
+        onSelect: () => selectRows(inProject),
+      })
+    items.push({
+      icon: "select-element",
+      label: language.t("dock.select.scope.all"),
+      shortcut: String(all.length),
+      onSelect: () => selectRows(all),
+    })
+
+    // Clearing is its own item rather than the same entry toggling: a scope that silently means
+    // "unselect" on the second press is the ambiguity this menu exists to remove.
+    if (selectedCount() > 0)
+      items.push("separator", {
+        icon: "close",
+        label: language.t("home.sessions.select.none"),
+        onSelect: () => setSelection("ids", []),
+      })
+
+    showMenu(event, items)
+  }
 
   /**
    * One update call per session: the endpoint carries a single `archived` flag, so there is no
@@ -681,14 +730,26 @@ export function LeftSidebar() {
                   : language.t("session.delete.many.title")
               }
               description={
-                action === "archive"
-                  ? language.plural("dock.session.archive.many.confirm", count)
-                  : (
-                    <div class="flex flex-col gap-2">
-                      <div>{language.plural("session.delete.many.confirm", count)}</div>
-                      <div>{language.t("session.delete.many.warning")}</div>
+                <div class="flex flex-col gap-2">
+                  <div>
+                    {language.plural(
+                      action === "archive"
+                        ? "dock.session.archive.many.confirm"
+                        : "session.delete.many.confirm",
+                      count,
+                    )}
+                  </div>
+                  {/* The batch bar can only show that a selection is wide; this is the last place
+                      before an irreversible click where its reach is still on screen. */}
+                  <Show when={grouped.length > 1}>
+                    <div class="text-v2-text-text-faint">
+                      {language.plural("dock.batch.spread", grouped.length)}
                     </div>
-                  )
+                  </Show>
+                  <Show when={action === "delete"}>
+                    <div>{language.t("session.delete.many.warning")}</div>
+                  </Show>
+                </div>
               }
             />
           </DialogHeader>
@@ -1317,17 +1378,34 @@ export function LeftSidebar() {
                   <Icon name="close" class="size-3.5" />
                 </Button>
                 <span class="min-w-0 flex-1 truncate text-12-regular text-v2-text-text-base tabular-nums">
-                  {language.plural("home.sessions.select.count", selection.ids.length)}
+                  {/* "已选择" would be redundant here — the rows are checkboxes and the exit button
+                      is right there — and at 224px it cost the line the room that tells the user how
+                      many projects the batch reaches. */}
+                  {language.plural("dock.select.count", selectedCount())}
+                  <Show when={selectedProjects() > 1}>
+                    {/* The count alone says how many, never how far they reach — and the rows past
+                        the fold are exactly the ones the user cannot check by eye. */}
+                    <span class="text-v2-text-text-faint">
+                      {" · "}
+                      {language.plural("dock.select.projects", selectedProjects())}
+                    </span>
+                  </Show>
                 </span>
-                <Button variant="ghost" size="small" class="h-7 shrink-0 px-1.5" onClick={toggleAllSelected}>
-                  {allSelected() ? language.t("home.sessions.select.none") : language.t("home.sessions.select.all")}
+                <Button
+                  variant="ghost"
+                  size="small"
+                  class="h-7 shrink-0 gap-1 px-1.5"
+                  onClick={openScopeMenu}
+                >
+                  <span class="truncate">{language.t("dock.select.scope")}</span>
+                  <Icon name="outline-chevron-down" class="size-3 shrink-0" />
                 </Button>
               </div>
               <div class="flex items-center gap-1">
                 <Button
                   variant="neutral"
                   class="h-7 min-w-0 flex-1"
-                  disabled={selection.ids.length === 0}
+                  disabled={selectedCount() === 0}
                   onClick={() => runBatch(selectedRows(), "archive")}
                 >
                   <Icon name="archive" class="size-3.5 shrink-0" />
@@ -1336,7 +1414,7 @@ export function LeftSidebar() {
                 <Button
                   variant="danger"
                   class="h-7 min-w-0 flex-1"
-                  disabled={selection.ids.length === 0}
+                  disabled={selectedCount() === 0}
                   onClick={() => runBatch(selectedRows(), "delete")}
                 >
                   <Icon name="trash" class="size-3.5 shrink-0" />

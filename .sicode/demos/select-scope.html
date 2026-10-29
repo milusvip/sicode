@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>批量选择 · 范围菜单</title>
+<style>
+  :root {
+    --deep: #fafafa;
+    --layer: #f2f2f2;
+    --pressed: rgba(0, 0, 0, 0.06);
+    --base: #161616;
+    --faint: #808080;
+    --muted: #6b6b6b;
+    --border: #e4e4e4;
+    --danger-bg: #c8322b;
+    --danger-fg: #ffffff;
+    --menu-bg: #ffffff;
+    --menu-border: #e0e0e0;
+  }
+  .dark {
+    --deep: #080808;
+    --layer: #2e2e2e;
+    --pressed: rgba(255, 255, 255, 0.08);
+    --base: #fafafa;
+    --faint: #808080;
+    --muted: #a8a8a8;
+    --border: #232323;
+    --danger-bg: #d9483f;
+    --danger-fg: #ffffff;
+    --menu-bg: #161616;
+    --menu-border: #2a2a2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 32px;
+    background: #8a8a8a;
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 12px;
+  }
+  .stage h4 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #fff;
+    opacity: 0.85;
+    letter-spacing: 0.03em;
+  }
+  .panel {
+    position: relative;
+    width: 224px;
+    background: var(--deep);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding-top: 56px;   /* room for the popup, which opens upward from a bottom-anchored button */
+  }
+  .bar { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .line { display: flex; align-items: center; gap: 4px; height: 28px; }
+  .iconbtn {
+    width: 28px; height: 28px; flex: none; border: 0; border-radius: 6px;
+    background: transparent; color: var(--muted); font-size: 13px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .count {
+    flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    color: var(--base); font-variant-numeric: tabular-nums;
+  }
+  .count .faint { color: var(--faint); }
+  .scope {
+    flex: none; height: 28px; padding: 0 6px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--muted); font: inherit;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .scope[data-open] { background: var(--pressed); }
+  .scope .chev { font-size: 8px; opacity: 0.75; }
+  .act {
+    flex: 1; min-width: 0; height: 28px; border: 0; border-radius: 6px;
+    font: inherit; display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .act.archive { background: var(--layer); color: var(--base); }
+  .act.delete { background: var(--danger-bg); color: var(--danger-fg); }
+
+  .menu {
+    position: absolute; left: 12px; bottom: 78px; min-width: 150px;
+    background: var(--menu-bg);
+    border: 0.5px solid var(--menu-border);
+    border-radius: 8px; padding: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+  .mi { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 5px; color: var(--base); }
+  .mi.hot { background: var(--pressed); }
+  .mi .ic { width: 16px; flex: none; color: var(--muted); text-align: center; font-size: 11px; }
+  .mi .lb { flex: 1; }
+  .mi .num { flex: none; color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: 0.03em; font-variant-numeric: tabular-nums; }
+  .sep { height: 1px; margin: 4px 8px; background: var(--border); }
+</style>
+</head>
+<body>
+<script>
+  const PANELS = [
+    { dark: false, count: 12, projects: 3, label: "浅色 · 12 个 · 3 个项目" },
+    { dark: false, count: 128, projects: 12, label: "浅色 · 128 个 · 12 个项目（最宽）" },
+    { dark: true, count: 12, projects: 3, label: "深色 · 12 个 · 3 个项目" },
+  ]
+  document.body.insertAdjacentHTML("beforeend", PANELS.map((p) => `
+    <div class="stage">
+      <h4>${p.label}</h4>
+      <div class="panel ${p.dark ? "dark" : ""}">
+        <div class="menu">
+          <div class="mi hot"><span class="ic">▣</span><span class="lb">本项目</span><span class="num">9</span></div>
+          <div class="mi"><span class="ic">▤</span><span class="lb">全部会话</span><span class="num">${p.count}</span></div>
+          <div class="sep"></div>
+          <div class="mi"><span class="ic">✕</span><span class="lb">取消全选</span></div>
+        </div>
+        <div class="bar">
+          <div class="line">
+            <button class="iconbtn">✕</button>
+            <span class="count">${p.count} 个<span class="faint"> · ${p.projects} 个项目</span></span>
+            <button class="scope" data-open>范围<span class="chev">▼</span></button>
+          </div>
+          <div class="line">
+            <button class="act archive">归档</button>
+            <button class="act delete">删除</button>
+          </div>
+        </div>
+      </div>
+    </div>`).join(""))
+</script>
+</body>
+</html>
