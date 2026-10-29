@@ -933,8 +933,12 @@ export function LeftSidebar() {
                 the same 28px square 4px right and 2px above where the expanded header draws it, so
                 the control appeared to jump every time the column opened or closed. `px-2 pt-0.5`
                 is exactly the expanded header's own inset (`px-1.5` on the body plus `px-0.5
-                pt-0.5` on the block), which is the only way the two land on the same pixel. */}
-            <div class="flex w-full flex-col items-start gap-1 px-2 pt-0.5">
+                pt-0.5` on the block), which is the only way the two land on the same pixel.
+
+                SiCode: the vertical gap matches the rail's own 8px side inset (`px-2`), so the two
+                controls sit on the same spacing in both directions instead of 8px apart sideways
+                and 4px apart vertically. */}
+            <div class="flex w-full flex-col items-start gap-2 px-2 pt-0.5">
               <Button
                 variant="neutral"
                 class="size-7 shrink-0 p-0"
