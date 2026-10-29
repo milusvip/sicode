@@ -11,6 +11,7 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { Ripgrep } from "../../ripgrep.js"
+import { SearchRanked } from "../../search-ranked/index.js"
 import { NonNegativeInt, RelativePath } from "../../schema.js"
 import { ToolOutput } from "../../tool-output.js"
 
@@ -246,6 +247,28 @@ export const Plugin = {
     const permission = yield* Permission.Service
     const toolOutput = yield* ToolOutput.Service
 
+    /**
+     * SiCode: the ranked shortlist reads the repository through the same two primitives the tools
+     * use, so it sees exactly what a search would see. Built per call rather than held: it is only
+     * used after an empty result.
+     */
+    const source = (): SearchRanked.Source => ({
+      files: () =>
+        Effect.runPromise(
+          ripgrep.find({ cwd: location.directory, pattern: "*", limit: SearchRanked.MAX_FILES }).pipe(
+            Effect.map((entries) => entries.map((entry) => entry.path)),
+            Effect.catch(() => Effect.succeed([] as readonly string[])),
+          ),
+        ),
+      read: (relative) =>
+        Effect.runPromise(
+          environment.files.read(path.join(location.directory, relative)).pipe(
+            Effect.map((result) => new TextDecoder().decode(result.bytes)),
+            Effect.catch(() => Effect.succeed(undefined)),
+          ),
+        ),
+    })
+
     yield* ctx.tool
       .transform((editor) =>
         editor.add({
@@ -393,6 +416,8 @@ export const Plugin = {
                 total: mode === "count" ? page.reduce((sum, row) => sum + row.match.line, 0) : matches.length,
                 truncated: units.length > wanted,
                 prefiltered: chunks !== undefined,
+                // A single-file grep that hit nothing has nowhere better to point the model.
+                scoped: type === "file",
               }
             }).pipe(
               Effect.flatMap((result) =>
@@ -415,6 +440,18 @@ export const Plugin = {
                   if (rendered.spill !== undefined) {
                     const file = yield* toolOutput.save(Buffer.from(rendered.spill, "utf8"), ".txt")
                     content += `\n\n[Full results saved to ${file}; read it to see the ${rendered.hidden} hidden lines]`
+                  }
+                  // SiCode: an empty result is the moment the model is about to guess again, so it
+                  // gets a ranked shortlist instead of another turn spent guessing. Triggered by
+                  // the code rather than by a hint the model has to remember to ask for, and only
+                  // when the search really covered the repository — a single-file grep that missed
+                  // has nowhere better to point. `OPENCODE_RANKED=0` off.
+                  if (result.total === 0 && !result.scoped && process.env.OPENCODE_RANKED !== "0") {
+                    const suggestions = yield* Effect.tryPromise(() =>
+                      SearchRanked.suggest(source(), input.pattern),
+                    ).pipe(Effect.catch(() => Effect.succeed([] as readonly SearchRanked.Suggestion[])))
+                    const ranked = SearchRanked.render(input.pattern, suggestions)
+                    if (ranked !== "") content += `\n\n${ranked}`
                   }
                   return {
                     output: result.matches,
