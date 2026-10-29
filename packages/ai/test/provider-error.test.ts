@@ -57,6 +57,19 @@ describe("provider error classification", () => {
     expect(messages.some(isContextOverflow)).toBe(false)
   })
 
+  test("classifies 429 token throttles as rate limits, not context overflow", () => {
+    const bodies = [
+      // Cerebras, captured live
+      '{"message":"Tokens per minute limit exceeded - too many tokens processed.","type":"too_many_tokens_error","param":"quota","code":"token_quota_exceeded"}',
+      '{"message":"Token limit reached: too many tokens per minute for this model."}',
+    ]
+
+    for (const body of bodies) {
+      const reason = classifyProviderFailure({ message: providerErrorMessage(body), status: 429, rawBody: body })
+      expect(reason._tag).toBe("RateLimit")
+    }
+  })
+
   test("classifies V1 plain-text rate limit fallbacks", () => {
     expect(
       [
