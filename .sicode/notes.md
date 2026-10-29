@@ -662,6 +662,20 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **第一版踩坑（必须记住）**：直接统计全部 calls 的裸名计数，热点被 `map`(848)/`get`(683)/`filter`/`pipe`/`join` 等 JS 内置 + Effect 库方法淹没，而且 `get` 的 definedIn 列了 60+ 文件、`make` 列了 76 个——裸名去重对同名通用函数毫无意义。**修法**：过滤条件 = 定义唯一（`definedIn.length===1`）+ 多段标识符（驼峰/下划线正则 `/^[a-z][a-z0-9]*(?:[A-Z_][a-z0-9]*)+$/`），一条同时干掉 `get`（10 定义）和 `map`/`filter`（内置短名）。
 - 修后本仓实测：热点全是真项目符号 `useTheme`(71)/`makeLocationNode`(59)/`makeGlobalNode`(52)/`useI18n`/`showToast`…，token 从 2615 降到 1541（比纯符号表只多 ~400）。
 - 价值与边界：这是「结构信号」这条线的最后一块——把调用边从「按需查的工具(callgraph)」升级为「开场就铺在 map 里」。但只覆盖热点符号（前 20），低频符号仍要 grep。生效前提是 repo map 被注入（`project-map.ts` 已做，模型实测 0 次重复读 map = 注入生效）。
+- 搜索超时不再丢结果（2026-10-30）：`Ripgrep.grep` 的返回类型从 `GrepRow[]` 改成 `{ rows, timedOut }`（上面那条「返回类型是 GrepRow[]」已过时），`Ripgrep.glob` 同理改成 `{ entries, timedOut }`。`ripgrep.ts` 的 `run()` 内部把已解码的行攒进 `buffer`，用 `Effect.timeoutOption` 卡 `timeoutMs`，超时后从 buffer 取已收到的行——原来工具层 `Effect.timeoutOrElse` 直接 fail，把扫了 30 秒的结果整包扔掉，模型只能重新猜路径。
+- 超时由调用方给：`grep.ts` 和 `glob.ts` 都传 `FileSystem.DEFAULT_SEARCH_TIMEOUT_MS`（`packages/core/src/filesystem.ts:67`，仍写死 30 秒）。超时后 content 末尾追加一句「停在 N 秒预算 / 已扫到 K 条 / 用 path 或 include 收窄」，`metadata.timedOut` 同时置位；glob 走 `toModelContent` 的第三个参数（`packages/core/src/tool/plugin/glob.ts:34`）。
+- 依据是一次真实会话 `ses_e77146dd4ffdHsBdFfMR34Lc72`（144 秒 / 10 步 / 22 次工具调用，最后没找到）：模型往返 80.9 秒（56%），工具阶段 74.3 秒；22 次调用里 10 次零产出，最贵的是 `grep mihanfk D:/phpstudy_pro/WWW` 撞 30.7 秒超时后一无所获，以及最后一次无深度限制的 `Get-ChildItem -Recurse`（会话结束仍在跑）。
+- 自带 ripgrep 已进 shell 的 PATH：`packages/core/src/shell.ts:38` 的 `withSearchBin` 把 `global.bin` 前插到 `PATH`/`Path`，位置在 `create()` 构造 `invocation.env` 处。写死两条约束：① 只在 `rg` 已存在磁盘上时才加（解析 `RipgrepBinary.filepath` 会触发 GitHub 下载，shell 创建不能有这个副作用，测试里会直接炸「attempted network request」）；② env 里没有 PATH 键时原样返回（宿主托管环境下 env 由 driver 提供，凭空造一个会遮掉所有外部命令）。
+- 为什么这条值钱：该会话里模型执行 `rg --version` 得到「The term 'rg' is not recognized」，于是全程退化到 `Get-ChildItem -Directory -Recurse`（Windows 最慢的枚举方式）。本机实测：把 `~/.cache/opencode/bin` 前插后，同一 shell 里 `rg --version` 正常返回 15.1.0。
+- 测试锚点：`packages/core/test/ripgrep.test.ts` 新增两条（正常扫描 `timedOut=false` 且拿到行；`timeoutMs: 1` 时 `timedOut=true` 且不抛错）。`tool-search.test.ts` 里 8 处 `metadata` 的 `toEqual` 补了 `timedOut: false`（严格相等，加字段必须同步）。
+- ~~仍未做（P3）：`grep`/`glob` 的 `path` 类型还是 `RelativePath`（`packages/core/src/filesystem.ts:71`），且 `ripgrep` 的 `Entry.type` 在 glob/find 里硬编码 `"file"`，所以「跨盘按目录名找项目」还是得靠 shell 拼命令~~ —— **下面那条已解决**；`Entry.type` 保持 `"file"` 是对的（`--files` 从不吐目录，注释已写明）。
+- P3 落地：glob 现在能找目录（2026-10-30）。pattern 以 `/` 结尾即目录模式（`**/src/`），`glob.ts` 的 `parentDirectories()` 把 `rg --files` 列出的每个文件路径拆成祖先目录，再用 `Glob.match`（`packages/util/src/glob.ts:29`，minimatch + dot:true）按同一套 glob 语义过滤。上面的「仍未做（P3）」那条据此作废。
+- 为什么要这么绕：rg 的 `--files` 只吐文件，目录模式过去一定答「No files found」，所以「按目录名找项目」模型根本没有一等工具。不能直接用 `glob`/`fd -t d`：前者不过 .gitignore、走本地进程而不走 Location 的 spawner；推导法白拿 .gitignore 语义。
+- 两条硬边界（写进注释了）：空目录推不出来（没有文件就没有祖先）、被 rg 忽略的目录（node_modules/build 产物）看不见。所以示例用 `**/src/` 而不是 `**/node_modules/`——后者在真实仓库里恒为 0。
+- 成本：目录模式必须扫完全部文件才知道有哪些父目录，故 `DIRECTORY_SCAN_LIMIT = 50_000`（`glob.ts:26`），撞顶时 `capped` 置位并报 truncated。本仓 8659 文件、rg 列表约 0.2 秒，可接受。
+- `path` 类型从 `RelativePath` 改成 `Schema.String`（`filesystem.ts:71`/`:78`，工具层 `glob.ts`/`grep.ts` 同步），描述写明「相对或绝对，工作区外会先征求授权」。**注意：绝对路径本来就能用**——`FileAccess.resolve` 早就支持外部路径 + `external_directory` 授权，`tool-search.test.ts` 里原本就有两条外部路径用例。改类型只是把一个假名（`RelativePath` 装绝对值）改对，不是新能力。
+- rebase 语义改了：外部根不再存 `..\..\..` 逃逸路径，直接存绝对路径（`glob.ts`/`grep.ts` 的 `rebase`）。原因：渲染时会 `path.resolve` 回来，功能上等价，但逃逸路径在 transcript 里读不懂、也没法当参数喂给下一个工具。
+- 测试锚点：`tool-search.test.ts` 新增「finds a directory when the pattern ends with a slash」（断言 output 里是 `type:"directory"` 且带尾分隔符）与「searches an absolute path outside the location」（断言 output 里是绝对路径 + 发生过 `external_directory` 授权）。
 
 ## 侧边栏文件树
 
@@ -783,6 +797,9 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 位置靠后的提交（`git rev-list --count base..<commit>` 大于 600）明显更好摘：`6135e07fae`(639)、`0ca7885f26`(640)、`dc21f528ac`(642) 三条全部 automerge 无冲突，而同批中位置 183 以后的 server 改动、位置 427 的 desktop 诊断改动都在我们改过的区域里。
 - 2026-10-27 上游 `dae4077a96` 把全局 `extension` 改叫 `plugin`：`packages/gui-extensions/` 整包变成 gui-plugins/（旧目录；SiCode 没跟这次改名，仍是 gui-extensions），`packages/app/src/runtime/extension/` 变成 `runtime/plugin/`，共 928 个 rename、1179 文件。我们二开的 `gui-extensions/src/debug/*`（约 +335）和 `gui-extensions/src/browser/*` 必须整体搬到新路径，所有 `@opencode/gui-extensions` import 也要改。这是「跟到底」或「永远不跟」的二选一：不跟的话，以后任何 import `@opencode/gui-plugins` 的 app/desktop 提交都摘不了。
 - 上游 `51e4de1da6`（`put dev builds back on the shared service and database`）完整回退了 `8ee9351be9`，dev 构建重新用共享 service 和数据库。当时搁置那条的判断（local 频道不受影响、依赖 3 条链）因此被证实；以后不必再评估它。
+- 真实分叉点是 `450e7b9241`（2026-10-25），不是 AGENTS.md 与记忆里写的 `76fd05ff45`：按后者算 `76fd05ff45..upstream/dev` 得 887 条，实际该抄的只有 `450e7b9241..upstream/dev` 的 727 条。判法 `git merge-base HEAD upstream/dev`。
+- 单条上游 diff 的上下文对不上，多半不是我们改过该文件，而是上游在它之前还有别的提交：`packages/core/src/model-resolver.ts` 要连 59157/59183/59190/59479/59500 五条，`packages/core/src/models-dev/snapshot.txt` 要连 65096cd354（改成读 v2 API）才成立。抄之前先 `git log 450e7b9241..<提交>^ -- <文件>` 查前置，避免抄一行却缺依赖。
+- `packages/core/src/session/compaction.ts` 的 `Estimate`、`total`、`measuredPrompt`、`fitOutput(size?)` 与 `deliver` 的 `shrink.measured` 是从上游 bc175f675c 手抄的：压缩请求改用 provider 上次回报的计数定尺寸，字符估算只在 overflow 时兜底。回归测试是 `packages/core/test/session-compaction.test.ts` 的 “sizes the unchanged request by the measured count”（无改动时只发 2 条消息，改动后 4 条）。
 
 ## 会话审查 / 压缩
 

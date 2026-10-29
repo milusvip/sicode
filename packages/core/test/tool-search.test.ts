@@ -224,6 +224,81 @@ describe("search tools", () => {
     ),
   )
 
+  it.live("finds a directory when the pattern ends with a slash", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Promise.all([
+              fs.mkdir(path.join(tmp.path, "packages", "core", "node_modules"), { recursive: true }),
+              fs.mkdir(path.join(tmp.path, "apps", "web"), { recursive: true }),
+            ]),
+          )
+          yield* Effect.promise(() =>
+            Promise.all([
+              fs.writeFile(path.join(tmp.path, "packages", "core", "node_modules", "dep.js"), "\n"),
+              fs.writeFile(path.join(tmp.path, "apps", "web", "main.ts"), "\n"),
+            ]),
+          )
+          return yield* withTools(tmp.path, (registry) =>
+            Effect.gen(function* () {
+              // rg --files never lists a directory, so the answer is derived from the files
+              // underneath it. An empty directory stays invisible — this finds trees, not stubs.
+              const found = yield* executeTool(registry, call("glob", { pattern: "**/node_modules/" }))
+              expect(found.output).toEqual([
+                { path: path.join("packages", "core", "node_modules") + path.sep, type: "directory" },
+              ])
+              expect(found.metadata).toEqual({ count: 1, truncated: false, timedOut: false })
+              const text = found.content?.[0]?.type === "text" ? found.content[0].text : ""
+              // The rendered line keeps the separator, which is the only cue that this is a folder.
+              expect(text).toBe(path.join(tmp.path, "packages", "core", "node_modules") + path.sep)
+            }),
+          )
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("searches an absolute path outside the location", () => {
+    const assertions: Permission.AssertInput[] = []
+    return Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (inside) =>
+        Effect.acquireUseRelease(
+          Effect.promise(() => tmpdir()),
+          (outside) =>
+            Effect.promise(() => fs.writeFile(path.join(outside.path, "note.txt"), "needle\n")).pipe(
+              Effect.andThen(
+                withTools(
+                  inside.path,
+                  (registry) =>
+                    Effect.gen(function* () {
+                      const found = yield* executeTool(
+                        registry,
+                        call("grep", { path: outside.path, pattern: "needle" }),
+                      )
+                      // An external root keeps its absolute path: a `../../..` escape round-trips but
+                      // cannot be handed back to another tool.
+                      expect(found.output).toEqual([
+                        expect.objectContaining({
+                          entry: { path: path.join(outside.path, "note.txt"), type: "file" },
+                        }),
+                      ])
+                      const text = found.content?.[0]?.type === "text" ? found.content[0].text : ""
+                      expect(text).toContain(path.join(outside.path, "note.txt"))
+                      expect(assertions.map((item) => item.action)).toContain("external_directory")
+                    }),
+                  assertions,
+                ),
+              ),
+            ),
+          (outside) => Effect.promise(() => outside[Symbol.asyncDispose]()),
+        ),
+      (inside) => Effect.promise(() => inside[Symbol.asyncDispose]()),
+    )
+  })
+
   it.live("reports no grep matches", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

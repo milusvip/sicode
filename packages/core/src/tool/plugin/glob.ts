@@ -2,6 +2,7 @@ export * as GlobTool from "./glob.js"
 
 import { ToolFailure } from "@opencode/ai/effect"
 import type { Context } from "@opencode/plugin/effect/plugin"
+import { Glob } from "@opencode/util/glob"
 import { Effect, Schema } from "effect"
 import path from "path"
 import { Environment } from "../../environment/index.js"
@@ -14,16 +15,47 @@ import { Permission } from "../../permission.js"
 
 export const name = "glob"
 
+/**
+ * SiCode: a trailing slash in the pattern asks for directories. ripgrep's `--files` never lists a
+ * directory, so a directory pattern used to answer "No files found" no matter how real the
+ * directory was — the model could not find a project by folder name at all. Directories are now
+ * derived from the file paths rg lists (so .gitignore still applies) and matched with the same glob
+ * semantics. The scan bound is the price of that: it must see every file before it can name a
+ * parent, so this one mode trades a larger read for a complete answer.
+ *
+ * Two consequences worth knowing: an empty directory has no files to derive from and stays
+ * invisible, and a directory rg itself ignores (node_modules, build output) stays invisible too —
+ * the same set of paths every other search already sees.
+ */
+export const DIRECTORY_SCAN_LIMIT = 50_000
+
+const isDirectoryPattern = (pattern: string) => pattern.trimEnd().endsWith("/")
+
+/** Every parent directory of the listed files, as search-root-relative paths with a trailing slash. */
+export const parentDirectories = (paths: readonly string[]): string[] => {
+  const found = new Set<string>()
+  for (const file of paths) {
+    const parts = file.split("/")
+    for (let depth = 1; depth < parts.length; depth++) found.add(`${parts.slice(0, depth).join("/")}/`)
+  }
+  // Lexical order puts a parent before its children and makes the page stable across scans.
+  return [...found].sort()
+}
+
 export const Input = Schema.Struct({
-  pattern: FileSystem.GlobInput.fields.pattern.annotate({ description: "Glob pattern to match files against" }),
-  path: Schema.optionalKey(RelativePath).annotate({
-    description: "Directory to search. Defaults to the current working directory.",
+  pattern: FileSystem.GlobInput.fields.pattern.annotate({
+    description:
+      'Glob pattern to match paths against. End it with "/" to search for directories instead of files (for example "**/src/").',
+  }),
+  path: Schema.optionalKey(Schema.String).annotate({
+    description:
+      "Directory to search, relative to the workspace or absolute. Defaults to the current working directory. An absolute path outside the workspace asks the user for approval first.",
   }),
   hidden: FileSystem.GlobInput.fields.hidden.annotate({
     description: "Include hidden files and directories (default: false).",
   }),
   limit: FileSystem.GlobInput.fields.limit.annotate({
-    description: `Maximum number of matching files to return (default: ${FileSystem.DEFAULT_SEARCH_LIMIT})`,
+    description: `Maximum number of matching paths to return (default: ${FileSystem.DEFAULT_SEARCH_LIMIT})`,
   }),
 })
 
@@ -61,11 +93,13 @@ export const Plugin = {
           name,
           options: { codemode: false },
           description:
-            'Search file paths using a glob pattern (examples: "**/*.ts", "src/**/*.tsx").' +
+            'Search paths using a glob pattern (examples: "**/*.ts", "src/**/*.tsx").' +
             // SiCode: an empty match usually means the guessed name was wrong, not that no file exists.
+            // A folder has the same problem twice over: it is not a file at all, so the pattern has to
+            // say so with a trailing slash or the search can never match it.
             (process.env.OPENCODE_QEXPAND === "0"
               ? ""
-              : " No match usually means the guessed name was wrong: try another wording."),
+              : ' No match usually means the guessed name was wrong: try another wording, or end the pattern with "/" to look for a directory (for example "**/src/").'),
           input: Input,
           output: Output,
           execute: (input, context) =>
@@ -98,38 +132,62 @@ export const Plugin = {
                   new ToolFailure({ message: `Search path is not a directory: ${searchPath ?? "."}` }),
                 )
               const root = target.absolute
+              // Trim only for the directory decision: a pattern may legitimately end in a space.
+              const pattern = input.pattern.trim()
               const limit = input.limit ?? FileSystem.DEFAULT_SEARCH_LIMIT
+              const directories = isDirectoryPattern(pattern)
+              // An external root has no meaningful relative form: `../../..` round-trips, but it is
+              // unreadable in a transcript and useless as an argument to the next tool.
+              const rebase = (relative: string, folder = false) => {
+                const absolute = path.resolve(root, relative)
+                const moved = path.relative(location.directory, absolute)
+                const inside = moved.split(path.sep)[0] !== ".." && !path.isAbsolute(moved)
+                const shown = inside ? moved : absolute
+                return RelativePath.make(folder ? shown + path.sep : shown)
+              }
               const swept = yield* ripgrep
                 .glob({
                   cwd: root,
-                  pattern: input.pattern,
+                  // A directory pattern cannot be handed to rg: it filters file paths, and a file
+                  // path never ends in a separator. List everything and match the derived parents.
+                  pattern: directories ? "*" : input.pattern,
                   hidden: input.hidden,
-                  limit: limit + 1,
+                  limit: directories ? DIRECTORY_SCAN_LIMIT : limit + 1,
                   // SiCode: a name search over an unindexed tree is the one that most often runs
                   // long, so it degrades to a partial list instead of failing outright.
                   timeoutMs: FileSystem.DEFAULT_SEARCH_TIMEOUT_MS,
                 })
                 .pipe(
                   Effect.map((result) => ({
-                    entries: result.entries.map((entry) =>
-                      FileSystem.Entry.make({
-                        ...entry,
-                        path: RelativePath.make(path.relative(location.directory, path.resolve(root, entry.path))),
-                      }),
-                    ),
+                    entries: directories
+                      ? parentDirectories(result.entries.map((entry) => entry.path))
+                          .filter((directory) => Glob.match(pattern, directory))
+                          .map((directory) =>
+                            FileSystem.Entry.make({ path: rebase(directory, true), type: "directory" }),
+                          )
+                      : result.entries.map((entry) =>
+                          FileSystem.Entry.make({ ...entry, path: rebase(entry.path) }),
+                        ),
+                    // A capped scan saw only part of the tree, so the directory list may be missing
+                    // parents even when the page itself is short.
+                    capped: directories && result.entries.length >= DIRECTORY_SCAN_LIMIT,
                     timedOut: result.timedOut,
                   })),
                 )
               return {
                 entries: swept.entries.slice(0, limit),
-                truncated: swept.entries.length > limit,
+                truncated: swept.entries.length > limit || swept.capped,
                 timedOut: swept.timedOut,
               }
             }).pipe(
               Effect.map((result) => ({
                 output: result.entries,
                 content: toModelContent(
-                  result.entries.map((entry) => ({ ...entry, path: path.resolve(location.directory, entry.path) })),
+                  result.entries.map((entry) => ({
+                    ...entry,
+                    path:
+                      path.resolve(location.directory, entry.path) + (entry.type === "directory" ? path.sep : ""),
+                  })),
                   result.truncated,
                   result.timedOut
                     ? `Search stopped at the ${FileSystem.DEFAULT_SEARCH_TIMEOUT_MS / 1_000}s budget after ` +

@@ -230,6 +230,9 @@ const layer = Layer.effect(
         }).pipe(
           Effect.map((result) => ({
             entries: result.rows.map((relative) =>
+              // SiCode: `--files` lists files only — never a directory — so every row here really is
+              // one. Directory search derives parent paths from these rows (see GlobTool) instead of
+              // pretending rg can report a type it never emits.
               Entry.make({
                 path: RelativePath.make(relative),
                 type: "file",

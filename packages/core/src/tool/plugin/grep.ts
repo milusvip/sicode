@@ -32,8 +32,9 @@ export const Input = Schema.Struct({
     .annotate({
       description: "Regular expression or literal text to match in file contents.",
     }),
-  path: Schema.optionalKey(RelativePath).annotate({
-    description: "File or directory to search. Defaults to the current working directory.",
+  path: Schema.optionalKey(Schema.String).annotate({
+    description:
+      "File or directory to search, relative to the workspace or absolute. Defaults to the current working directory. An absolute path outside the workspace asks the user for approval first.",
   }),
   include: FileSystem.GrepInput.fields.include.annotate({
     description: 'Glob pattern to filter files (for example, "*.js" or "*.{ts,tsx}")',
@@ -323,8 +324,13 @@ export const Plugin = {
               const candidates = global ? scopedCandidates(global, cwd, location.directory) : null
               const chunks = candidates ? chunkPaths(candidates) : undefined
               // Rebase a cwd-relative path onto the location root, as every source of rows must.
-              const rebase = (entryPath: string) =>
-                RelativePath.make(path.relative(location.directory, path.resolve(cwd, entryPath)))
+              // An external root has no meaningful relative form, so it keeps the absolute path.
+              const rebase = (entryPath: string) => {
+                const absolute = path.resolve(cwd, entryPath)
+                const moved = path.relative(location.directory, absolute)
+                const inside = moved.split(path.sep)[0] !== ".." && !path.isAbsolute(moved)
+                return RelativePath.make(inside ? moved : absolute)
+              }
               const sweep = (paths?: readonly string[]) =>
                 ripgrep
                   .grep({
