@@ -34,8 +34,8 @@
 <body>
 <div class="wrap">
 
-<h1>SiCode 代码定位提速 · 实施方案 <span class="badge">v6 · 定稿</span></h1>
-<div class="sub">2026-10-29 · 定稿（调研依据见 <code>codebase-retrieval.html</code>）· 全部阶段已落地：1a/1b + 搜索子代理 + 调用边/trigram，剩 CodeGraph 内部对照与 A/B 验收</div>
+<h1>SiCode 代码定位提速 · 实施方案 <span class="badge green">v6 · 全部落地</span></h1>
+<div class="sub">2026-10-30 · 全部阶段已落地并真实任务验证（调研依据见 <code>codebase-retrieval.html</code>）· 仅剩 1a/1b 的 A/B 最终验收（需改码型任务样本）</div>
 
 <div class="no" style="background:#fff8c5;border-color:#d4a72c66">
   <b>v4 修订（用户定调：面向用户的能力直接做好，不推第三方 MCP）：</b><br>
@@ -118,6 +118,16 @@
     <li><b>实际早已存在并接通</b>：<code>filesystem/trigram-search.ts</code> 是完整的两阶段搜索（trigram 候选 → rg 精查），grep 工具已接上</li>
     <li><b>实测</b>：本仓稀有符号 14ms vs 全库 ~1s（50~70×）；持久化 + watcher 增量 + commit 指纹</li>
     <li><b>与方案的差异</b>：方案写「SQLite FTS5」是理想，实际实现用项目自带的 trigram 索引（更早的工作），效果等价、已过测试</li>
+  </ul>
+</div>
+
+<h2>真实任务验证（2026-10-30，方案假设的第一份正证据）</h2>
+<div class="card" style="border-left:4px solid #1a7f37">
+  <ul>
+    <li><b>callgraph impact 雪崩 → 修复</b>：初版 impact 走传递闭包，`makeLocationNode` 定义文件同时导出多个符号，闭包炸到 2767 文件。修法：impact 降为「直接调用者」一跳，修复后 2767 → 59（真实调用点，天然排除 import）</li>
+    <li><b>信任恢复</b>：修前模型因一次翻车弃用 callgraph（三问只调 1 次，退回 grep 手工）；修后三问都主动调用，且「先结构、后词法」配合</li>
+    <li><b>步数实测下降</b>：同三个定位问题前后对比——「画调用链」15 轮/770s → <b>10 轮/162s（耗时 −79%）</b>；「谁调用」227s → 72s（−68%）。验证了「瓶颈是往返步数、不是检索速度」的基线判断</li>
+    <li><b>剩余唯一验收项</b>：1a/1b 的 A/B（探索/edit 比 8:1 → 4:1）需要<b>改码型任务</b>样本，纯定位任务 edit=0 测不出，等真实使用攒数</li>
   </ul>
 </div>
 
