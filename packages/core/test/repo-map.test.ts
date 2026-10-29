@@ -149,6 +149,30 @@ describe("render", () => {
     )
     expect(text).toContain("z.ts")
   })
+
+  test("hotspots keeps unique multi-word symbols and drops builtin short names", () => {
+    const withCalls = [
+      { file: "src/def.ts", symbols: [{ name: "makeHub", line: 1 }], imports: [] },
+      { file: "src/a.ts", symbols: [{ name: "a", line: 1 }], imports: [], calls: ["makeHub", "map"] },
+      { file: "src/b.ts", symbols: [{ name: "b", line: 1 }], imports: [], calls: ["makeHub", "makeLeaf"] },
+      { file: "src/c.ts", symbols: [{ name: "makeLeaf", line: 1 }], imports: [], calls: ["map", "filter"] },
+    ]
+    const list = RepoMapRender.hotspots(withCalls)
+    // `map`/`filter` are builtins; `makeHub` (2 callers) and `makeLeaf` (1 caller) survive.
+    expect(list.map((item) => item.name)).toEqual(["makeHub", "makeLeaf"])
+    expect(list[0]).toEqual({ name: "makeHub", callers: 2, definedIn: ["src/def.ts"] })
+  })
+
+  test("renderCalls emits a compact block and stays empty when there are no project calls", () => {
+    const withCalls = [
+      { file: "src/def.ts", symbols: [{ name: "makeHub", line: 1 }], imports: [] },
+      { file: "src/a.ts", symbols: [{ name: "a", line: 1 }], imports: [], calls: ["makeHub"] },
+    ]
+    const block = RepoMapRender.renderCalls(withCalls)
+    expect(block).toContain("# Most-called symbols")
+    expect(block).toContain("makeHub: called by 1 file (defined in src/def.ts)")
+    expect(RepoMapRender.renderCalls([{ file: "x.ts", symbols: [{ name: "x", line: 1 }], imports: [] }])).toBe("")
+  })
 })
 
 describe("call graph", () => {

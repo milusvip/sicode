@@ -139,7 +139,8 @@ const refresh = async (directory: string, options: Options, file: string): Promi
     const cached = previous?.files[relative]
     if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size && cached.language === language) {
       stored[relative] = cached
-      if (cached.symbols.length > 0) entries.push({ file: relative, symbols: cached.symbols, imports: cached.imports })
+      if (cached.symbols.length > 0)
+        entries.push({ file: relative, symbols: cached.symbols, imports: cached.imports, calls: cached.calls })
       continue
     }
 
@@ -160,12 +161,22 @@ const refresh = async (directory: string, options: Options, file: string): Promi
       calls: result.calls,
     }
     stored[relative] = record
-    if (result.symbols.length > 0) entries.push({ file: relative, symbols: result.symbols, imports: result.imports })
+    if (result.symbols.length > 0)
+      entries.push({ file: relative, symbols: result.symbols, imports: result.imports, calls: result.calls })
   }
 
   await RepoMapCache.write(file, { version: RepoMapCache.VERSION, root: directory, files: stored })
   const text = RepoMapRender.render(entries, options)
-  return text === "" ? undefined : text
+  if (text === "") return undefined
+  // SiCode: append the "most-called symbols" block. It is the call-graph signal the static symbol
+  // table lacks, and it lets the model answer "who calls X" without grepping. Kept behind an env
+  // switch so a repository where the extra block hurts (or a provider that misreads it) can turn it
+  // off without reverting the extraction.
+  if (process.env.OPENCODE_REPO_MAP_CALLS !== "0") {
+    const calls = RepoMapRender.renderCalls(entries)
+    if (calls !== "") return `${text}\n\n${calls}`
+  }
+  return text
 }
 
 /**

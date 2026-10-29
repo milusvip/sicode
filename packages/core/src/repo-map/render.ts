@@ -19,6 +19,12 @@ export interface FileEntry {
   readonly file: string
   readonly symbols: readonly Symbol[]
   readonly imports: readonly string[]
+  /**
+   * SiCode: callee names this file calls, extracted by the same tree-sitter pass as symbols. Used
+   * to surface "who calls what" hotspots in the map so the model can locate a symbol without
+   * grepping for it first.
+   */
+  readonly calls?: readonly string[]
 }
 
 export interface Ranked {
@@ -136,6 +142,57 @@ const line = (entry: FileEntry, options: Required<Options>): string => {
   text += " " + picked.join(" ")
   const hidden = entry.symbols.filter((symbol) => !seen.has(symbol.name)).length
   return hidden > 0 ? `${text} +${hidden}` : text
+}
+
+/**
+ * SiCode: the most-called symbols across the repository, with how many files call each and where it
+ * is defined. This is the "who calls what" signal the static symbol table cannot express: a model
+ * asked "who calls X" otherwise greps and reads file after file, when the answer is already in the
+ * parsed sources. Only a small top slice is shown — a hot symbol can have hundreds of callers, and
+ * listing them all would blow the budget for a signal the model only needs to start from.
+ */
+export interface CallHotspot {
+  readonly name: string
+  readonly callers: number
+  readonly definedIn: readonly string[]
+}
+
+/**
+ * A hotspot worth showing is a real project symbol, not a language or library builtin. Those
+ * drown the list: `map`, `filter`, `pipe`, `get`, `join` are called by hundreds of files because
+ * they are `Array.prototype` / Effect methods, and `get` is defined in ten unrelated files. The
+ * signal that separates them is a multi-segment identifier (camelCase or snake_case) defined in
+ * exactly one file — `makeLocationNode`, `detectPollingWait` — versus a single short word.
+ */
+const isProjectSymbol = (name: string) => /^[a-z][a-z0-9]*(?:[A-Z_][a-z0-9]*)+$/u.test(name)
+
+export const hotspots = (entries: readonly FileEntry[], top = 20): CallHotspot[] => {
+  const defined = new Map<string, string[]>()
+  for (const entry of entries)
+    for (const symbol of entry.symbols) {
+      const bucket = defined.get(symbol.name)
+      if (bucket) bucket.push(entry.file)
+      else defined.set(symbol.name, [entry.file])
+    }
+  const counts = new Map<string, number>()
+  for (const entry of entries)
+    for (const callee of entry.calls ?? []) counts.set(callee, (counts.get(callee) ?? 0) + 1)
+  return [...counts.entries()]
+    .map(([name, callers]) => ({ name, callers, definedIn: defined.get(name) ?? [] }))
+    .filter((hotspot) => hotspot.definedIn.length === 1 && isProjectSymbol(hotspot.name))
+    .sort((a, b) => b.callers - a.callers || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .slice(0, top)
+}
+
+/** Renders the hotspot call edges as a compact block, or `""` when there is nothing to show. */
+export const renderCalls = (entries: readonly FileEntry[], top = 20): string => {
+  const list = hotspots(entries, top)
+  if (list.length === 0) return ""
+  const lines = list.map((hotspot) => {
+    const where = hotspot.definedIn.length > 0 ? ` (defined in ${hotspot.definedIn.join(", ")})` : ""
+    return `${hotspot.name}: called by ${hotspot.callers} file${hotspot.callers === 1 ? "" : "s"}${where}`
+  })
+  return ["# Most-called symbols", ...lines].join("\n")
 }
 
 /**
