@@ -80,6 +80,7 @@ import { PatchTool } from "../tool/plugin/patch.js"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
 import { GrepTool } from "../tool/plugin/grep.js"
+import { CallGraphTool } from "../tool/plugin/callgraph.js"
 // SiCode: precise symbol navigation via configured language servers (see tool/plugin/lsp.ts).
 import { LspTool } from "../tool/plugin/lsp.js"
 import { McpResourceTools } from "../tool/plugin/mcp-resource.js"
@@ -259,6 +260,9 @@ const pre = [
   EditTool.Plugin,
   GlobTool.Plugin,
   GrepTool.Plugin,
+  // SiCode: structure queries (callers/callees/impact) sit beside grep so the model sees both
+  // lookup paths — by text and by structure — registered together.
+  CallGraphTool.Plugin,
   // SiCode: after grep, so the model sees both lookup paths registered together.
   LspTool.Plugin,
   // SiCode: after every tool that can produce content, so an archived read composes with them.
