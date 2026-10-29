@@ -421,3 +421,13 @@ input:where([type="button"], [type="reset"], [type="submit"]),
     font-size: 13px;
   }
 }
+
+/* SiCode: Chromium drops subpixel antialiasing whenever the window sits on a monitor whose zoom is
+   not 100%, so the same CJK text renders visibly thinner there — the "main screen is fine, drag it
+   to the second monitor and it goes thin" report. A face between 400 and 700 does not help:
+   Microsoft YaHei ships only 400/700, so 460/500 snap back to 400 (measured: identical advance
+   widths). A hairline stroke is the one compensation that survives every zoom level. The class is
+   toggled by model.tsx, which re-reads devicePixelRatio when the window moves between monitors. */
+.scaled-text {
+  -webkit-text-stroke: 0.2px currentColor;
+}

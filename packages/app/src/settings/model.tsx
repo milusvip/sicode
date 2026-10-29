@@ -1,5 +1,5 @@
 import { produce, reconcile, unwrap } from "solid-js/store"
-import { createEffect, createMemo } from "solid-js"
+import { createEffect, createMemo, onCleanup } from "solid-js"
 import { Effect, Option, Predicate, Schema, SchemaGetter } from "effect"
 import { createSimpleContext } from "@opencode/ui/context"
 import { timelinePresets, type TimelineCategory, type TimelineDetail } from "@opencode/session-ui/timeline/detail"
@@ -359,6 +359,16 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       const mono = monoFontFamily(store.appearance?.mono)
       root.style.setProperty("--font-family-mono", mono)
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
+      // SiCode: Chromium drops subpixel antialiasing whenever the window sits on a monitor whose
+      // zoom is not 100%, so the same 15px CJK text renders visibly thinner there — the "main
+      // screen is fine, drag it to the second monitor and it goes thin" report. A face between
+      // 400 and 700 does not help: Microsoft YaHei has no intermediate cut, so 460/500 snap back
+      // to 400. A hairline stroke is the one compensation that survives every zoom level.
+      // The ratio changes when the window moves between monitors, so it has to be re-read.
+      const syncScale = () => root.classList.toggle("scaled-text", window.devicePixelRatio !== 1)
+      syncScale()
+      window.addEventListener("resize", syncScale)
+      onCleanup(() => window.removeEventListener("resize", syncScale))
       // SiCode: `max-w-session` reads --container-session at runtime.
       root.style.setProperty(
         "--container-session",
