@@ -17,6 +17,9 @@
   max-width: 100%;
   overflow-wrap: break-word;
   color: var(--v2-text-text-base);
+  /* SiCode: body stays on the sans stack, and inline `code` inherits it (grey chip only).
+     Fenced `pre > code` keeps mono. Putting the whole prose on mono splits Latin→Plex and
+     CJK→the sans face, which reads as two typefaces in one sentence. */
   font-family: var(--font-family-sans);
   font-size: var(--font-size-base);
   line-height: 160%;
@@ -403,6 +406,12 @@
     display: flex;
     align-items: flex-start;
     gap: 12px;
+    /* SiCode: sticky resolves against the scroll container's padding box, not its content box — so
+       the card's 12px start padding parked the gutter 12px in from the edge and left a lane beside
+       it. Scrolled code scrolled into that lane and showed through to the left of the line numbers.
+       The card drops its start padding and the gutter carries it, so the gutter sits flush at 0 and
+       covers everything that scrolls left. Measured: gutter parks at 20.6 instead of 32.6. */
+    padding-inline-start: 0;
   }
 
   [data-slot="markdown-code-gutter"] {
@@ -410,6 +419,9 @@
     inset-inline-start: 0;
     flex: 0 0 auto;
     z-index: 1;
+    /* SiCode: the card's start padding, carried here so the gutter still has its inset. Keep in
+       step with `.highlights` padding above. */
+    padding-inline-start: 12px;
     padding-inline-end: 10px;
     border-inline-end: 1px solid color-mix(in oklch, var(--v2-text-text-base) 8%, transparent);
     background: inherit;
@@ -536,8 +548,12 @@
   :not(pre) > code {
     direction: ltr;
     unicode-bidi: isolate;
-    font-family: var(--font-family-mono);
-    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    /* SiCode: stay on the body sans face. Inline chips used to pull IBM Plex Mono, so a
+       Chinese sentence with `deny` / paths read as two typefaces beside each other — and beside
+       the right-pane preview which is also sans. Fenced `pre > code` keeps mono for real source.
+       Chip chrome (fill/hairline/size) still marks "this is code"; only the face matches prose. */
+    font-family: inherit;
+    font-feature-settings: inherit;
     /* SiCode: a chip filled with body-text grey is a block with no identity, and at body size the
        mono face is wider than the prose around it — five chips in one line and the row turns into
        a patchwork. So code stops being the loudest thing in the sentence: one step smaller than
@@ -549,7 +565,8 @@
     /* Neutral base: identifiers inherit this, the parser's spans paint keyword/string/number tokens
        on top. A single-colour chip reads as a link or a highlighter mark; tokens read as source. */
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
+    /* SiCode: chip chrome already marks code — don't thicken with medium weight. */
+    font-weight: inherit;
     padding: 0.1em 0.34em;
     border-radius: 5px;
     background: color-mix(in oklch, var(--v2-text-text-base) var(--markdown-inline-code-bg-mix), transparent);
