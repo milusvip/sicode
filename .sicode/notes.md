@@ -600,6 +600,9 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 中文分词用重叠 bigram（无空格可切），`paddingInline` 先按大写边界切再折叠大小写——顺序反了就只剩 `paddinginline`。
 - 本仓实测：`session header actions` → `packages/app/src/session/header/session-header-actions.tsx` 第一；`compaction durable` → `compaction-durable.ts` 第一；`侧边浏览器代理` → 各 `i18n/zh.ts` 前五（browser 那个排第 3）。`行号超出` 无命中（字典里确实没有该词条，属真实空缺）。
 - 待验证（方案 v6 的验收线）：改码型任务探索/edit 比 8:1 → 4:1，黄金问题集 recall@5。1a/1b 都要 A/B，数据不支持就撤。
+- 阶段二（搜索子代理）已落地（2026-10-29）：无需新建 agent——上游已有 `explore` 子代理（`packages/core/src/plugin/agent.ts:74-94`），权限已锁死 grep/glob/read/shell/webfetch/websearch + `*:* deny` 兜底。增量是三处提示词：① `PROMPT_EXPLORE` 补「输出契约」——只回传结论 + `file:line` 清单、不回传正文（否则子代理把读到的字节又灌回主会话，隔离上下文白做）；② `system.txt` 加 `# Parallelizing search with subagents` 段（大范围定位/中文意图先派 explore，覆盖默认 + DeepSeek/Anthropic 两个 append 模型）；③ `kimi.txt`、`meta.txt` 补同款触发指引。
+- 关键发现（方案没料到）：`gpt.txt` / `gpt-astra.txt` 里有上游刻意写的「Do not spawn subagents unless 用户/AGENTS.md/skill 明确要求」——GPT 系模型自动派子代理是负收益，上游主动禁了。所以触发指引**按模型分治**：append 系（default/deepseek/anthropic）加指引、kimi/meta 补指引，gpt 系保持禁派不动。trinity.txt 第 83 行本来就有「file search 时 prefer subagent」。
+- 子代理机制：`tool/plugin/subagent.ts` 里 `agents.resolve(input.agent)` + 深度限制（`experimental.subagent_depth` 默认 1）；可用子代理列表由 `tool/plugin/subagent.ts:288` 的 context hook 动态注入工具描述（`mode !== "primary" && !hidden`）。
 
 ## 侧边栏文件树
 

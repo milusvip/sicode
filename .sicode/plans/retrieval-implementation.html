@@ -87,15 +87,15 @@
   </ul>
 </div>
 
-<h2>阶段二：搜索子代理（下周，约 3 天）</h2>
+<h2>阶段二：搜索子代理 <span class="badge green">✅ 已落地（2026-10-29）</span></h2>
 
 <div class="card phase p2">
-  <h3>Explore 式隔离搜索 <span class="badge">对齐 Cursor Explore</span></h3>
+  <h3>Explore 式隔离搜索 <span class="badge green">✅ 已完成</span></h3>
   <ul>
-    <li>新增受限 agent 预设：工具只给 grep / glob / read（无 edit/write），模型用快档</li>
-    <li>输出契约：只回传「结论 + 文件:行号清单」，不回传文件正文——防止搜索垃圾撑爆主会话</li>
-    <li>主 agent 提示词加触发指引：「大范围定位类任务先派搜索子代理」</li>
-    <li>opencode 已有 subagent 机制（packages/core 内置），主要工作是预设配置 + 回传格式约束</li>
+    <li><b>无需新建 agent</b>：上游已有 <code>explore</code> 子代理，工具已锁死 grep/glob/read/shell/webfetch/websearch + 兜底 deny，无 edit/write</li>
+    <li><b>输出契约已补</b>：<code>PROMPT_EXPLORE</code> 加了「只回传结论 + <code>file:line</code> 清单、不回传正文」，防止搜索垃圾灌回主会话</li>
+    <li><b>主 agent 触发指引已加</b>：<code>system.txt</code> 加「大范围定位/中文意图先派 explore」段；kimi/meta 同款补上</li>
+    <li><b>按模型分治（方案没料到的关键点）</b>：gpt/gpt-astra 上游有「不主动派子代理」的反指令（GPT 系滥派是负收益），保持不动；trinity 本来就有</li>
     <li>价值独立成立：即使阶段一失效，这一层也减少上下文污染</li>
   </ul>
 </div>
@@ -168,7 +168,7 @@
   <tr><td class="big">0</td><td>CodeGraph 内部验证</td><td>产出基线 + 设计清单（结构任务 −34% 为其量级参考）</td><td>为 3a/3b 修正设计</td></tr>
   <tr><td class="big">1a</td><td>查询扩展指引 <span class="badge green">✅</span></td><td>已落地，待 A/B（预估 −30~50%，无文献数）</td><td>中文意图 → 英文代码断链</td></tr>
   <tr><td class="big">1b</td><td>BM25F 分字段加权 <span class="badge green">✅</span></td><td>已落地，待 A/B（词法命中率 +20%，Cody 内部口径）</td><td>半猜半搜命中率</td></tr>
-  <tr><td class="big">二</td><td>搜索子代理</td><td>轮数下降 + 长会话稳定性（无独立数字）</td><td>上下文污染</td></tr>
+  <tr><td class="big">二</td><td>搜索子代理 <span class="badge green">✅</span></td><td>已落地（轮数下降 + 长会话稳定性，无独立数字）</td><td>上下文污染</td></tr>
   <tr><td class="big">三</td><td>调用边/impact + trigram（自研）</td><td>对标 CodeGraph 量级：结构任务步数 −34%</td><td>结构定位 + 大仓库延迟</td></tr>
 </table>
 
