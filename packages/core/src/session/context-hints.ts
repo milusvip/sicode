@@ -150,7 +150,9 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionContextHints") {}
 
-const layer = Layer.effect(
+// Exported so a test can supply its own Search: the failure modes worth pinning (no index, a
+// ripgrep binary that cannot be resolved) are all about what the hint does when the lookup dies.
+export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const search = yield* Search
@@ -164,7 +166,11 @@ const layer = Layer.effect(
         (term) =>
           search
             .find({ query: term, type: "file", limit: FILES_PER_TERM })
-            .pipe(Effect.orElseSucceed(() => [] as const)),
+            // A hint is a lead, never a requirement: no index, no ripgrep binary, no permission to
+            // read the tree — all of them mean "say nothing", not "fail the turn". `catchCause`
+            // rather than `orElseSucceed` because ripgrep reports a missing binary by yielding an
+            // Error, which lands in the defect channel and would otherwise escape this pipe.
+            .pipe(Effect.catchCause(() => Effect.succeed([] as const))),
         { concurrency: "unbounded" },
       )
       const seen = new Set<string>()

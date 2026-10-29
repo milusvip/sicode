@@ -58,6 +58,7 @@ import { OptimizePlugin } from "@opencode/core/plugin/optimize"
 import { IdentityPlugin } from "@opencode/core/plugin/identity"
 import { QuestionTool } from "@opencode/core/tool/plugin/question"
 import { Agent } from "@opencode/core/agent"
+import { FileSystemSearch } from "@opencode/core/filesystem/search"
 import { Config } from "@opencode/core/config"
 import { Document, Info } from "@opencode/schema/config"
 import { ConfigCompaction } from "@opencode/schema/config/compaction"
@@ -425,6 +426,13 @@ const layer = Layer.unwrap(
       PluginSupervisor.node.replace(Layer.empty),
       Plugin.node.replace(Layer.mock(Plugin.Service, { awaitActivation: Effect.suspend(() => state.activationHook) })),
       SessionModelTransport.node.replace(modelTransport),
+      // SiCode: the request-time file hint looks paths up through this index, and the default layer
+      // builds it by scanning the workspace with ripgrep. The harness refuses network, so a test
+      // that reached the real layer would try to download the binary and be failed for it. An empty
+      // index is the honest stand-in: no leads, which is what a workspace without ripgrep gets.
+      FileSystemSearch.node.replace(
+        Layer.succeed(FileSystemSearch.Service, { find: () => Effect.succeed([]) }),
+      ),
     ]
     const runnerLayer = AppNodeBuilder.build(SessionRunnerLLM.node, [
       ...replacements,
