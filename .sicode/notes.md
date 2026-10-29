@@ -622,6 +622,10 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 这是方案核心假设「结构查询可信后减少往返步数」的**第一个正证据**，验证了 notes 586-587 的基线判断（瓶颈是往返步数不是检索速度）。
 - 诚实边界：模型最终答案仍会自己 grep 复核 import（callgraph 给 59 真实调用点，模型补 grep 后说 78 文件/87 调用，含 import）。这是「先结构后词法」的健康配合，不是上次的翻车弃用。
 - 结论：callgraph 这条线立住了，无需再动。下一项按方案是 CodeGraph 外部对照（可选），或直接进入 1a/1b 的 A/B（探索/edit 比 8:1→4:1，需改码型任务样本，纯提问任务分母 edit=0 不适用）。
+- 热点调用边注入 repo map（2026-10-30，提交 847d81afe5）：`render.ts` 新增 `hotspots()`/`renderCalls()`，`index.ts` 的 `refresh` 把 `calls` 传进 render 并在 map 末尾拼「# Most-called symbols」段。开关 `OPENCODE_REPO_MAP_CALLS=0`。目的：让「谁调用 X」的答案开场就在上下文里，模型不用 grep。
+- **第一版踩坑（必须记住）**：直接统计全部 calls 的裸名计数，热点被 `map`(848)/`get`(683)/`filter`/`pipe`/`join` 等 JS 内置 + Effect 库方法淹没，而且 `get` 的 definedIn 列了 60+ 文件、`make` 列了 76 个——裸名去重对同名通用函数毫无意义。**修法**：过滤条件 = 定义唯一（`definedIn.length===1`）+ 多段标识符（驼峰/下划线正则 `/^[a-z][a-z0-9]*(?:[A-Z_][a-z0-9]*)+$/`），一条同时干掉 `get`（10 定义）和 `map`/`filter`（内置短名）。
+- 修后本仓实测：热点全是真项目符号 `useTheme`(71)/`makeLocationNode`(59)/`makeGlobalNode`(52)/`useI18n`/`showToast`…，token 从 2615 降到 1541（比纯符号表只多 ~400）。
+- 价值与边界：这是「结构信号」这条线的最后一块——把调用边从「按需查的工具(callgraph)」升级为「开场就铺在 map 里」。但只覆盖热点符号（前 20），低频符号仍要 grep。生效前提是 repo map 被注入（`project-map.ts` 已做，模型实测 0 次重复读 map = 注入生效）。
 
 ## 侧边栏文件树
 
