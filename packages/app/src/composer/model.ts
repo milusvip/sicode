@@ -268,9 +268,16 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
     })),
   ])
 
-  // SiCode: the slider reads left to right from least to most effort, so the implicit
-  // "no overlay" choice belongs after the explicit levels instead of in front of them.
-  const variants = createMemo(() => [...adapter.controls().model.selection.variant.list(), "default"])
+  // SiCode: "closed" and "default" are both "no extra reasoning" choices, so they lead the
+  // slider and the graded levels follow from least to most effort. Models without a closed
+  // level keep the original order, with `default` first.
+  const variants = createMemo(() => {
+    const list = adapter.controls().model.selection.variant.list()
+    const off = list.filter((value) => value === "none")
+    const graded = list.filter((value) => value !== "none")
+
+    return [...off, "default", ...graded]
+  })
 
   const variantLabel = (value: string) => {
     const key = variantLabelKeys.get(value)
