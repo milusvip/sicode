@@ -10,6 +10,14 @@ export type PageEvent = Extract<PaneEvent, { type: "page" }>
 
 export type Zoom = "in" | "out" | "reset"
 
+/** SiCode: the best-effort login-state read after a cookie paste lands and the page reloads. */
+export type CookieLoginState = {
+  state: "likely" | "unclear" | "unlikely"
+  /** Pasted cookie names still readable for the page's address after the reload. */
+  kept: number
+  pasted: number
+}
+
 export type Connection = ReturnType<typeof createConnection>
 
 export type Registration = {
@@ -21,8 +29,8 @@ export type Registration = {
   zoom(tabID: Browser.TabID, zoom: Zoom): void
   site(tabID: Browser.TabID): Promise<{ cookies: number }>
   clearSite(tabID: Browser.TabID): Promise<void>
-  /** Writes pasted login cookies for the page's site and reloads it; resolves with the number written. */
-  setCookies(tabID: Browser.TabID, text: string): Promise<{ cookies: number }>
+  /** Writes pasted login cookies for the page's site and reloads it; resolves with the count and the login-state read. */
+  setCookies(tabID: Browser.TabID, text: string): Promise<{ cookies: number; login: CookieLoginState }>
   close(): void
 }
 

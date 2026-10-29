@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage } from "../src/session/message.js"
-import { detectLoop, LOOP_MIN_REPETITIONS } from "../src/session/runner/loop-detection.js"
+import {
+  detectLoop,
+  detectRepeatedProbe,
+  LOOP_MIN_REPETITIONS,
+  PROBE_MIN_PROBES,
+} from "../src/session/runner/loop-detection.js"
 
 const tool = (name: string, input: unknown, result = "ok") => ({
   type: "tool",
@@ -121,5 +126,95 @@ describe("detectLoop", () => {
 
   test("an empty transcript has nothing to detect", () => {
     expect(detectLoop([])).toBeNull()
+  })
+})
+
+describe("detectRepeatedProbe", () => {
+  // The shape that slips past detectLoop: one file, a different tool or argument every time.
+  const probe = (variant: string) =>
+    step([
+      variant === "grep"
+        ? tool("grep", { pattern: `k${variant}`, path: "packages/ui/package.json" })
+        : variant === "shell"
+          ? tool("shell", { command: "Select-String -Path packages/ui/package.json -Pattern exports" })
+          : tool("read", { path: "packages/ui/package.json", offset: 1 }),
+    ])
+
+  test("catches one file probed with a different call each time", () => {
+    const hit = detectRepeatedProbe([probe("grep"), probe("shell"), probe("read")])
+    expect(hit).not.toBeNull()
+    expect(hit!.path).toBe("packages/ui/package.json")
+    expect(hit!.probes).toBe(PROBE_MIN_PROBES)
+  })
+
+  test("stays quiet on fewer probes than the threshold", () => {
+    expect(detectRepeatedProbe([probe("grep"), probe("shell")])).toBeNull()
+  })
+
+  test("stays quiet when each probe looks at a different file", () => {
+    expect(
+      detectRepeatedProbe([step([read("a.ts")]), step([read("b.ts")]), step([read("c.ts")])]),
+    ).toBeNull()
+  })
+
+  test("a write clears the count, so reading a file back after editing it is not a repeat", () => {
+    const messages = [
+      step([read("a.ts")]),
+      step([read("a.ts")]),
+      step([tool("edit", { path: "a.ts", oldString: "x", newString: "y" })]),
+      step([read("a.ts")]),
+      step([read("a.ts")]),
+    ]
+    expect(detectRepeatedProbe(messages)).toBeNull()
+  })
+
+  test("counts a shell command that names the file", () => {
+    const run = (keyword: string) =>
+      step([tool("shell", { command: `Select-String -Path packages/ui/package.json -Pattern ${keyword}` })])
+    expect(detectRepeatedProbe([run("a"), run("b"), run("c")])).not.toBeNull()
+  })
+
+  test("an absolute and a relative spelling are one file", () => {
+    const hit = detectRepeatedProbe([
+      step([read("packages/ui/package.json")]),
+      step([read("E:/app-dev/repo/packages/ui/package.json")]),
+      step([read("packages/ui/package.json")]),
+    ])
+    expect(hit!.probes).toBe(PROBE_MIN_PROBES)
+  })
+
+  test("only looks at the current turn", () => {
+    expect(detectRepeatedProbe([probe("grep"), probe("shell"), user(), probe("read")])).toBeNull()
+  })
+
+  test("a step without tools ends the scan, because the model already answered", () => {
+    expect(detectRepeatedProbe([probe("grep"), probe("shell"), step([], "done"), probe("read")])).toBeNull()
+  })
+
+  test("never nudges todo churn", () => {
+    expect(
+      detectRepeatedProbe([
+        step([tool("todowrite", { todos: [{ path: "a.ts" }] })]),
+        step([tool("todowrite", { todos: [{ path: "a.ts" }] })]),
+        step([tool("todowrite", { todos: [{ path: "a.ts" }] })]),
+      ]),
+    ).toBeNull()
+  })
+
+  test("a dotted call in a script is not a file", () => {
+    // `json.load` / `json.dumps` read as paths to a loose regex; parsing stdin three times probes nothing.
+    const run = () =>
+      step([tool("shell", { command: 'python -c "import json;print(json.dumps(json.load(sys.stdin)))"' })])
+    expect(detectRepeatedProbe([run(), run(), run()])).toBeNull()
+  })
+
+  test("one fingerprint per file, so the caller nudges once per file", () => {
+    const run = (path: string) => detectRepeatedProbe([step([read(path)]), step([read(path)]), step([read(path)])])
+    expect(run("a.ts")!.fingerprint).toBe(run("a.ts")!.fingerprint)
+    expect(run("a.ts")!.fingerprint).not.toBe(run("b.ts")!.fingerprint)
+  })
+
+  test("an empty transcript has nothing to detect", () => {
+    expect(detectRepeatedProbe([])).toBeNull()
   })
 })

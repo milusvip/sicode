@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>置顶标记对比</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --font: "Inter", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --light-bg-deep: #fafafa;
+    --light-text-base: #161616;
+    --light-text-muted: #5c5c5c;
+    --light-text-faint: #808080;
+    --light-icon-base: #3a3a3a;
+    --light-icon-faint: #aeaeae;
+    --light-border: #eeeeee;
+    --light-hover: rgba(0, 0, 0, 0.04);
+
+    --dark-bg-deep: #080808;
+    --dark-text-base: #f2f2f2;
+    --dark-text-muted: #aeaeae;
+    --dark-text-faint: #808080;
+    --dark-icon-base: #dbdbdb;
+    --dark-icon-faint: #5c5c5c;
+    --dark-border: #242424;
+    --dark-hover: rgba(255, 255, 255, 0.06);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 32px 24px 56px;
+    font-family: var(--font);
+    background: #fff;
+    color: #161616;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #161616; color: #f2f2f2; }
+  }
+
+  h1 { font-size: 20px; font-weight: 700; margin: 0; text-align: center; }
+  .lede { margin: 0; font-size: 13px; line-height: 20px; opacity: 0.6; text-align: center; max-width: 620px; }
+
+  .boards { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; align-items: flex-start; }
+
+  .board { display: flex; flex-direction: column; gap: 10px; }
+
+  .caption { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; opacity: 0.55; text-transform: uppercase; }
+
+  /* Real sidebar geometry: 224px wide, 28px rows, 12px labels. */
+  .sidebar {
+    width: 224px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text-muted);
+  }
+
+  .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding-inline: 4px;
+    border-radius: 5px;
+  }
+
+  .row:hover { background: var(--hover); }
+
+  .row .chev { width: 7px; height: 7px; flex: none; color: var(--icon-faint); }
+  .row .avatar {
+    width: 16px; height: 16px; flex: none; border-radius: 4px;
+    display: grid; place-items: center;
+    font-size: 9px; font-weight: 700; color: #fff;
+  }
+  .row .name {
+    flex: 1 1 auto; min-width: 0;
+    font-size: 12px; font-weight: 500; letter-spacing: -0.01em;
+    line-height: 16px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row.pinned .name { color: var(--text-base); }
+
+  .pin { width: 14px; height: 14px; flex: none; }
+  .pin-base { color: var(--icon-base); }
+  .pin-faint { color: var(--icon-faint); }
+
+  .light {
+    --bg: var(--light-bg-deep);
+    --text-base: var(--light-text-base);
+    --text-muted: var(--light-text-muted);
+    --text-faint: var(--light-text-faint);
+    --icon-base: var(--light-icon-base);
+    --icon-faint: var(--light-icon-faint);
+    --border: var(--light-border);
+    --hover: var(--light-hover);
+  }
+
+  .dark {
+    --bg: var(--dark-bg-deep);
+    --text-base: var(--dark-text-base);
+    --text-muted: var(--dark-text-muted);
+    --text-faint: var(--dark-text-faint);
+    --icon-base: var(--dark-icon-base);
+    --icon-faint: var(--dark-icon-faint);
+    --border: var(--dark-border);
+    --hover: var(--dark-hover);
+  }
+
+  .zoom { display: flex; align-items: center; gap: 18px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  .zoom .pair { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .zoom .pair span { font-size: 11px; color: var(--text-faint); }
+  .zoom .glyph { width: 84px; height: 84px; }
+
+  .note { max-width: 640px; font-size: 12.5px; line-height: 20px; opacity: 0.7; }
+  .note b { opacity: 1; }
+</style>
+</head>
+<body>
+
+<h1>置顶标记：描边 → 实心</h1>
+<p class="lede">同一行、同一字号下，1px 描边的 pin 在 14px 尺寸里只剩一条细线；实心字形才有足够的视觉重量，配合同样加深的项目名，一眼能看出这行为什么在顶部。</p>
+
+<div class="boards">
+
+  <div class="board light">
+    <div class="caption">浅色主题</div>
+    <div class="sidebar">
+      <div class="row pinned">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#3f7f5f">S</span>
+        <span class="name">SiCode</span>
+        <svg class="pin pin-base" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/></svg>
+      </div>
+      <div class="row pinned">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#7a5aa8">A</span>
+        <span class="name">agent-sandbox</span>
+        <svg class="pin pin-base" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/></svg>
+      </div>
+      <div class="row">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#4a6fa5">W</span>
+        <span class="name">web-console</span>
+      </div>
+      <div class="row">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#a8703f">D</span>
+        <span class="name">docs-site</span>
+      </div>
+    </div>
+
+    <div class="zoom">
+      <div class="pair">
+        <svg class="glyph" viewBox="0 0 16 16" fill="none" style="color:var(--icon-faint)" aria-hidden="true"><path d="M5.25 3H10.75M6.5 3V6.75L4.5 9H11.5L9.5 6.75V3M8 9V13.25" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>旧：描边</span>
+      </div>
+      <div class="pair">
+        <svg class="glyph" viewBox="0 0 16 16" fill="none" style="color:var(--icon-base)" aria-hidden="true"><path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/></svg>
+        <span>新：实心</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="board dark">
+    <div class="caption">深色主题</div>
+    <div class="sidebar">
+      <div class="row pinned">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#3f7f5f">S</span>
+        <span class="name">SiCode</span>
+        <svg class="pin pin-base" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/></svg>
+      </div>
+      <div class="row pinned">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#7a5aa8">A</span>
+        <span class="name">agent-sandbox</span>
+        <svg class="pin pin-base" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/></svg>
+      </div>
+      <div class="row">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#4a6fa5">W</span>
+        <span class="name">web-console</span>
+      </div>
+      <div class="row">
+        <svg class="chev" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/></svg>
+        <span class="avatar" style="background:#a8703f">D</span>
+        <span class="name">docs-site</span>
+      </div>
+    </div>
+
+    <div class="zoom">
+      <div class="pair">
+        <svg class="glyph" viewBox="0 0 16 16" fill="none" style="color:var(--icon-faint)" aria-hidden="true"><path d="M5.25 3H10.75M6.5 3V6.75L4.5 9H11.5L9.5 6.75V3M8 9V13.25" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>旧：描边</span>
+      </div>
+      <div class="pair">
+        <svg class="glyph" viewBox="0 0 16 16" fill="none" style="color:var(--icon-base)" aria-hidden="true"><path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/></svg>
+        <span>新：实心</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="note">改动落在 <b>packages/ui/src/icons/catalog.ts</b> 的 <b>pin</b> 字形：描边路径换成同轮廓的实心路径，尺寸仍是 <b>size-3.5</b>（14px），颜色保持 <b>icon-base</b>。项目名沿用上一版的 <b>text-base</b> 强调，所以置顶行是「名字更深 + 实心 pin」两层信号，不再只靠 1px 线。</p>
+
+</body>
+</html>

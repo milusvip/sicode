@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="zh-CN" data-color-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>左侧栏 · 三个重设计方向</title>
+<style>
+  /* 颜色全部取自 packages/ui/src/styles/tokens/theme.css（dark / light 两套） */
+  :root {
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "SF Mono", Menlo, monospace;
+  }
+  [data-color-scheme="dark"] {
+    --bg-base: #161616;   --bg-deep: #080808;
+    --layer-01: #242424;  --layer-02: #2e2e2e;  --layer-03: #3a3a3a;
+    --text-base: #fafafa; --text-muted: #aeaeae; --text-faint: #808080;
+    --icon-muted: #808080; --icon-faint: #5c5c5c;
+    --border-muted: rgba(255,255,255,.078);
+    --border-base: rgba(255,255,255,.102);
+    --hover: rgba(255,255,255,.059);
+    --pressed: rgba(255,255,255,.102);
+    --accent: #8aa9fd; --ok: #49c970;
+  }
+  [data-color-scheme="light"] {
+    --bg-base: #fafafa;   --bg-deep: #fafafa;
+    --layer-01: #fafafa;  --layer-02: #f2f2f2;  --layer-03: #eeeeee;
+    --text-base: #161616; --text-muted: #5c5c5c; --text-faint: #808080;
+    --icon-muted: #808080; --icon-faint: #aeaeae;
+    --border-muted: rgba(0,0,0,.078);
+    --border-base: rgba(0,0,0,.102);
+    --hover: rgba(0,0,0,.039);
+    --pressed: rgba(0,0,0,.078);
+    --accent: #3b62d9; --ok: #2f9e52;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg-base); color: var(--text-base);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1060px; margin: 0 auto; padding: 32px 18px 72px; }
+
+  h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 6px; }
+  .sub { color: var(--text-muted); margin: 0 0 18px; max-width: 74ch; font-size: 13px; }
+  .sub code { font-family: var(--mono); font-size: 11.5px; background: var(--layer-02); padding: 1px 5px; border-radius: 4px; color: var(--text-base); }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; }
+  .seg { display: inline-flex; background: var(--layer-01); border-radius: 8px; padding: 2px; gap: 2px; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; height: 26px; padding: 0 11px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--layer-03); color: var(--text-base); }
+  .tip { font-size: 12px; color: var(--text-faint); margin-inline-start: auto; }
+
+  /* ── 三栏舞台：窄屏自动换行，面板本身永远 256px ── */
+  .stage { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 26px 22px; align-items: start; }
+  .col { min-width: 0; }
+  .cap { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .cap h2 { font-size: 13px; font-weight: 700; margin: 0; letter-spacing: .01em; }
+  .cap .tag { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--layer-02); color: var(--text-muted); }
+  .cap .tag.rec { background: rgba(73,201,112,.14); color: var(--ok); }
+  .note { font-size: 11.5px; color: var(--text-faint); margin: 10px 0 0; min-height: 3.4em; }
+
+  /* ── 侧栏外壳 ── */
+  .side {
+    --pad: 8px;
+    width: 256px; max-width: 100%; height: 468px;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-muted); border-radius: 12px;
+    font-size: 13px;
+  }
+  .side.old { width: 224px; }
+
+  /* ── 头部 ── */
+  .head { display: flex; align-items: center; gap: 4px; padding: 8px var(--pad) 0; flex: none; }
+  .new {
+    display: flex; height: 28px; flex: 1 1 auto; min-width: 0;
+    align-items: center; justify-content: center; gap: 6px;
+    border: 0; border-radius: 7px; background: var(--layer-02);
+    color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .new:hover { background: var(--layer-03); color: var(--text-base); }
+  .new span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .ico {
+    display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+    border: 0; border-radius: 6px; background: transparent; color: var(--icon-muted); cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .ico:hover { background: var(--hover); color: var(--text-base); }
+  .ico[aria-expanded="true"] { background: var(--pressed); color: var(--text-base); }
+
+  .field {
+    display: none; align-items: center; gap: 6px; flex: none;
+    height: 28px; margin: 8px var(--pad) 0; padding: 0 8px;
+    border-radius: 7px; background: var(--layer-02); font-size: 12px;
+  }
+  .side[data-search="1"] .field { display: flex; }
+  .field input { min-width: 0; flex: 1 1 auto; border: 0; background: transparent; color: var(--text-base); font: inherit; outline: none; }
+  .field input::placeholder { color: var(--text-faint); }
+  .field svg { flex: none; color: var(--text-faint); }
+
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px var(--pad) 12px; }
+  .list::-webkit-scrollbar { width: 8px; }
+  .list::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+
+  /* ── 项目组 ── */
+  .grp { display: flex; flex-direction: column; gap: 1px; margin-bottom: 14px; }
+  .grp:last-of-type { margin-bottom: 8px; }
+  .ghead { position: relative; display: flex; height: 28px; align-items: center; border-radius: 6px; transition: background-color .12s ease; }
+  .ghead:hover { background: var(--hover); }
+  .gtoggle {
+    display: flex; height: 100%; min-width: 0; flex: 1 1 auto; align-items: center; gap: 6px;
+    padding: 0 26px 0 4px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer;
+    transition: color .12s ease;
+  }
+  .ghead[data-active="1"] .gtoggle { color: var(--text-base); }
+  .chev { flex: none; color: var(--icon-faint); transition: transform .15s ease; }
+  .grp[data-open="0"] .chev { transform: rotate(-90deg); }
+  .pav {
+    flex: none; display: grid; place-items: center; width: 17px; height: 17px;
+    border-radius: 5px; background: var(--c); box-shadow: inset 0 0 0 1px var(--cb, transparent);
+    color: #fff; font-size: 9.5px; font-weight: 700; letter-spacing: 0;
+  }
+  .gname { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+  .gtrail {
+    position: absolute; inset-inline-end: 2px; top: 50%; transform: translateY(-50%);
+    display: grid; place-items: center; width: 18px; height: 18px;
+    border: 0; border-radius: 4px; background: transparent; color: var(--text-faint);
+    opacity: 0; cursor: pointer; transition: opacity .12s ease, color .12s ease;
+  }
+  .ghead:hover .gtrail { opacity: 1; }
+  .gtrail:hover { color: var(--text-base); }
+  .grp[data-open="0"] .rows { display: none; }
+  .rows { display: flex; flex-direction: column; gap: 1px; }
+
+  /* ── 会话行（A / C 共用） ── */
+  .sess {
+    position: relative; display: flex; width: 100%; height: 30px; align-items: center;
+    padding: 0 6px 0 42px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 13px; line-height: 16px;
+    text-align: start; cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .sess:hover { background: var(--hover); color: var(--text-base); }
+  .sess.active { background: var(--layer-02); color: var(--text-base); }
+  .sess.active::before {
+    content: ""; position: absolute; left: 30px; top: 8px; bottom: 8px; width: 2px;
+    border-radius: 2px; background: var(--text-base);
+  }
+  .stitle { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* 右侧 44px 常驻槽：时间 / 运行中 / hover 的 ⋯ 三选一，永不并存 */
+  .slot { position: relative; flex: none; width: 44px; height: 100%; display: grid; place-items: center; }
+  .slot > * { position: absolute; transition: opacity .12s ease; }
+  .stime { font-size: 11px; line-height: 14px; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .smore {
+    display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--text-muted); cursor: pointer; opacity: 0;
+  }
+  .smore:hover { background: var(--pressed); color: var(--text-base); }
+  .sess:hover .stime { opacity: 0; }
+  .sess:hover .smore { opacity: 1; }
+  .slot.busy .stime, .slot.busy .smore { opacity: 0; }
+  .spin {
+    width: 11px; height: 11px; border-radius: 50%;
+    border: 1.5px solid var(--border-base); border-top-color: var(--text-muted);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* C：两行行高 */
+  .side.two .sess { height: 42px; flex-direction: column; align-items: stretch; justify-content: center; gap: 1px; padding: 0 6px 0 14px; }
+  .side.two .sess.active::before { left: 5px; top: 12px; bottom: 12px; }
+  .side.two .srow1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .side.two .smeta { display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 14px; color: var(--text-faint); }
+  .side.two .smeta .pdot { width: 5px; height: 5px; border-radius: 2px; background: var(--c); flex: none; }
+  .side.two .slot { width: 18px; height: 18px; }
+
+  /* ── B：按时间分组 ── */
+  .switcher {
+    display: flex; width: 100%; height: 32px; align-items: center; gap: 7px;
+    padding: 0 6px; border: 0; border-radius: 7px; background: transparent;
+    color: var(--text-base); font: inherit; font-size: 13px; text-align: start; cursor: pointer;
+    transition: background-color .12s ease;
+  }
+  .switcher:hover { background: var(--hover); }
+  .switcher .gname { font-weight: 500; }
+  .switcher .caret { flex: none; color: var(--icon-faint); }
+  .swrap { padding: 6px var(--pad) 4px; flex: none; }
+  .sec {
+    display: flex; align-items: center; gap: 6px;
+    height: 22px; margin: 10px 0 2px; padding: 0 6px;
+    font-size: 11px; line-height: 14px; color: var(--text-faint); letter-spacing: .01em;
+  }
+  .sec .cnt { color: var(--text-faint); opacity: .75; font-variant-numeric: tabular-nums; }
+  .side.timeline .list { padding-top: 2px; }
+  .side.timeline .sess { padding: 0 6px 0 14px; }
+  .side.timeline .sess::after {
+    content: ""; position: absolute; inset-inline-start: 5px; top: 9px; bottom: 9px;
+    width: 2px; border-radius: 2px; background: var(--c);
+    opacity: .55; transition: opacity .12s ease;
+  }
+  .side.timeline .sess:hover::after, .side.timeline .sess.active::after { opacity: 1; }
+  .side.timeline .sess.active { background: var(--layer-02); }
+  .side.timeline .sess .proj { font-size: 11px; color: var(--text-faint); flex: none; }
+  .side.timeline .sess.active .proj { color: var(--text-muted); }
+
+  /* ── 底部 ── */
+  .foot { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px var(--pad) 8px; }
+  .identity {
+    display: flex; height: 30px; flex: 1 1 auto; min-width: 0; align-items: center; gap: 8px;
+    padding: 0 6px; border: 0; border-radius: 7px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .identity:hover { background: var(--hover); color: var(--text-base); }
+  .identity .nm { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mark {
+    flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px;
+    background: linear-gradient(160deg, #6b8bff, #3f57d0); color: #fff; font-size: 10px; font-weight: 700;
+  }
+
+  /* ── 旧版参照 ── */
+  .side.old .grp { gap: 0; margin-bottom: 14px; }
+  .side.old .ghead { height: 28px; }
+  .side.old .gtoggle { padding-left: 4px; gap: 6px; }
+  .side.old .pav { width: 16px; height: 16px; border-radius: 4px; box-shadow: none; font-size: 9px; }
+  .side.old .sess { height: 28px; padding: 0 8px 0 42px; gap: 8px; font-size: 12px; }
+  .side.old .sess.active { background: var(--pressed); }
+  .side.old .sess.active::before { left: 30px; top: 7px; bottom: 7px; }
+  .side.old .slot { display: flex; justify-content: flex-end; width: auto; }
+  .side.old .stime { position: static; font-size: 10.5px; }
+  .side.old .smore, .side.old .sess:hover .stime { display: none; }
+  .side.old .rule { height: 1px; margin: 5px 6px 0; background: var(--border-base); flex: none; }
+  .side.old .foot { border-top: 1px solid var(--border-muted); padding: 8px; }
+
+  /* ── 说明 ── */
+  h3.sec-t { font-size: 13px; font-weight: 700; margin: 42px 0 12px; letter-spacing: .02em; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: start; padding: 9px 12px 9px 0; vertical-align: top; border-bottom: 1px solid var(--border-muted); }
+  th { font-size: 11px; font-weight: 500; color: var(--text-faint); }
+  td.k { width: 128px; color: var(--text-base); font-weight: 500; }
+  td.why { color: var(--text-faint); }
+  td code, .why code { font-family: var(--mono); font-size: 11px; color: var(--text-base); background: var(--layer-02); padding: 0 4px; border-radius: 3px; }
+  .pick { margin: 18px 0 0; padding: 14px 16px; border-radius: 10px; background: var(--layer-01); border: 1px solid var(--border-muted); font-size: 12.5px; color: var(--text-muted); }
+  .pick b { color: var(--text-base); }
+  .foot-note { margin-top: 30px; font-size: 12px; color: var(--text-faint); border-top: 1px solid var(--border-muted); padding-top: 14px; }
+  .foot-note b { color: var(--text-muted); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1>左侧栏 · 三个重设计方向</h1>
+    <p class="sub">
+      同一份数据、同一套 token，三种信息层级。可以点：开合项目组、点会话选中、点放大镜展开搜索、输入过滤。
+      颜色/圆角/行高全部对齐 <code>packages/ui/src/styles/tokens/theme.css</code>；宽度 A/C 用 256px，旧版参照 224px。
+    </p>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="主题">
+      <button type="button" aria-pressed="true" data-scheme="dark">暗色</button>
+      <button type="button" aria-pressed="false" data-scheme="light">浅色</button>
+    </div>
+    <div class="seg" role="group" aria-label="字号">
+      <button type="button" aria-pressed="true" data-lh="1">正常行高</button>
+      <button type="button" aria-pressed="false" data-lh="0">紧凑</button>
+    </div>
+    <span class="tip">浅色主题下看选中态是否还成立</span>
+  </div>
+
+  <div class="stage">
+
+    <!-- ══════════ 旧版参照 ══════════ -->
+    <section class="col">
+      <div class="cap"><h2>现状</h2><span class="tag">224px</span></div>
+      <aside class="side old" data-side="old" data-search="1">
+        <div class="head">
+          <button class="new" type="button"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span>新建会话</span></button>
+          <button class="ico search" type="button" aria-label="搜索会话"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg></button>
+          <button class="ico" type="button" aria-label="收起侧栏"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8 3.8"/></svg></button>
+        </div>
+        <div class="rule"></div>
+        <label class="field"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg><input type="text" data-q placeholder="搜索会话"></label>
+        <div class="list" data-list>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="1">
+              <button class="gtoggle" type="button"><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#3250df">S</span><span class="gname">SiCode</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess active" type="button" data-title="左侧栏重新设计"><span class="stitle">左侧栏重新设计</span><span class="slot"><span class="stime">刚刚</span></span></button>
+              <button class="sess" type="button" data-title="主题卡片调整"><span class="stitle">主题卡片调整</span><span class="slot"><span class="stime">2 小时</span></span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#0096b8">C</span><span class="gname">Cursor</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" data-title="自动恢复停止排查"><span class="stitle">自动恢复停止排查</span><span class="slot"><span class="stime">10 小时</span></span></button>
+              <button class="sess" type="button" data-title="会话恢复草稿"><span class="stitle">会话恢复草稿</span><span class="slot"><span class="stime">昨天</span></span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#e7af36">脚</span><span class="gname">脚本</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" data-title="工具脚本整理"><span class="stitle">工具脚本整理</span><span class="slot"><span class="stime">12 分钟</span></span></button>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="identity" type="button"><span class="mark">S</span><span class="nm">本地工作区</span><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;color:var(--icon-faint)"><path d="M4.2 9.8 8 6l3.8 3.8"/></svg></button>
+        </div>
+      </aside>
+      <p class="note">12px 一个字号包办全部层级；每行右侧常驻 10.5px 时间，标题实际只剩 ~105px。</p>
+    </section>
+
+    <!-- ══════════ A ══════════ -->
+    <section class="col">
+      <div class="cap"><h2>A · 静默导轨</h2><span class="tag">结构不变</span></div>
+      <aside class="side" data-side="a" data-search="0">
+        <div class="head">
+          <button class="new" type="button"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span>新建会话</span></button>
+          <button class="ico search" type="button" aria-label="搜索会话" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg></button>
+          <button class="ico" type="button" aria-label="收起侧栏"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8 3.8"/></svg></button>
+        </div>
+        <label class="field"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg><input type="text" data-q placeholder="搜索会话"></label>
+        <div class="list" data-list>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="1">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#3250df">S</span><span class="gname">SiCode</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess active" type="button" data-title="左侧栏重新设计"><span class="stitle">左侧栏重新设计</span><span class="slot"><span class="stime">刚刚</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+              <button class="sess" type="button" data-title="主题卡片调整"><span class="stitle">主题卡片调整</span><span class="slot"><span class="stime">2 小时</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#0096b8">C</span><span class="gname">Cursor</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" data-title="自动恢复停止排查"><span class="stitle">自动恢复停止排查</span><span class="slot"><span class="stime">10 小时</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+              <button class="sess" type="button" data-title="会话恢复草稿"><span class="stitle">会话恢复草稿</span><span class="slot"><span class="stime">昨天</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#e7af36">脚</span><span class="gname">脚本</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" data-title="工具脚本整理"><span class="stitle">工具脚本整理</span><span class="slot busy"><span class="spin" role="status" aria-label="正在运行"></span></span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#623be2">F</span><span class="gname">FZ-Mortuus</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" data-title="打包发布流程"><span class="stitle">打包发布流程</span><span class="slot"><span class="stime">3 小时</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="identity" type="button"><span class="mark">S</span><span class="nm">本地工作区</span></button>
+          <button class="ico" type="button" aria-label="设置"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M12.4 3.6l-1.2 1.2M4.8 11.2l-1.2 1.2"/></svg></button>
+        </div>
+      </aside>
+      <p class="note">只改工艺：13px 正文、30px 行、组内 1px / 组间 14px、时间与 ⋯ 共用一个 44px 槽、选中用 <code>layer-02</code> 实底。</p>
+    </section>
+
+    <!-- ══════════ B ══════════ -->
+    <section class="col">
+      <div class="cap"><h2>B · 时间线</h2><span class="tag rec">推荐</span></div>
+      <aside class="side timeline" data-side="b" data-search="0">
+        <div class="swrap">
+          <button class="switcher" type="button"><span class="pav" style="--c:#3250df">S</span><span class="gname">SiCode</span><svg class="caret" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg></button>
+        </div>
+        <div class="head" style="padding-top:0">
+          <button class="new" type="button"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span>新建会话</span></button>
+          <button class="ico search" type="button" aria-label="搜索会话" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg></button>
+        </div>
+        <label class="field"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg><input type="text" data-q placeholder="搜索会话"></label>
+        <div class="list" data-list>
+          <div class="sec">今天 <span class="cnt">2</span></div>
+          <button class="sess active" type="button" style="--c:#3250df" data-title="左侧栏重新设计"><span class="stitle">左侧栏重新设计</span><span class="slot"><span class="stime">刚刚</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+          <button class="sess" type="button" style="--c:#e7af36" data-title="工具脚本整理"><span class="stitle">工具脚本整理</span><span class="slot busy"><span class="spin" role="status" aria-label="正在运行"></span></span></button>
+          <div class="sec">昨天 <span class="cnt">2</span></div>
+          <button class="sess" type="button" style="--c:#0096b8" data-title="自动恢复停止排查"><span class="stitle">自动恢复停止排查</span><span class="slot"><span class="stime">10 小时</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+          <button class="sess" type="button" style="--c:#623be2" data-title="打包发布流程"><span class="stitle">打包发布流程</span><span class="slot"><span class="stime">昨天</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+          <div class="sec">更早 <span class="cnt">2</span></div>
+          <button class="sess" type="button" style="--c:#3250df" data-title="主题卡片调整"><span class="stitle">主题卡片调整</span><span class="slot"><span class="stime">3 天</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+          <button class="sess" type="button" style="--c:#0096b8" data-title="会话恢复草稿"><span class="stitle">会话恢复草稿</span><span class="slot"><span class="stime">5 天</span><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></button>
+        </div>
+        <div class="foot">
+          <button class="identity" type="button"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.2" y="3.2" width="11.6" height="9.6" rx="2"/><path d="M2.2 6.4h11.6"/></svg><span class="nm">所有项目</span></button>
+          <button class="ico" type="button" aria-label="设置"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M12.4 3.6l-1.2 1.2M4.8 11.2l-1.2 1.2"/></svg></button>
+        </div>
+      </aside>
+      <p class="note">按最近改动分组，项目退成 2px 色标。标题拿到全部宽度，跨项目也能一眼扫到「刚才在做什么」。</p>
+    </section>
+
+    <!-- ══════════ C ══════════ -->
+    <section class="col">
+      <div class="cap"><h2>C · 双行</h2><span class="tag">长标题友好</span></div>
+      <aside class="side two" data-side="c" data-search="0">
+        <div class="head">
+          <button class="new" type="button"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span>新建会话</span></button>
+          <button class="ico search" type="button" aria-label="搜索会话" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg></button>
+          <button class="ico" type="button" aria-label="收起侧栏"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8-3.8"/></svg></button>
+        </div>
+        <label class="field"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg><input type="text" data-q placeholder="搜索会话"></label>
+        <div class="list" data-list>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="1">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#3250df">S</span><span class="gname">SiCode</span><span class="gname" style="flex:none;color:var(--text-faint);font-weight:400;font-size:11px">2</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess active" type="button" style="--c:#3250df" data-title="左侧栏重新设计"><span class="srow1"><span class="stitle">左侧栏重新设计</span><span class="slot"><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></span><span class="smeta"><span class="pdot"></span>刚刚 · 3 次工具调用</span></button>
+              <button class="sess" type="button" style="--c:#3250df" data-title="主题卡片调整"><span class="srow1"><span class="stitle">主题卡片调整</span><span class="slot"><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></span><span class="smeta"><span class="pdot"></span>2 小时前 · 已完成</span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#0096b8">C</span><span class="gname">Cursor</span><span class="gname" style="flex:none;color:var(--text-faint);font-weight:400;font-size:11px">2</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" style="--c:#0096b8" data-title="自动恢复停止排查"><span class="srow1"><span class="stitle">自动恢复停止排查</span><span class="slot"><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></span><span class="smeta"><span class="pdot"></span>10 小时前 · 已停止</span></button>
+              <button class="sess" type="button" style="--c:#0096b8" data-title="会话恢复草稿"><span class="srow1"><span class="stitle">会话恢复草稿</span><span class="slot"><button class="smore" type="button" aria-label="更多"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.6" cy="8" r="1.2"/></svg></button></span></span><span class="smeta"><span class="pdot"></span>昨天 · 草稿</span></button>
+            </div>
+          </div>
+          <div class="grp" data-open="1">
+            <div class="ghead" data-active="0">
+              <button class="gtoggle" type="button"><svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg><span class="pav" style="--c:#e7af36">脚</span><span class="gname">脚本</span></button>
+              <button class="gtrail" type="button" aria-label="新建会话"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg></button>
+            </div>
+            <div class="rows">
+              <button class="sess" type="button" style="--c:#e7af36" data-title="工具脚本整理"><span class="srow1"><span class="stitle">工具脚本整理</span><span class="slot busy"><span class="spin" role="status" aria-label="正在运行"></span></span></span><span class="smeta"><span class="pdot"></span>正在运行 · 12 分钟</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="identity" type="button"><span class="mark">S</span><span class="nm">本地工作区</span></button>
+          <button class="ico" type="button" aria-label="设置"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M12.4 3.6l-1.2 1.2M4.8 11.2l-1.2 1.2"/></svg></button>
+        </div>
+      </aside>
+      <p class="note">标题独占一行不截断，第二行放项目/状态/时间。信息量最大，但同屏少 3 行。</p>
+    </section>
+  </div>
+
+  <h3 class="sec-t">为什么这三处一定要改</h3>
+  <table>
+    <thead><tr><th>问题</th><th>现状代价</th><th>共同修法</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k">一个字号撑全部层级</td>
+        <td class="why">项目名、会话标题、时间全在 12px，只靠 <code>font-weight: 500</code> 分层。DESIGN.md 已写明「400 对 700 才扛得住雅黑，460 对 400 看起来一样重」——所以现在的层级其实没生效。</td>
+        <td>会话标题升到 13px/16px（正文级），项目名留 12px 当标签，时间 11px 当元数据。三级落差靠字号 + 字重，不靠颜色深浅硬凑。</td>
+      </tr>
+      <tr>
+        <td class="k">时间戳永远占位</td>
+        <td class="why">224px 里缩进 42px、右侧时间 40px，标题只剩 ~105px，中文 8 个字就开始省略。「自动恢复停止排查」在截图里已经被截。</td>
+        <td>时间 / 运行中 / ⋯ 共用一个 44px 固定槽，三者互斥永不同时出现。右边缘对齐成一列（数字列右对齐是 DESIGN.md 的硬要求），宽度不再随内容抖动。</td>
+      </tr>
+      <tr>
+        <td class="k">组内 0px、组间 14px</td>
+        <td class="why">行与行贴死、组与组拉开，读起来是一块块板砖，而不是一棵树。</td>
+        <td>组内 <code>1–2px</code>、组间 <code>14px</code>、组头到首行 <code>4px</code>。层次靠距离，不靠分割线（现在头部那根 1px 线也可以去掉）。</td>
+      </tr>
+      <tr>
+        <td class="k">选中态靠竖条猜</td>
+        <td class="why">浅色主题下 <code>overlay-pressed</code> 只是 8% 黑，和 hover 的 4% 几乎分不开，实际靠 2px 竖条认位置。</td>
+        <td>选中 = <code>layer-02</code> 实底 + 文字升到 <code>text-base</code> + 2px 竖条，三重信号；hover 只给 6% overlay。深浅主题都不含糊。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sec-t">三个方向的取舍</h3>
+  <table>
+    <thead><tr><th>方向</th><th>改了什么</th><th>代价 / 适合</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k">A · 静默导轨</td>
+        <td class="why">结构原样：项目分组 → 会话。只修工艺，宽度 224 → 256。</td>
+        <td class="why">改动最小、风险最低，今天就能落。项目多时仍要滚很久才能跨项目找会话。</td>
+      </tr>
+      <tr>
+        <td class="k">B · 时间线</td>
+        <td class="why">按「今天 / 昨天 / 更早」分组，项目退成行首 2px 色标；顶部换成项目切换器 + 新建；底部是「所有项目」+ 设置。</td>
+        <td class="why">和首页的历史列表同一套分组语义，跨项目找「刚做的事」最快。代价是失去「按项目纵览」的视角，需要项目切换器补回来。</td>
+      </tr>
+      <tr>
+        <td class="k">C · 双行</td>
+        <td class="why">标题一行不截，第二行放「项目色标 · 时间 · 状态」，行高 42px。</td>
+        <td class="why">长中文标题最友好，也不用加宽侧栏。代价是同屏少三行、垂直滚动变多。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="pick">
+    <b>我的建议：B 的骨架 + A 的工艺。</b>
+    理由是侧栏真正的用途是「回到刚才那个会话」，而现在为了按目录纵览，付出了 42px 缩进 + 常驻项目头两层开销。
+    如果把项目降级成 2px 色标、按时间分组，标题立刻多出 ~50px，同时还能顺手解决「项目多到要滚」的问题——
+    项目切换器只需要承载「换目录开工」这一件低频事。<br>
+    想更保守就先落 A：它是 B 的真子集，之后换分组方式不用再动排版。
+  </p>
+
+  <p class="foot-note">
+    <b>落点：</b><code>packages/app/src/shell/left-sidebar.tsx</code>（结构与 class）、<code>packages/app/src/runtime/i18n/en.ts</code>（B 需要 <code>dock.group.today/yesterday/earlier</code>、<code>dock.projects.all</code>）。<br>
+    <b>不动：</b>会话排序、归档、右键菜单与跳转目标。<b>新增：</b>行内 ⋯ 复用现成的 sessionMenu。
+  </p>
+</div>
+
+<script>
+  // 主题
+  for (const button of document.querySelectorAll("[data-scheme]")) {
+    button.addEventListener("click", () => {
+      for (const other of document.querySelectorAll("[data-scheme]")) other.setAttribute("aria-pressed", String(other === button))
+      document.documentElement.dataset.colorScheme = button.dataset.scheme
+    })
+  }
+
+  // 紧凑开关：把行高压回现状，用来对比「同一结构换行高」的差别
+  for (const button of document.querySelectorAll("[data-lh]")) {
+    button.addEventListener("click", () => {
+      for (const other of document.querySelectorAll("[data-lh]")) other.setAttribute("aria-pressed", String(other === button))
+      const compact = button.dataset.lh === "0"
+      document.querySelectorAll(".side:not(.old)").forEach((side) => side.classList.toggle("compact", compact))
+    })
+  }
+
+  const style = document.createElement("style")
+  style.textContent = `.side.compact .sess{height:26px} .side.compact .sess.active::before{top:6px;bottom:6px} .side.compact.two .sess{height:34px}`
+  document.head.append(style)
+
+  // 开合项目组
+  for (const toggle of document.querySelectorAll(".gtoggle")) {
+    toggle.addEventListener("click", () => {
+      const grp = toggle.closest(".grp")
+      const open = grp.dataset.open !== "1"
+      grp.dataset.open = open ? "1" : "0"
+      toggle.setAttribute("aria-expanded", String(open))
+    })
+  }
+
+  // 选中会话
+  for (const row of document.querySelectorAll("[data-side] .sess")) {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest(".smore")) return
+      const side = row.closest("[data-side]")
+      for (const other of side.querySelectorAll(".sess")) other.classList.remove("active")
+      row.classList.add("active")
+    })
+  }
+
+  // 搜索：图标开合，Escape 收起并清空
+  for (const button of document.querySelectorAll(".ico.search")) {
+    const side = button.closest("[data-side]")
+    button.addEventListener("click", () => {
+      const open = side.dataset.search !== "1"
+      side.dataset.search = open ? "1" : "0"
+      button.setAttribute("aria-expanded", String(open))
+      const input = side.querySelector("[data-q]")
+      if (open) queueMicrotask(() => input.focus())
+      else { input.value = ""; filter(side) }
+    })
+  }
+
+  function filter(side) {
+    const needle = side.querySelector("[data-q]").value.trim().toLowerCase()
+    let shown = 0
+    for (const grp of side.querySelectorAll(".grp")) {
+      let hit = 0
+      for (const row of grp.querySelectorAll(".sess")) {
+        const match = !needle || row.dataset.title.includes(needle)
+        row.hidden = !match
+        if (match) hit++
+      }
+      grp.hidden = hit === 0
+      shown += hit
+    }
+    for (const row of side.querySelectorAll(":scope > .list > .sess")) {
+      const match = !needle || row.dataset.title.includes(needle)
+      row.hidden = !match
+      if (match) shown++
+    }
+    for (const sec of side.querySelectorAll(".sec")) sec.hidden = !!needle
+    side.querySelectorAll("[data-empty]").forEach((el) => { el.hidden = shown > 0 })
+  }
+
+  for (const input of document.querySelectorAll("[data-q]")) {
+    const side = input.closest("[data-side]")
+    input.addEventListener("input", () => filter(side))
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || side.dataset.side === "old") return
+      side.dataset.search = "0"
+      side.querySelector(".ico.search").setAttribute("aria-expanded", "false")
+      input.value = ""
+      input.blur()
+      filter(side)
+    })
+  }
+</script>
+</body>
+</html>

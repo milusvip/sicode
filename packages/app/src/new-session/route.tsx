@@ -7,6 +7,7 @@ import { LocationProvider } from "@/workspaces/location"
 import { ModelsProvider } from "@/providers/models/models"
 import { ComposerPersistenceProvider } from "@/composer/persistence"
 import { UiInspectComposerBridge } from "@/shell/ui-inspect/bridge"
+import { SelectionQuoteBridge } from "@/shell/selection-menu/bridge"
 import { ServerProvider, useServer } from "@/runtime/server/current"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useTabs, type DraftTab } from "@/shell/tabs/tabs"
@@ -99,6 +100,7 @@ function DraftProviders(props: ParentProps) {
     <FileProvider>
       <ComposerPersistenceProvider>
         <UiInspectComposerBridge />
+        <SelectionQuoteBridge />
         <CommentsProvider>{props.children}</CommentsProvider>
       </ComposerPersistenceProvider>
     </FileProvider>

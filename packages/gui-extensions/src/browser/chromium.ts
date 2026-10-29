@@ -463,6 +463,7 @@ export function createBrowserPage(
   })
   cdp.on("Target.attachedToTarget", ({ sessionId, targetInfo }, parentSessionID) => {
     if (targetInfo.type !== "iframe") return
+    revision++
     const parentID = targetInfo.parentFrameId ?? Array.from(sessions).find(([, id]) => id === parentSessionID)?.[0]
 
     if (parentID) parents.set(targetInfo.targetId, parentID)
@@ -496,6 +497,7 @@ export function createBrowserPage(
       if (id === sessionId) {
         sessions.delete(frameID)
         parents.delete(frameID)
+        revision++
       }
     })
   })
@@ -624,7 +626,32 @@ export function createBrowserPage(
       if (closed) throw new Error("Browser tab was closed. Open the page again to write cookies.")
       if (page) contents.reload()
 
-      return { cookies: cookies.length }
+      // SiCode: whether the site accepted the session is otherwise invisible. Read the two signals
+      // this pane can see: a paste the site rejected is usually cleared or expired by the reload,
+      // so pasted names staying readable for the address means the session likely landed, and a
+      // login form still on screen is the strongest "not signed in" signal. Best-effort with a
+      // short bound: a slow or redirecting page reports "unclear" instead of holding the answer.
+      if (!page) return { cookies: cookies.length, login: { state: "unclear" as const, kept: 0, pasted: 0 } }
+
+      await waitFor(() => closed || !contents.isLoading(), new AbortController().signal, 10_000).catch(() => undefined)
+      const names = new Set(cookies.map((cookie) => cookie.name))
+      const readable = await contents.session.cookies.get({ url: contents.getURL() }).catch(() => [])
+      const kept = readable.filter((cookie) => names.has(cookie.name)).length
+      const form = await cdp
+        .send("Runtime.evaluate", {
+          expression: "!!document.querySelector('input[type=password]')",
+          returnByValue: true,
+        })
+        .catch(() => undefined)
+
+      return {
+        cookies: cookies.length,
+        login: {
+          state: form?.result.value === true ? ("unlikely" as const) : kept > 0 ? ("likely" as const) : ("unclear" as const),
+          kept,
+          pasted: names.size,
+        },
+      }
     },
     /** Reports the page's icon and zoom when either changed since the last report. */
     detail,
@@ -924,11 +951,17 @@ export function createBrowserPage(
       case "wait": {
         if (action.condition !== "load" && !action.text)
           throw new Error(
-            'browser.wait requires non-empty text for condition "text" or "textGone". Use condition "load" without text to wait for loading.',
+            'browser.wait requires non-empty text for condition "text", "textGone", or "response". Use condition "load" without text to wait for loading.',
           )
+        const text = action.text ?? ""
+        // A response that finished before the wait began does not count, or an older request to
+        // the same URL would satisfy it instantly; the wait resolves when a matching request
+        // finishes while it runs. Check browser.network.list({tabID}) for an earlier response.
+        const since = diagnostics.done()
         await waitFor(
           async () => {
             if (action.condition === "load") return !contents.isLoading()
+            if (action.condition === "response") return diagnostics.completedSince({ urlContains: text, since })
             const context = action.frameID ? contexts.get(action.frameID) : undefined
 
             if (action.frameID && !context)
@@ -939,7 +972,7 @@ export function createBrowserPage(
             const value = await cdp.send(
               "Runtime.evaluate",
               {
-                expression: `document.body?.innerText.includes(${JSON.stringify(action.text)}) ?? false`,
+                expression: `document.body?.innerText.includes(${JSON.stringify(text)}) ?? false`,
                 returnByValue: true,
                 contextId: context?.id,
               },
@@ -953,7 +986,7 @@ export function createBrowserPage(
         ).catch((error) => {
           if (signal.aborted) throw error
           throw new Error(
-            `browser.wait failed for condition ${JSON.stringify(action.condition)} (timeoutMs: ${action.timeoutMs ?? 10_000}). Inspect browser.snapshot({tabID}) and check text/frameID before retrying; timeoutMs can be increased up to 30000 for a genuinely slow page. Details: ${error instanceof Error ? error.message : String(error)}`,
+            `browser.wait failed for condition ${JSON.stringify(action.condition)} (timeoutMs: ${action.timeoutMs ?? 10_000}). Inspect browser.snapshot({tabID}) and check text/frameID before retrying; for condition response, check browser.network.list({tabID}) for the request's fate. timeoutMs can be increased up to 30000 for a genuinely slow page. Details: ${error instanceof Error ? error.message : String(error)}`,
           )
         })
         break
@@ -1198,13 +1231,30 @@ export function createBrowserPage(
 
     if (!value)
       throw new Error(
-        "Element ref is stale or belongs to another tab. Call browser.snapshot({tabID}) and use a ref from that tab's newest snapshot. Do not reuse refs after navigation or a newer snapshot.",
+        "Element ref is stale or belongs to another tab. Call browser.snapshot({tabID}) and use a ref from that tab. Refs survive later snapshots but expire on navigation or when the page replaces the element; do not reuse a closed tab's refs.",
       )
 
     return value
   }
 
-  async function frames() {
+  /** The frame tree of the tab, one entry per frame. */
+  type FrameList = { id: string; parentID?: string; url: string; name: string }[]
+
+  // getFrameTree costs one roundtrip per attached session, and rect() used to repeat that once
+  // per element of a snapshot. Cached until navigation or frame attach/detach bumps the revision.
+  let frameCache: { at: number; tree: FrameList } | undefined
+
+  function frames(): Promise<FrameList> {
+    if (frameCache?.at === revision) return Promise.resolve(frameCache.tree)
+    const at = revision
+
+    return frameTree().then((tree) => {
+      if (frameCache?.at === at && at === revision) frameCache = { at, tree }
+      return tree
+    })
+  }
+
+  async function frameTree(): Promise<FrameList> {
     const root = await cdp.send("Page.getFrameTree")
     const result: { id: string; parentID?: string; url: string; name: string }[] = []
 
@@ -1282,7 +1332,8 @@ export function createBrowserPage(
       await cdp.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: element.backendID }, element.sessionID)
       // Force a compositor update after scrolling. requestAnimationFrame can
       // stall in a hidden WebContentsView, even with background throttling off.
-      await contents.capturePage(undefined, { stayHidden: false, stayAwake: true })
+      // A visible page repaints on its own; capturing it wastes a full frame per action.
+      if (!view.getVisible()) await contents.capturePage(undefined, { stayHidden: false, stayAwake: true })
     }
 
     const bounds = Schema.Struct({ x: Schema.Finite, y: Schema.Finite, width: Schema.Finite, height: Schema.Finite })
@@ -1340,6 +1391,22 @@ export function createBrowserPage(
 
   async function click(element: Element, button = "left", count = 1, modifiers: readonly string[] = []) {
     const position = await point(element)
+    // Synthetic input lands on whatever is topmost at the point, which would report success while
+    // a cookie banner or overlay swallowed it. check and fill read back their result; click
+    // verifies first: the element, or a node inside its shadow tree, must be hit at its center.
+    const blocked = await call(element, `function() {
+      const r = this.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      for (let node = hit; node; node = node.parentElement ?? (node.parentNode instanceof ShadowRoot ? node.parentNode.host : undefined)) {
+        if (this.contains(node)) return false
+      }
+      return true
+    }`)
+
+    if (blocked)
+      throw new Error(
+        "Another element covers the click point, so the click would land there and this element would not respond. Close the overlay covering it first (a cookie banner, modal, or sticky header), or choose an uncovered ref. If the element is genuinely clickable, it may have pointer-events: none or zero size.",
+      )
     const flags = modifiers.reduce((mask, key) => mask | ({ Alt: 1, Control: 2, Meta: 4, Shift: 8 }[key] ?? 0), 0)
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...position, modifiers: flags })
 
@@ -1492,7 +1559,10 @@ export function createBrowserPage(
       throw new Error(
         "Element is absent from this frame's accessibility snapshot. Retry browser.snapshot with the same tabID and no ref to refresh the frame, then choose a returned ref.",
       )
-    refs.clear()
+    // Refs survive snapshots: each element's backendNodeId stays resolvable until the page
+    // replaces it, and the ref allocator never reuses a number, so a ref named in an earlier
+    // snapshot still targets the same element here. Navigation clears them; a replaced element
+    // fails in resolve() with a fresh-snapshot hint.
     const pinned = new Map(Array.from(picked, ([ref, element]) => [`${element.frameID}:${element.backendID}`, ref]))
     const lines: string[] = []
     let truncated = false

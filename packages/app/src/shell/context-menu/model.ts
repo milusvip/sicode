@@ -3,6 +3,9 @@ export type ContextMenuPlatform = "macos" | "windows" | "linux"
 export type ContextMenuActionID =
   | "link.open"
   | "link.copy"
+  | "image.copy"
+  | "image.copyAddress"
+  | "message.copy"
   | "edit.undo"
   | "edit.redo"
   | "edit.cut"
@@ -17,6 +20,8 @@ export type ContextMenuActionID =
 export type ContextMenuLabelKey =
   | "contextMenu.openLink"
   | "contextMenu.copyLink"
+  | "contextMenu.copyImage"
+  | "contextMenu.copyImageAddress"
   | "contextMenu.inspectElement"
   | "desktop.menu.undo"
   | "desktop.menu.redo"
@@ -48,6 +53,10 @@ export type ContextMenuTarget = {
   selection: string
   /** Resolved href when the pointer landed inside a link. */
   link: string | undefined
+  /** SiCode: src of the image under the pointer, so the menu can copy it and its address. */
+  image: string | undefined
+  /** SiCode: full text of the message bubble under the pointer, for copy without a selection. */
+  message: string | undefined
   /** Whether developer items are offered. */
   dev: boolean
 }
@@ -56,6 +65,8 @@ export type ContextMenuTargetInput = {
   editable: boolean
   selection: string
   link?: string
+  image?: string
+  message?: string
   dev: boolean
 }
 
@@ -64,6 +75,8 @@ export function contextMenuTarget(input: ContextMenuTargetInput): ContextMenuTar
     editable: input.editable,
     selection: input.selection,
     link: input.link,
+    image: input.image,
+    message: input.message,
     dev: input.dev,
   }
 }
@@ -96,6 +109,14 @@ export function contextMenuSections(target: ContextMenuTarget, platform: Context
     ])
   }
 
+  // SiCode: image items follow link items, the browser's order for an image inside a link.
+  if (target.image) {
+    sections.push([
+      { type: "item", action: "image.copy", labelKey: "contextMenu.copyImage" },
+      { type: "item", action: "image.copyAddress", labelKey: "contextMenu.copyImageAddress" },
+    ])
+  }
+
   if (target.editable) {
     sections.push([
       { type: "item", action: "edit.undo", labelKey: "desktop.menu.undo", shortcut: keys.undo },
@@ -117,7 +138,14 @@ export function contextMenuSections(target: ContextMenuTarget, platform: Context
       { type: "item", action: "edit.selectAll", labelKey: "desktop.menu.selectAll", shortcut: keys.selectAll },
     ])
   } else {
+    // SiCode: on a message bubble with nothing selected, 复制 copies the whole bubble; with a
+    // selection the existing item already does the right thing, so the whole-bubble copy backs off.
+    const messageCopy = !selected && target.message
+      ? [{ type: "item" as const, action: "message.copy" as const, labelKey: "desktop.menu.copy" as const }]
+      : []
+
     sections.push([
+      ...messageCopy,
       ...(selected
         ? [{ type: "item" as const, action: "edit.copy" as const, labelKey: "desktop.menu.copy" as const, shortcut: keys.copy }]
         : []),

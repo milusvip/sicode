@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN" data-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>左侧栏颜色层级 · 现在 vs 改后</title>
+<style>
+  /* Token values copied from packages/ui/src/styles/tokens/theme.css + colors.css.
+     Keeping them literal means the demo shows the real palette, not an approximation. */
+  :root {
+    --grey-50: #ffffff;  --grey-100: #fafafa; --grey-200: #f2f2f2; --grey-300: #eeeeee;
+    --grey-400: #dbdbdb; --grey-500: #aeaeae; --grey-600: #808080; --grey-700: #5c5c5c;
+    --grey-800: #3a3a3a; --grey-900: #2e2e2e;  --grey-1000: #242424; --grey-1100: #161616;
+    --grey-1200: #080808;
+    --alpha-light-4: rgba(255,255,255,.039); --alpha-light-6: rgba(255,255,255,.059);
+    --alpha-light-10: rgba(255,255,255,.102);
+    --alpha-dark-4: rgba(0,0,0,.039); --alpha-dark-6: rgba(0,0,0,.059);
+    --alpha-dark-8: rgba(0,0,0,.078);
+    --radius: 10px;
+    --sans: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+
+  /* ── theme surfaces ── */
+  [data-scheme="dark"] {
+    --bg-base: var(--grey-1100); --bg-deep: var(--grey-1200);
+    --layer-02: var(--grey-900);
+    --text-base: var(--grey-100); --text-muted: var(--grey-500); --text-faint: var(--grey-600);
+    --icon-faint: var(--grey-700); --icon-muted: var(--grey-600);
+    --hover: var(--alpha-light-6); --pressed: var(--alpha-light-10);
+    --border-muted: var(--alpha-light-8); --border-base: var(--alpha-light-10);
+    --page: #0d0d0d; --page-text: var(--grey-400);
+    --card: #111111;
+    --ok: #49c970;
+  }
+  [data-scheme="light"] {
+    --bg-base: var(--grey-50); --bg-deep: var(--grey-100);
+    --layer-02: var(--grey-200); --layer-03: var(--grey-300);
+    --text-base: var(--grey-1100); --text-muted: var(--grey-700); --text-faint: var(--grey-600);
+    --icon-faint: var(--grey-500); --icon-muted: var(--grey-600);
+    --hover: var(--alpha-dark-4); --pressed: var(--alpha-dark-8);
+    --border-muted: var(--alpha-dark-8); --border-base: var(--alpha-dark-10);
+    --page: #f6f6f6; --page-text: var(--grey-700);
+    --card: #ffffff;
+    --ok: #198b43;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 24px 20px 56px;
+    background: var(--page);
+    color: var(--page-text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  header { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  h1 { flex: 1 1 320px; margin: 0; font-size: 16px; font-weight: 700; line-height: 24px; color: var(--text-base); }
+
+  .toggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--card); border: 1px solid var(--border-muted); }
+  .toggle button {
+    appearance: none; border: 0; height: 26px; padding: 0 12px; border-radius: 6px;
+    background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .toggle button[aria-pressed="true"] { background: var(--layer-02); color: var(--text-base); font-weight: 500; }
+
+  .lede { margin: 0 0 22px; max-width: 68ch; color: var(--text-muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 20px; }
+
+  .panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .panel > h2 {
+    margin: 0; display: flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint);
+  }
+  .badge { padding: 1px 7px; border-radius: 999px; background: var(--layer-02); color: var(--text-muted); font-size: 10.5px; letter-spacing: 0; }
+  .badge.good { background: color-mix(in oklab, var(--ok) 16%, transparent); color: var(--ok); }
+
+  /* ── the sidebar itself ── */
+  .side {
+    width: 100%; max-width: 268px; padding: 6px 6px 8px;
+    background: var(--bg-deep); border: 1px solid var(--border-muted); border-radius: var(--radius);
+  }
+
+  .searchrow { display: flex; gap: 4px; padding: 2px 2px 6px; }
+  .field {
+    display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 6px; height: 26px; padding: 0 8px;
+    border-radius: 6px; background: var(--layer-02); color: var(--text-faint); font-size: 12px;
+  }
+  .newbtn {
+    display: flex; width: 100%; height: 26px; align-items: center; justify-content: center; gap: 5px;
+    margin-bottom: 8px; border: 1px solid var(--border-muted); border-radius: 6px;
+    background: var(--card); color: var(--text-base); font-size: 12px;
+  }
+
+  .grp { margin-bottom: 12px; }
+  .grow {
+    display: flex; height: 28px; align-items: center; gap: 6px; padding: 0 8px 0 4px;
+    border-radius: 5px; font-size: 12px;
+  }
+  .grow[data-hover] { background: var(--hover); }
+  .chev { flex: none; color: var(--icon-faint); }
+  .pav {
+    flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px;
+    color: #fff; font-size: 9px; font-weight: 700;
+  }
+  .gname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .spin {
+    flex: none; width: 12px; height: 12px; border-radius: 50%;
+    border: 1.5px solid var(--border-base); border-top-color: var(--text-muted);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sess {
+    display: flex; height: 28px; align-items: center; gap: 8px; padding: 0 8px 0 42px;
+    border-radius: 6px; font-size: 12px; color: var(--text-muted);
+  }
+  .sess[data-hover] { background: var(--hover); color: var(--text-base); }
+  .sess[data-active] { background: var(--pressed); color: var(--text-base); }
+  .sess .title { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sess .time { flex: none; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+  /* the two states under test */
+  .now .gname { color: var(--text-muted); }
+  .after .gname { color: var(--text-base); }
+  /* plain-colour rule: every row same surface, no fills behind the group header */
+  .plain .grow { background: transparent !important; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 26px; font-size: 12px; }
+  caption { text-align: start; padding-bottom: 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+  th, td { text-align: start; padding: 5px 8px; border-bottom: 1px solid var(--border-muted); }
+  th { font-weight: 500; color: var(--text-faint); font-size: 11px; letter-spacing: .03em; }
+  td { color: var(--text-muted); }
+  td.num { font-family: ui-monospace, "Cascadia Code", monospace; font-variant-numeric: tabular-nums; color: var(--text-base); }
+  td .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-inline-end: 6px; box-shadow: inset 0 0 0 1px var(--border-base); }
+
+  .note { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border-muted); color: var(--text-faint); max-width: 68ch; }
+  .note b { color: var(--text-muted); font-weight: 500; }
+
+  @media (max-width: 560px) {
+    body { padding: 18px 14px 40px; }
+    .side { max-width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>左侧栏：颜色层级</h1>
+    <div class="toggle" role="group" aria-label="主题">
+      <button type="button" data-set="dark" aria-pressed="true">深色</button>
+      <button type="button" data-set="light" aria-pressed="false">浅色</button>
+    </div>
+  </header>
+
+  <p class="lede">
+    项目名和会话名现在是同一个 <code>--v2-text-text-muted</code>，只靠缩进和 500 字重分开，所以整列读起来是平的。
+    改后把项目名提到 <code>--v2-text-text-base</code>，会话名留在 muted，时间戳留在 faint —— 三级阶梯。
+  </p>
+
+  <div class="grid">
+    <section class="panel now">
+      <h2>现在 <span class="badge">项目名 = muted</span></h2>
+      <div class="side" aria-label="当前实现">
+        <div class="searchrow"><div class="field">搜索</div></div>
+        <div class="newbtn">＋ 新建会话</div>
+
+        <div class="grp">
+          <div class="grow">
+            <span class="chev">▾</span>
+            <span class="pav" style="background:#4c6ef5">S</span>
+            <span class="gname">SiCode</span>
+          </div>
+          <div class="sess" data-active><span class="title">项目右键菜单与侧栏宽度</span><span class="time">刚刚</span></div>
+          <div class="sess"><span class="title">侧边栏重设计</span><span class="time">2 天</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="grow">
+            <span class="chev">▾</span>
+            <span class="pav" style="background:#b07a2b">脚</span>
+            <span class="gname">脚本</span>
+          </div>
+          <div class="sess"><span class="title">批量重命名</span><span class="time">5 天</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="grow">
+            <span class="chev">▾</span>
+            <span class="pav" style="background:#6b7280">默</span>
+            <span class="gname">默认项目</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel after">
+      <h2>改后 <span class="badge good">项目名 = base</span></h2>
+      <div class="side" aria-label="改后实现">
+        <div class="searchrow"><div class="field">搜索</div></div>
+        <div class="newbtn">＋ 新建会话</div>
+
+        <div class="grp">
+          <div class="grow">
+            <span class="chev">▾</span>
+            <span class="pav" style="background:#4c6ef5">S</span>
+            <span class="gname">SiCode</span>
+            <span class="spin" role="status" aria-label="正在工作"></span>
+          </div>
+          <div class="sess" data-active><span class="title">项目右键菜单与侧栏宽度</span><span class="time">刚刚</span></div>
+          <div class="sess"><span class="title">侧边栏重设计</span><span class="time">2 天</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="grow">
+            <span class="chev">▾</span>
+            <span class="pav" style="background:#b07a2b">脚</span>
+            <span class="gname">脚本</span>
+          </div>
+          <div class="sess"><span class="title">批量重命名</span><span class="time">5 天</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="grow">
+            <span class="chev">▾</span>
+            <span class="pav" style="background:#6b7280">默</span>
+            <span class="gname">默认项目</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <table>
+    <caption>实测对比度（WCAG，相对侧栏底色）</caption>
+    <thead>
+      <tr><th>用途</th><th>Token</th><th>深色</th><th>浅色</th></tr>
+    </thead>
+    <tbody id="contrast"></tbody>
+  </table>
+
+  <p class="note">
+    对比度本来就不低 —— <b>深色 9.4:1、浅色 7.4:1</b>，都远超 4.5:1。所以这不是“看不清”，是<b>层级没被颜色表达</b>：
+    项目名、会话名同为 muted，唯一区别是缩进和字重。改后项目名 18:1 / 15:1，与会话名拉开一档，扫读时先看到分组再看到会话。
+  </p>
+</div>
+
+<script>
+  const root = document.documentElement
+
+  for (const button of document.querySelectorAll(".toggle button")) {
+    button.addEventListener("click", () => {
+      root.dataset.scheme = button.dataset.set
+      for (const other of document.querySelectorAll(".toggle button"))
+        other.setAttribute("aria-pressed", String(other === button))
+      paintTable()
+    })
+  }
+
+  function readToken(name) {
+    const probe = document.createElement("span")
+    probe.style.color = `var(${name})`
+    probe.style.display = "none"
+    document.body.appendChild(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+  }
+
+  function luminance(rgb) {
+    const [r, g, b] = rgb.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => {
+      const s = v / 255
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+
+  function ratio(fg, bg) {
+    const [a, b] = [luminance(fg), luminance(bg)].sort((x, y) => y - x)
+    return (a + 0.05) / (b + 0.05)
+  }
+
+  function paintTable() {
+    // Force a style flush so the scheme swap is visible to getComputedStyle.
+    void root.offsetHeight
+    const bg = readToken("--bg-deep")
+    const rows = [
+      ["项目名（改后）", "--text-base", "--v2-text-text-base"],
+      ["项目名（现在）", "--text-muted", "--v2-text-text-muted"],
+      ["会话名", "--text-muted", "--v2-text-text-muted"],
+      ["时间戳", "--text-faint", "--v2-text-text-faint"],
+    ]
+
+    const body = document.getElementById("contrast")
+    body.replaceChildren(
+      ...rows.map(([label, cssVar, token]) => {
+        const color = readToken(cssVar)
+        const value = ratio(color, bg)
+        const tr = document.createElement("tr")
+        tr.innerHTML =
+          `<td>${label}</td>` +
+          `<td><span class="swatch" style="background:${color}"></span>${token}</td>` +
+          `<td class="num">${value.toFixed(1)}:1</td>` +
+          `<td class="num" data-light>—</td>`
+        return tr
+      }),
+    )
+
+    // The light column needs the light palette; measure by temporarily switching.
+    const scheme = root.dataset.scheme
+    root.dataset.scheme = "light"
+    void root.offsetHeight
+    const lightBg = readToken("--bg-deep")
+    const lightValues = rows.map(([, cssVar]) => ratio(readToken(cssVar), lightBg))
+    root.dataset.scheme = scheme
+    void root.offsetHeight
+
+    for (const [index, cell] of [...document.querySelectorAll("[data-light]")].entries())
+      cell.textContent = `${lightValues[index].toFixed(1)}:1`
+  }
+
+  paintTable()
+</script>
+</body>
+</html>

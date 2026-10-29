@@ -118,6 +118,8 @@ import type {
   ProviderGetOutput,
   ProviderModelsInput,
   ProviderModelsOutput,
+  ProviderTestInput,
+  ProviderTestOutput,
   IntegrationListInput,
   IntegrationListOutput,
   IntegrationGetInput,
@@ -1226,6 +1228,23 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/provider/models`,
             body: { baseURL: input["baseURL"], apiKey: input["apiKey"], headers: input["headers"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404, 503],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      test: (input: ProviderTestInput, requestOptions?: RequestOptions) =>
+        request<ProviderTestOutput>(
+          {
+            method: "POST",
+            path: `/api/provider/test`,
+            body: {
+              baseURL: input["baseURL"],
+              apiKey: input["apiKey"],
+              headers: input["headers"],
+              model: input["model"],
+            },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 503],
             empty: false,

@@ -53,6 +53,50 @@ describe("context menu sections", () => {
     ])
   })
 
+  test("offers copy image and copy image address after link actions", () => {
+    const sections = contextMenuSections(
+      contextMenuTarget({
+        editable: false,
+        selection: "",
+        link: "https://example.com/page",
+        image: "https://example.com/pic.png",
+        dev: false,
+      }),
+      "windows",
+    )
+
+    expect(actions(sections)).toEqual([
+      ["link.open", "link.copy"],
+      ["image.copy", "image.copyAddress"],
+      ["edit.selectAll"],
+    ])
+    expect(sections[1].map((item) => item.labelKey)).toEqual([
+      "contextMenu.copyImage",
+      "contextMenu.copyImageAddress",
+    ])
+  })
+
+  test("copies a whole message bubble when nothing is selected", () => {
+    const sections = contextMenuSections(
+      contextMenuTarget({ editable: false, selection: "", message: "旧版要不要删除", dev: false }),
+      "windows",
+    )
+
+    expect(actions(sections)).toEqual([["message.copy", "edit.selectAll"]])
+    expect(sections[0][0].labelKey).toBe("desktop.menu.copy")
+    // No Ctrl+C hint: the shortcut would run the native copy, which has no selection to take.
+    expect(sections[0][0].shortcut).toBeUndefined()
+  })
+
+  test("keeps the selection copy instead of the whole-bubble copy when text is selected", () => {
+    const sections = contextMenuSections(
+      contextMenuTarget({ editable: false, selection: "旧版", message: "旧版要不要删除", dev: false }),
+      "windows",
+    )
+
+    expect(actions(sections)).toEqual([["edit.copy", "edit.selectAll"]])
+  })
+
   test("omits developer tools outside development builds", () => {
     const sections = contextMenuSections(contextMenuTarget({ editable: false, selection: "", dev: false }), "windows")
 

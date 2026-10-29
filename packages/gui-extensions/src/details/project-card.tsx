@@ -2,8 +2,8 @@ import { Icon } from "@opencode/ui/icon"
 import {
   displayName,
   getProjectAvatarSource,
-  getProjectAvatarVariant,
   ProjectAvatar,
+  resolveProjectAvatarVariant,
 } from "@opencode/ui/project-avatar"
 import { createUniqueId, Show, type ParentProps } from "solid-js"
 import type { Project } from "../sdk"
@@ -30,7 +30,7 @@ export function ProjectDetailsCard(
         <ProjectAvatar
           fallback={displayName(props.project)}
           src={getProjectAvatarSource(props.project.id, props.project.icon)}
-          variant={getProjectAvatarVariant(props.project.icon?.color)}
+          variant={resolveProjectAvatarVariant(props.project)}
         />
         <span dir="auto" class="session-summary-label">
           {displayName(props.project)}

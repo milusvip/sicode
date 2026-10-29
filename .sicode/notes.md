@@ -8,6 +8,7 @@
 
 
 
+
 **不要直接编辑这个文件。** 仓库里同时有几个 agent 在写它，整文件保存会丢掉别人刚写的段落（已经发生过两次）。用命令写：
 
 ```bash
@@ -35,6 +36,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 两个文件，分工不同：
 | 文件 | 回答什么 | 什么时候改 |
 |---|---|---|
@@ -50,9 +52,11 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 <!-- 从这行下面开始追加 -->
 
 ## 会话审查 / 侧边栏
+
 
 
 
@@ -68,10 +72,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 - `packages/app/src/settings/about/about.tsx`；字标用 `@opencode/ui/logo` 的 `Logo`，不要 Inter 文字动画
 - 文案 `settings.about.*`（en/zh/zht）；搜索锚点 `.settings-about-brand`
 
 ## 侧边栏浏览器
+
 
 
 
@@ -80,6 +86,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 系统浏览器打开、添加到会话在 ⋯ 菜单；搜索引擎在 `address.ts` 的 `SEARCH_ENGINES`
 
 ## 过程壳与时间线
+
 
 
 - 竖线：`message-part.css` 的 `[data-slot="context-tool-group-item"]:not(:last-child)::after`；过程展开且 grouped 才有；相关 overflow 要 `visible`
@@ -133,7 +140,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 注意 `WorkShellHead` 的 props 每次新增都要同步三处：`session-timeline-row.tsx`、`app/.../virtualizer.tsx` 的浮层、`app/.../message-timeline.tsx` 的 pending 头，并在 `packages/app` 跑 `tsc -b`
 - 「助手文本没了」的定量口径：按小时统计「同一轮里 text 出现在最后一个 tool 之前」的数量（`边干边说`）。10-23 16~19 时是 1.4~3.0 段/轮，23 时降到 0.71，00 时 0.08，**01 时起恒为 0**；同时「收尾正文」仍是 ~1 段/轮。也就是说模型不是不写正文了，是不再在干活途中说话，长工具链中间全空；用户中断后连收尾也没有，只剩「已完成 N 个工具」
 - 同期 UI 层是干净的：最近 15 个会话跑 `constructSessionMessageRows` + `filterCollapsedWorkShellRows`，被折叠隐藏的正文行 **0 条**。所以别再从 UI 找这个 bug
-- 处置：`core/src/plugin/system-prompt/deepseek.txt` 末尾加 `## Say what you found`（工具批次开头一句话、收尾必须有正文、以工具调用结尾视为未完成）。这是模型行为层，重启 sidecar 才生效（`.txt` 是 import 进 `plugin/optimize.ts`，按 `model.id` 含 deepseek 才附加）
+- 处置：`core/src/plugin/system-prompt/deepseek.txt` 末尾加 `## Say what you found`（工具批次开头一句话、收尾必须有正文、以工具调用结尾视为未完成）。这是模型行为层，重启 sidecar 才生效（`.txt` 是 import 进 `core/src/plugin/optimize.ts`，按 `model.id` 含 deepseek 才附加）
 - 复测脚本：`.preview-shell/stats-midtext.ts`（中途正文/收尾正文/步数按小时），`.preview-shell/stats-hours.ts`（字数/段数/工具）
 - 「有时有正文有时没有」的判定口径：按回合结局分组统计（最近 40 小时）。`succeeded` 62 轮 **100%** 有正文、`failed` 2 轮 100%、`aborted` 8 轮 75%、**`running`（还没结束）7 轮只有 29%**。所以规律是：跑完必有正文；还在跑的基本没有（模型最后一步才写）；中途停掉看停在哪。别把「正在跑的那几十秒没字」当 bug——除非把「边干边说」的提示词加回去
 - 复测脚本：`.preview-shell/stats-outcome.ts`
@@ -210,7 +217,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 摘要缓存 `app/src/session/timeline/turn-diffs.ts:12`，key = `${sessionID}/${from}`，每 tab 加载一次且永不失效（一轮结束后快照区间不变，所以缓存本身没问题）
 - shutdown 中断的那一轮不写 idle（`core/src/session/message-updater.ts:149-150`）→ 它没有摘要，改动会被下一轮的区间吞掉
 - 已修（2026-10-25）：每轮变更摘要改成「路径以本轮 step 并集为准、服务端 diff 只补增删数」，改动在 `session-ui/src/timeline/session-timeline-row.tsx:778-798` 的 `changed()`（对 `props.row.files` 做交集）；顺带让加载前后行序一致（原来加载后按 git 顺序重排）
-- 实测证据（会话 `ses_e90f7175cffeIL5AKba585f4GC`，DB `~/.local/share/opencode/opencode-local.db`，快照仓 `~/.local/share/opencode/snapshot/a7b03e49.../f52794f6...`）：轮「就是主页会话的选择…」区间差异 3 个但 step 并集只有 `view.tsx`，多出的 `.tmp-gap.db-shm`、`packages/core/gap-bench.tmp.ts` 是别处的写入；轮「UI UX重新设计下…」多出 `packages/core/src/filesystem/trigram-search.ts`，是同一时间窗口里另一个会话改的
+- 实测证据（会话 `ses_e90f7175cffeIL5AKba585f4GC`，DB `~/.local/share/opencode/opencode-local.db`，快照仓 `~/.local/share/opencode/snapshot/a7b03e49.../f52794f6...`）：轮「就是主页会话的选择…」区间差异 3 个但 step 并集只有 `view.tsx`，多出的 `.tmp-gap.db-shm`、`packages/core/` 下的 gap-bench.tmp.ts（临时文件，已删除） 是别处的写入；轮「UI UX重新设计下…」多出 `packages/core/src/filesystem/trigram-search.ts`，是同一时间窗口里另一个会话改的
 - 会话数据取证手法：`session_message` 按 seq 排序取 user/assistant/idle，assistant 的 `data.snapshot.{start,end,files}`；用 `git --git-dir=<快照目录> diff --name-only <start> <end>` 复现服务端区间差异（快照目录是裸仓库布局，没有 .git 后缀）
 - 2026-10-25 收尾：#1、#2 都按「一条 prompt 一个摘要」重做。`session.diff` 新增 query `prompt`（`protocol/src/groups/session.ts:527`，`core/src/session/diff.ts:92-108`）：带它时 `start = anchor.seq`、`end = min(下一条 prompt, 本轮 idle)`，不带时行为与上游一致（review 面板走无 `from` 的默认路径，不受影响）
 - 客户端：`session-ui/src/timeline/projection.ts` 的 `Turn` 增加 `files: Set<string>`，每步的文件归到它**跟随的那条 prompt**（`record()`），idle 时给本轮每条 prompt 各发一个 diff 行，位置在该 prompt 自己那组的末尾；行类型去掉 `from`（= `userMessageID`），key 从 `turn-diff:${messageID}` 改为 `turn-diff:${userMessageID}`（两条 prompt 共用一个 idle，旧 key 会撞）
@@ -260,8 +267,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 字体与排版
 
-
-
 - 设置默认：`packages/app/src/settings/model.tsx` 的 `sansDefault` / `sansFallback`（空值回落到这）
 - CSS 初值：`packages/ui/src/styles/theme.css` 的 `--font-family-sans`
 - 加载：`packages/app/src/index.css` 的 `@fontsource-variable/noto-sans-sc` + `font-family: "思源黑体"` 的 local()；Inter 仍保留给手动填写
@@ -275,8 +280,15 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 终端默认字体 JetBrainsMono Nerd Font Mono 定义在 packages/app/src/settings/model.tsx（bundled woff2）。
 - 对照组 WorkBuddy（本机安装目录实测）：无内置 webfont，UI 走系统栈 PingFang SC/微软雅黑（--sc-ui-font-family，--sc-content-font-family 同栈带 emoji 兜底），等宽 ui-monospace/Menlo/Consolas、部分组件 Source Code Pro；有用户可调的字体大小滑块（--sc-font-scale）。
 - 2026-10-25 深夜：用户嫌思源黑体不如 WorkBuddy 好看，--font-family-sans 已改为 WorkBuddy 同序的系统栈（-apple-system/PingFang SC/微软雅黑优先，Noto 系降到末位兜底）。Windows 上 UI/正文实际渲染=微软雅黑；weight 460 在雅黑下回落 Regular 400（雅黑只有 300/400/700），medium 500 同理回落 400。IBM Plex Mono 等宽栈未动。bundled @fontsource Noto 仍在 index.css 里注册，作为无雅黑机器的兜底。
+- 代码卡片配色链路：`pre.highlights` 的内联 `background-color` 由 `packages/ui/src/context/highlight-theme.tsx`（OpenCodeTheme）生成，值就是 CSS 变量名去掉 `--`；`marked-parser` 与 `markdown.worker` 共用它。
+- 2026-10-29 修：该 theme 原指向 OC-2 的 `color-background-stronger` / `text-base`，而这组变量只写在 `packages/ui/src/styles/theme.css` 的 `@media (prefers-color-scheme: dark)` 里——只跟随系统、不跟随 `data-color-scheme`，于是「应用浅色 + 系统深色」时代码卡是黑块、反之是白块。已改为 `v2-background-bg-layer-02` / `v2-text-text-base`，`marked-parser.test.ts` 断言同步。
+- 注意 `--text-base` 有重名：theme.css 当颜色用（#6f6f6f），tailwind/index.css 当字号用（15px）。别再拿它当颜色。
+- 2026-10-29 正文排版调整（markdown.css）：h1 → `--font-size-x-large`(20px)、h2 → `--font-size-large`(16px)；blockquote 改 2px accent 左条 + 5% 淡底 + 8/14 内边距；hr 从隐形改为 1px muted 线；`pre` max-height 400px 且恢复细滚动条（原 `scrollbar-width:none` 让长行无法发现可横滚）；任务列表 checkbox 加 `accent-color`；行内 code 底 `--markdown-inline-code-bg-mix` 8%→14%。对照 demo 在 artifacts/markdown-polish-demo.html。
+- 等宽栈顺序：`ui-monospace/Menlo/Consolas` 必须排在「思源黑体/Noto Sans SC」之前。字体回退是按字形走的，CJK 照样落到中文字体，但 Latin 不会在 webfont 加载失败时被中文体的比例字形接管。
+- Markdown 表格字号在 packages/session-ui/src/components/markdown.css：`[data-component="markdown"] table`（原硬编码 12.5px，2026-10-29 改为 `var(--font-size-small)`=14px、行高 1.6）与 `th`（原 11.5px，改为 `font-size: inherit`，层级只靠 weight/muted 色/底色）；放大浮层 `[data-slot="markdown-table-zoom-scroll"]` 同一套。正文是 15px，差两档会像两份文档。
 
 ## 全局右键菜单
+
 
 - `packages/app/src/shell/context-menu/`，挂在 `app.tsx`；原生 `electron-context-menu` 留给 webview，别删
 - 用 Kobalte DropdownMenu 程序化打开；开着再右键要先关再开，且不能有退场动画
@@ -288,16 +300,46 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 对话区这几块的美化
 
-
-
 - 会话错误行：`SessionError` 用 `<Card variant="error">`，但 `session-turn.css` 把 `--card-pad-*` 全设 0 且隐藏了 `::before`，所以只剩一行红图标 + 裸文字。改成 `--v2-state-bg-danger` 底 + `--v2-state-border-danger` 边 + 8/10 padding + 8px 圆角（和 `[data-component="diagnostics"]` 同一套危险态 token），文字仍用 `--v2-text-text-base` 保可读，图标用 danger 色并 `margin-top: 1px` 对齐首行
 - 问答体：`question-answers` 原来 `padding: 8px 0`，正文和行标题不对齐。现在自己带 `padding-inline-start: calc(--ind-col + 8px)`，并用 `[data-slot="collapsible-content"][data-expanded]:has(> [data-component="question-answers"])` 把父级那 12px 通用缩进清零（`[data-expanded]` 是为了压过 basic-tool.css 的 4 级选择器）。问句 12.5/muted，答句 13/base 且挂 2px 左边线（`--v2-border-border-strong`，base 太淡）
 - 时长文案：整分钟不再带 "0 秒"/"0s"。`ui.message.duration.minutes`（en/zh/zht 新增）+ `formatElapsed` 的 `rest === 0` 分支
 - `question` 工具在 `toolGroupType` 里恒返回 undefined，所以它永远是独立行，不会进 process chain——上面的 `:has` 其实只需要独立行那种情况
 - 沙盒坑：`.preview-shell` 里改完 CSS 再热构建会挂在 `packages/ui/src/styles/index.css` 的 `@import "katex/dist/katex.min.css"`（root 没有 katex，只有 `packages/ui/node_modules` 有）。所以沙盒只能吃到已生成的缓存 CSS；要重新构建得先在 root 装 katex 或换个入口
 - ?????`AssistantTextContent` ? `duration`?`message/message-content.tsx`??? `Math.round(ms/1000)`??? `formatElapsed`?`timeline/work-shell.tsx`?? `Math.floor`??? `turnDurationMs` ? 371.x ??????6m 11s???6 ?? 12 ????????? floor?? `<1s` ????????????????????????
+- 提示词优化按钮（2026-10-28）：发送键左侧铅笔按钮（仅会话内可用，草稿页无 session 隐藏）。链路：core 新服务 session/prompt-optimize.ts（复用 LLMClient.generate + SessionContext.resolveModel 当前会话模型，system prompt 守则：保持语言/意图/需求、@提及与命令原样、不答不改写不膨胀、只回写文本；带 fence 剥壳）→ protocol 加 POST /api/session/:sessionID/prompt-optimize（session.optimizePrompt）→ server handler（SessionPromptOptimize.Service.use + instances.provide，FailedError→UnknownError）→ packages/client bun run generate → app editor.tsx ComposerEditorOptimize：预览浮层（替换/放弃，composer.set 重建 text part 保留附件 chips，原 setText 语义）+ 失败 toast；不直接覆盖草稿。i18n ui.promptInput.optimize.*（en/zh/zht）。验证：core/server/app typecheck 干净（server 的 client-mcp.test.ts 报错为树上其他会话的既有问题），app composer+右键菜单 63 测试过（4 个 jsxDEV 失败是 solid ESM 测试环境既有问题，与本次无关）。
+- 提示词优化浮层返工（2026-10-28，用户截图反馈裁剪+排版差）：原因——面板用 absolute 定位塞在 composer 内部，被输入框容器的 overflow 裁剪掉上半部分。改成 Kobalte Popover + Portal（脱离裁剪，body 挂载），placement=top-end 与发送按钮簇右缘对齐（实测 panel.right 1066 = trigger.right 1065.7），打开即发请求、pending 态显示「正在优化…」+ Loader，完成后显示标题+字符数 31→34+内嵌 layer-01 正文块+底部 hint 与 放弃/替换；Esc/点外关闭走 onOpenChange(false) 自动还原草稿。CDP 实测（9333）：clipped=false、centerInsidePanel=true、insideComposer=false、面板 560×141 完整可见。
+- 修正：提示词优化功能已按用户要求整体删除（2026-10-28 下午）——上面那条描述作废。撤回范围：core/session/prompt-optimize.ts（新建文件已删）、instance.ts 注册、protocol 端点、server handler、client 重新 generate、editor.tsx（整文件 checkout 回退，147 行全撤）、additional-icons.ts 的 sparkles 图标、i18n 的 ui.promptInput.optimize.* 7 个键（contextMenu.copyImage/copyImageAddress/session.quote 保留）。core/server/app typecheck 复验干净。
+- 左下角工具栏落地（2026-10-28，demo 获认可后）：新增 app/src/shell/dock-toolbar.tsx（Kobalte Popover），挂在 tool-rail 底部替代原「设置齿轮」按钮。**竖栏只有 60px，pill 放不下，所以触发件用 Mark 头像方块，弹层向右上弹出（placement=right-end）**，卡片布局与 demo 一致：身份卡（本地工作区/数据只保存在这台电脑）+ 事实卡（版本 platform.version / 运行环境 桌面版·浏览器）+ 主菜单（模型与提供商→providers、扩展与技能→extensions、外观→appearance、设置→general+Ctrl+,）+ 分隔线 + 次菜单（意见反馈→GitHub Issues 外链、关于 SiCode→about）。按用户要求去掉「退出」。i18n 加 dock.* （en/zh/zht）。token 已核对：text-11-regular / text-v14-medium / icon-faint / layer-03 / overlay-hover 均有先例。
+- 左栏升级为真侧栏（2026-10-28，用户确认「升级成真侧栏」）：新增 shell/left-sidebar.tsx（228px，项目列表 + 底部 pill 工具栏），替换并删除 tool-rail.tsx；shell.tsx 在 !verticalTabs && !mobile 时渲染 LeftSidebar。数据源：useGlobal().servers.list() × serverCtx(key).projects.list()（enriched 含 name/worktree/icon）；点击项目 = layout.home.setSelection({server, directory}) + navigate('/')，与主页列表同一套逻辑；顶部保留「主页」行（command.trigger('home.toggle')）弥补删掉竖栏图标后丢失的入口。DockToolbar 加 variant: rail(方形 36px, placement right-end) / pill(整行头像+名称+chevron-up, placement top-start)，弹层内容一致。触发器图标改用新增 add-icons 的 user 人像（原来用品牌 Mark 被指像第二个 app 图标）；意见反馈整行与其 i18n 删除。i18n 新增 dock.projects / dock.projects.empty。
+- 左栏 v2 落地（2026-10-28）：①归档修好——home/sessions/controller.tsx 里那条 TODO 是过时的，session.update 早就带 archived，改成 ctx.sdk.api.session.update({sessionID, archived:true}) 并把 remove 接到 queryClient 过滤本地列表；②left-sidebar.tsx 扩成「项目 → 会话」两级：会话来自 ctx.data.session.list() 按 location.directory 对项目 worktree/sandboxes 匹配（pathKey），按 time.updated 倒序，项目头可折叠（chevron 独立按钮，点名称开项目）；③会话右键：重命名（Dialog+TextField，走 session.update + sync）/ 复制标题 / 归档 / 删除（二次确认走 data.session.remove）；项目右键：复制项目路径；④底部「已归档」折叠区，右键可恢复（archived:false）或删除；⑤i18n 新增 dock.archived / dock.time.* / dock.session.* / dock.project.copyPath（en/zh/zht）。未做置顶（无对应能力，已从 demo 去掉）。
+- 左栏按 demo 对齐（2026-10-28，用户反馈「跟 demo 不太一样」）：①补头部——项目切换器（folder 图标+当前项目名+chevron，Popover 列「主页 + 各项目」）+ 新建会话按钮（tabs.newDraft({server,directory})）+ 搜索按钮（聚焦搜索框）；②补搜索框（28px 描边、focus 变色，按标题过滤会话，过滤时隐藏空项目）；③去掉原「主页」独立行与分组里的项目头像（demo 里没有，头像只在切换器里）；④会话数据改为 createResource 按项目目录调 sdk.api.session.list({directory, limit:50})，再与 ctx.data.session.list() 按 id 合并（live 覆盖，保证重命名/归档立刻反映）——原来只用本地缓存，没打开过的项目会显示空列表，这很可能是「看起来跟 demo 不一样」的主因。i18n 加 dock.search。
+- 左栏视觉返工（2026-10-28，用户反馈滚动条不对+不好看）：列表容器换成 @opencode/ui/scroll-view 的 ScrollView（与会话同款细滚动条，不再用浏览器默认）；行样式重排——项目头 h-28/font-[530]/名称 muted→hover base/数量 tabular-nums，会话行 ps-26px 与项目名对齐、时间列 tabular-nums、选中用 layer-03；列表容器 gap-px + pb-1。
+- 左栏视觉第三轮（2026-10-28，用户贴实机截图说没审美）：先做 HTML 稿 v3→v4 用无头浏览器自检，再落代码。关键改动：①默认只展开「当前项目」，其余折叠（openState: id→bool，缺省 = 是否当前项目），解决十几个分组全展开像一堵墙；②去掉每组的会话计数（视觉噪音），改为 hover 才出现的 +（在该项目新建会话，tabs.newDraft）；③分组头 26px / 12px / font-500 / muted，会话行 27px 左右缩进、12.5px、时间列 10.5px tabular 且仅 hover/选中显示；④选中会话加左侧 2px 竖条 + rgba(255,255,255,.08) 底色；⑤搜索框改为无边框浅底 rgba(255,255,255,.05)；⑥底部 pill 去掉边框改透明悬浮行 + 顶部 1px 分隔；侧栏宽 248→224。⚠ 无头截图注意：headless 的 innerHeight 远小于 window-size（1120x1000 视口只有 ~601），截图前要按视口算高度，否则底部被切掉。
+- 折叠交互修正（2026-10-28，用户反馈「折叠点击也有问题」）：原来只有 16px 的 chevron 可点，点位太小，点到项目名反而 navigate 到主页。改成整行（chevron+名称）一个大按钮触发 toggle(id, active())；「打开项目主页」下沉到项目右键菜单（加「新建会话」一项），hover 出现的 + 改为绝对定位在行尾，避免挤压文字。toggle 逻辑：openState[id] 缺省回落到「是否当前项目」，三态正确。
+- 左栏四项交互修复（2026-10-28）：①滚动条遮挡内容——ScrollView 的 thumb 是绝对定位覆盖式，给列表内容加 pe-2.5 留出右侧水槽；②右键菜单重做：图标+文字、32px 行高、min-w 192、p-1.5、shadow-xl、危险项 #e0a0a0/#d18b8b、分隔线 my-1.5；③侧栏可折叠：头部加 chevron-left 收起，收起后 52px 竖条（展开按钮 + 新建 + 底部 DockToolbar variant=rail），i18n dock.collapse/expand；④右侧边栏打开时左栏自动收起——用 tabs.region(findSessionTab(route), 'side') 读该 tab 的 side 状态，createEffect 里置 collapsed=true。typecheck 干净。
+- 侧栏右键菜单统一到应用自带菜单（2026-10-28，用户贴图要求「统一风格」）：不再自绘 div 样式，改用 context-menu.css 的同一套标记——容器 data-component="sicode-context-menu"（min-width 232/padding 4/layer-01 底/0.5px inset 描边/elevation-floating），行 data-slot="sicode-context-menu-item"（30px 高、13px/500、gap 10）+ icon/label/shortcut 三个 data-slot，分隔线用 sicode-context-menu-separator，危险项 data-variant="danger"。CSS 由 app.tsx 里常驻的 AppContextMenu 全局加载，所以样式天然一致；hover 用 data-highlighted（自管 hovered 信号）；补了 ↑↓/Enter/Esc 键盘导航、容器 focus、document 捕获阶段 pointerdown 关闭（点聊天区也能关）。MenuItem 增加 shortcut 字段备用。
+- 侧栏右键菜单尺寸/对齐修正（2026-10-28）：菜单项用 <button> 导致文字居中（原生菜单项是 div/role=menuitem 才左对齐），加 text-start 修掉；容器宽度未定，被 max-width 340 拉到很宽，改为内联 width:212px（clamp 边界同步 224）；删掉「复制会话标题」及其 i18n（三语）。
+- 菜单宽度（2026-10-28，用户反馈「这么宽」）：根因有两个——全局 context-menu.css 的 min-width:232 会顶掉我设的 212，且用户截图时 HMR 还没应用上一轮的宽度改动。现在内联 width:200px + min-width:0 覆盖全局下限，真正压到 200。
+- 「没效果」排查（2026-10-28）：5173 不是 vite transform 服务，是 rolldown-vite 的 bundled-dev（页面加载 /assets/main.js 整包，watcher 改文件后整包重建）。curl 抓包验证 bundle 已含最新改动（200px/minWidth 存在、212px 与 copyTitle 已消失）→ 代码确实生效进包了，用户看到旧效果是窗口没重载。以后排查改了没生效：先 curl /assets/main.js grep 新字符串，再让人 Ctrl+R。
+- 菜单实机验证（2026-10-28，CDP 9333 首次闭环）：EPERM 根因是上次会话残留 sidecar（bun）锁着 service-local.json，electron-vite/electron 也残留；杀掉后确认 3084/5173/9333 释放再启动。实测菜单 computed width=200px / min-width 0px / textAlign=start，3 项带图标，视觉与全局菜单一致。.preview-shell/verify-menu.mjs 可复用（dispatch contextmenu + 量宽 + 截图）。
+- 右键菜单宽度的真因（2026-10-28 第二次翻案）：① 本机 DPR=1.75（2560x1600@175%），180 css px 在屏幕上就是 315 物理像素，占窗口宽 14%，所以「看着宽」不是错觉但也不是 bug；② 更根本的是死宽度：标签只有 3 个字（重命名），面板右侧留一大截空 gutter，任何固定宽度都难看。改为 width:max-content + min-width:152px + max-width:260px（必须内联压掉全局 context-menu.css 的 min-width:232px）。实测 152 css px（=266 物理 px），收窄 24%。③ 我的轮询验证脚本一直假阴性：bundle 里是编译后的 width:180px（无引号），我 grep '"180px"' 永远 0 命中 —— 构建其实一直是好的。以后查 bundle 用不带引号的模式。
+- 右键菜单宽度不一致的根因（2026-10-28 用户提问「是组件吗，怎么宽度大小都不一」）：全应用有**两套**实现——① 全局组件 AppContextMenu（context-menu.tsx，kobalte DropdownMenu，支持快捷键列）；② 侧栏 left-sidebar.tsx:577 手搓的一份 div。两者各自带宽度数字（全局 CSS min-width:232 + 侧栏内联），所以永远不等宽。修法：把宽度规则收敛到唯一一处 context-menu.css → width:max-content + min-width:176px + max-width:340px，把侧栏那份的内联 width/min-width/max-width 全删掉，让它吃同一条规则。实测两菜单均 176 css px（=308 物理 px @dpr1.75），规则来源一致（无内联覆盖）。
+- 侧栏会话行两处修正（2026-10-28）：① 时间常驻问题——时间 span 上有 data-[active=true]:opacity-100，导致当前打开会话的时间永久显示（截图里的「1小时」），删掉该分支改为纯 group-hover 显示；② 缺运行指示——引入 @opencode/session-ui/v2/session-progress-indicator-v2（16x16 APNG，36 帧，标签栏同款，prefers-reduced-motion 下退化为静态方块），判定用 global.serverCtx(key).data.session.status(id)==="running"（serverCtx 注释明确标注 Reactive，响应式链 OK）。声明结构：外层 span[role=status][aria-label=session.timeline.working] 包住图标——组件内部强制 aria-hidden，直接传 aria-label 会被忽略。实测：运行中的会话行走 SPINNER 分支、空闲行走 TIME(hover) 分支，三行时间 opacity 均为 0。
+- 侧栏时间显示（2026-10-28 最终版，用户要求「不要悬浮才显示」）：时间 span 去掉 opacity-0 + group-hover 那套，改为始终可见（shrink-0 + tabular-nums，无 opacity 类）。同时保留运行转圈——spinner 与时间是**并列**关系而非互斥（原实现是 Show fallback 二选一，现在 spinner 单独一个 Show，时间永远渲染）。实测：三行时间 opacity 全为 1，运行中的行 spinner+时间并存。
+- dock 面板（packages/app/src/shell/dock-toolbar.tsx）2026-10-29 视觉定稿：①底部「关于 SiCode」原来把 platform.version 当右侧 hint，本地构建版 "2.0.0-local-1793207008995" 比标签还宽，行内 truncate 后只剩「关…」；同时上方「版本 … · 桌面版」caption 在 248px 宽会折成两行。②现状=身份区(28px 头像/13px 名称) + 版本 caption + 4 菜单项 + 关于行；新版=30px 头像 + medium 名称，版本改 chip 行（桌面版 / 版本号），版本号用 replace(/-\\d{10,}$/,"") 去掉本地构建戳、完整串放 title，关于行不再带 hint。③面板 248→260、圆角 10→12、p-1→p-1.5、快捷键 tabular-nums。预览 artifacts/dock-preview.png。
+- 左栏头部（packages/app/src/shell/left-sidebar.tsx）2026-10-29：header 行(项目切换器+新建+搜索+收起)与下方列表之间原来没有边界，加 1px bg-v2-border-border-weak-base 分隔线（mx-1 mb-2 mt-1）；搜索框底从硬编码 rgba(255,255,255,0.05) 换成 v2-background-bg-layer-02——浅色主题下白色 5% 等于隐形。项目切换弹层原来用 layer-02 + 外描边，是全应用唯一这种表面，改为与右键菜单/dock 一致（layer-01 + inset 0.5px + rounded-10 + 30px 行 + 13px 字号），当前项目右侧加 check-small。预览 artifacts/sidebar-preview.png。
+- dock 面板二次改版（2026-10-29 01:20，用户反馈「还是一样」并指出左上角图标）：窗口跑的是旧包（bundle 仍是 w-[248px]），需重启 dev；设计上改为「身份卡 + 扁平菜单」——身份区包一层 layer-02 圆角 9 卡片，左上角人像换 workspace-isolated 图标（文案是「本地工作区/数据只保存在这台电脑」，人像语义不符），版本 chip 收进卡片内，卡片与菜单、菜单与关于之间各一条 1px 分隔线。备选 mark：folder / dot-grid。
+- dock 面板最终版（2026-10-29 01:30，用户否掉「身份卡 + 版本 chip」说上面太杂）：顶部回归纯文本两行——工作区图标 + 「本地工作区」/ 描述行右侧挂 mono 版本号，不加任何底色卡片；下面用 **1px 横线** 与菜单隔离，菜单与「关于」之间再一条。
+- **踩坑（重要）**：`bg-v2-border-border-weak-base` / `border-v2-border-border-weak-base` 这个 token 不存在（tailwind/colors.css 只映射了 muted / base / strong / inverse / focus），所以写出来的分隔线是透明的——dock、left-sidebar 四条线全都没画出来。分隔线统一改用 `bg-v2-border-border-base`（alpha 10）。选择菜单 popup.tsx 里还有一处同样的无效 border，不是本次改动，待清理。
+- dock 面板顶部最终形态（2026-10-29 01:32，用户要求「上面就本地工作区和版本就可以了」）：一行搞定——28px 工作区图标 + 「本地工作区」(13px medium) + 右侧 11px mono 版本号；描述行（数据只保存在这台电脑）与「桌面版/网页版」chip 全部删除，只留横线与菜单分隔。入口按钮（rail 的 36px 按钮、pill 内的头像）也同步换成 workspace-isolated。
+- dock 面板宽度 260 → 224px（2026-10-29 01:33，用户说太宽）。224 是「关于 SiCode」+ Ctrl+, 两行里最长的组合仍不截断的下限；顶部「本地工作区 + 2.0.0-local」在 224 下仍有富余。再窄就要开始截断标签或版本号。
+- dock 面板顶部彻底去掉版本号（2026-10-29 01:36，用户「版本号去掉吧」）：顶部只剩 28px 工作区图标 + 「本地工作区」一行，宽 208px（版本腾出空间后 224 仍显空）。连带删掉 version() 辅助函数与 usePlatform 引用——版本号只在 设置→关于 里看。
+- 左栏头部去掉了项目切换弹层（2026-10-29 01:42，用户问「左上角这个换成什么」）：弹层里的项目列表与下方会话列表完全重复，唯一独有的是「主页」一行。现在左端换成一个 主页按钮（grid-plus，与原弹层那行同图标，command.trigger("home.toggle")），项目名变成纯标签（truncate + title=完整目录，不可点）；切换项目改为在下方列表点会话。连带删除 switcherOpen signal、openProject()、Popover / ProjectIcon / useNavigate 引用。
+- 主页入口也撤了（2026-10-29 01:43，用户「不要主页入口了呀」）：头部只剩 项目名标签 + 新建 + 搜索 + 收起。主页鼠标入口随之消失，仅剩 Ctrl+B / Alt+Home（titlebar 注册的隐藏命令）；如需恢复在头部或 dock 加回即可。useCommand 引用一并删除。
+- 左栏顶部项目名标签也删了（2026-10-29 01:47）：头部只剩 新建/搜索/收起 三个图标按钮（右对齐，前面用 flex-1 占位），项目名只出现在下方分组头里。这样头部不再读作「菜单栏」，也没有和分组重复的项目名。
 
 ## 项目记忆与召回
+
 
 
 
@@ -313,7 +355,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **不注入 notes.md 全文**：它已 27.8KB ≈ 8.7K token，每轮 0.65s × 55 轮 = 36s，和省下的探索时间基本打平，还会稀释注意力。
 - AGENTS.md 同步改了两条：Repo map / Investigation notes 从「去读」改成「已经在上下文里，别再读」，并新增 `## Delegating exploration`（不知道在哪就先派 explore，两次 grep 没收敛就派，已知文件/小改不要派）。
 - 验证：`test/project-map.test.ts` 4 例全过；optimize/verbosity/plugin 36 例、session-runner 270 例全过；`tsc -b --force` 0 错误。
-- **`tool/plugin/history.ts`（SiCode 自研，2026-10-25）**：压缩后回溯压缩前的原文。读 `SessionStore.messages()` 全量（不限 seq），`boundaryOf` 取**最后一条 status=completed 的 compaction** 的索引作为边界，之前的消息经 `SessionRecentText.messageToText` 转文本后做关键词匹配（query 按空白/逗号/分号切词，任一命中即算命中），不给 query 返回最近 limit 段；单段超 1500 字符保留头+尾。返回 marker 形如 `N of M archived exchanges, from before the last compaction`。注册点 `plugin/internal.ts` 三处：插件表、`SessionStore.Service`、`SessionStore.node`；`session/` 内核零改动。边界必须是**最后**一条 compaction 而不是第一条——SiCode 的摘要是全量覆盖而非增量，取第一条会漏掉中间段（测试里踩过：期望 `[middle]`，实际 `[old, middle]` 且实际行为才对）。
+- **`tool/plugin/history.ts`（SiCode 自研，2026-10-25）**：压缩后回溯压缩前的原文。读 `SessionStore.messages()` 全量（不限 seq），`boundaryOf` 取**最后一条 status=completed 的 compaction** 的索引作为边界，之前的消息经 `SessionRecentText.messageToText` 转文本后做关键词匹配（query 按空白/逗号/分号切词，任一命中即算命中），不给 query 返回最近 limit 段；单段超 1500 字符保留头+尾。返回 marker 形如 `N of M archived exchanges, from before the last compaction`。注册点 `core/src/plugin/internal.ts` 三处：插件表、`SessionStore.Service`、`SessionStore.node`；`session/` 内核零改动。边界必须是**最后**一条 compaction 而不是第一条——SiCode 的摘要是全量覆盖而非增量，取第一条会漏掉中间段（测试里踩过：期望 `[middle]`，实际 `[old, middle]` 且实际行为才对）。
 - **`tool-output.ts` 截断策略（2026-10-25 改）**：`TAIL_SHARE = 0.4`，head 先取 60% 行预算 + 全量字节预算，tail 再取剩余行/字节预算且不回头吃 head；marker 形如 `[showing lines 1-1200 and 2202-3001 of 3001; full output saved to …]`。含 `file` part（图片）的结果走 `boundedHead`，只留头部以保住图文原顺序。默认限额 `MAX_LINES=2000` / `MAX_BYTES=50KiB`。
 - 验证纪律：这类截断改动**不要用「让模型跑大输出」的 E2E 去证**——模型会在 shell 里用变量/管道自己过滤，`metadata.truncated=false`，截断层根本没跑（2026-10-25 实际踩到）。要用服务层确定性测试：`test/tool-output.test.ts` 里直接调 `ToolOutput.Service.truncate`，默认限额 + 3001 行样本。
 
@@ -332,6 +374,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 - 结论：引擎层同 step 内的工具调用本来就是并行的，不是穿插串行。`packages/core/src/session/runner/step.ts:122-134` 每收到一个 `tool-call` 事件就 `Effect.forkScoped` 起一个 fiber；`:151` 用 `Fiber.awaitAll` 收口。`:103` 注释「Provider and tool fibers retain per-source order without a shared writer queue」说明没有共享写队列。
 - 真正让 write/edit 看起来串行的三处：
 - 1. 权限闸门（主因）。`tool/plugin/write.ts:78`、`tool/plugin/edit.ts:275` 每次写都 `permission.assert({ action: "edit", save: ["*"] })`；`permission.ts:78-83` 未命中规则时默认 effect 是 `ask`，工具 fiber 卡在 `Deferred.await`（`permission.ts:238`）。UI 一次只呈现一个：`app/src/session/requests/model.ts:71-79` 的 `permissionRequest` 用 `sessionPermissionRequest` → `session-request-tree.ts:13-17` 的 `.find()` 取第一个，`session-permission-dock.tsx` 只渲染单个 DockPrompt。所以 N 个并发 edit 会有 N 个 pending，但要逐个点。
@@ -344,8 +387,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 设置项语义：`permissions.autoApprove` 是**客户端本地**默认值（存 drafts.sqlite，不跨机器同步），`autoApproveProjects` 是 per-project 覆盖；`autoApprovesOnServer()` 用于决定是否挂事件监听。开启后所有工具（含 shell）都不再询问，只影响"要不要等点击"，**不影响并发度**。
 
 ## 会话性能诊断
-
-
 
 - 数据源：`~/.local/share/opencode/opencode-local.db`（当前 local 通道）。`session_message` 按 `seq` 排；assistant 的 `data.time` 有 `created`/`streamed`/`completed`，`data.tokens` 有 `input`/`output`/`reasoning`/`cache.read`/`cache.write`；`content[]` 里 `type=="tool"` 的 part 带 `state.metadata.toolCalls`（codemode 内部调用）。
 - 关键口径：**`time.streamed` 不是首字时间**，它在 `runner/step.ts:149` 于 provider 流结束后才发布，所以 `created→streamed` 是整段模型调用，`streamed→completed` 是工具等待与落库（中位 0.7s）。别把 streamed 当 TTFT。
@@ -419,10 +460,25 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 和 `narrate.ts` 的分工：narrate 治「不说话」（每 6 步提醒说一句），explore-budget 治「说了话但一直在读、没有任何产出」。两者条件独立，可以同时命中，优先级已定
 - 验证：`test/explore-budget.test.ts` 9 例全过（含「write 打断」「无工具步打断」「user 边界」）；`session-runner-message` + `explore-budget` + `session-history-degrade` 共 47 例全过；`tsc -b tsconfig.json --force` 干净
 - 注意：`tsc -b tsconfig.tests.json` 会报 `test/variant-deepseek.test.ts` 的类型错，那是别的会话留下的未提交文件，不是这次改动引入的
+- **2026-10-28 实测基线（2595 条含工具调用的 assistant 消息，53859s 墙钟）**：模型 35897s（66.6%）／工具 18032s（33.5%）；平均每轮 20.8s（模型 13.8s + 工具 6.9s）。**结论：瓶颈是模型出字，不是工具执行，也不是并行度。**
+- 工具侧耗时集中度极高：shell 1492 次共 263.6min（占工具总耗时 86.6%，437 次 >5s 合计 241min）；question 9 次 28.7min（单次最长 1147s）；write 3.7min；**edit 385 次仅 0.2min（中位 22ms、最长 0.3s）**。→ 「并行编辑」收益天花板 = 12 秒 = 总墙钟 0.02%。
+- 并行度现状：一条消息发 1 个工具 2281 次、2 个 283、3 个 23、4 个 6、5/7 各 1 → **87% 单工具**。`/skill` 与 `tools_browser_*` 各 1-2 次。
+- shell 慢命令不是本仓构建，是**网络探测脚本跑满超时**：`node tools\attach-check.js 9333`（300.9s）、`diag-ds-edge.js`（300.5s）、`Get-NetTCPConnection -State Listen`（260.4s）等，300s 是多条命令的统一撞墙点。→ 独立优化项：shell 超时治理（池子 241min，不依赖 A/B/C）。
+- 失败率：webfetch 46 次失败 13（**28%**，异常高，值得单查）；shell 1494/36；edit 385/12；write 314/12；read 274/5。
+- 数据获取方式（可重复）：直接只读 `~/.local/share/opencode/opencode-local.db`，表 `session_message(id, session_id, type, seq, time_created, time_updated, data)`，工具段在 `data.content[]` 里 `json_extract(...,'$.type')='tool'`。脚本在 `.sicode/scratch/{stats-probe,turn-probe,where-time,shell-what}.mjs`。**注意**：`shell/message` 这类上游表名不适用，本机实际表是 `session_message` / `session_v2`。
+- 时间字段可直接算：工具耗时 = `time.completed - coalesce(time.ran, time.created)`（`message-updater.ts:332` 写 ran）；模型时间 = 消息 `time_updated - time_created` 再扣工具耗时。`session/stats.ts:238/337` 已经在算 `durationP50` 了（出口 `schema/src/session-stats.ts:29`、服务端 `handlers/session.ts:85`）——**所以 A2 要补的是 turn 粒度汇总与暴露，不是新埋点**。
+- 三份方案文档在 `.sicode/proposals/`（README.md 是总览）：A 耗时统计（A1 已完成）、B 诊断回灌（建议优先）、C 批量编辑（目标需从「并行」改为「减少 round trip」）。
+- 服务认证：本地 3084 直接 curl 会 401，`authorization.ts:34` 校验 `credentials.username === config.username`，用 `-u sicode:<password>` 用户名对不上；密码在 `~/.config/opencode/service-local.json`。**直接读 db 比调 API 省事**，绕过认证问题。
+- 总账（2026-10-29 全库重测，27 会话 / 4261 次工具调用）：工具执行 20361s + 模型流 74339s ≈ 26.3 小时；工具占 28%，模型占 72%。harness 能改的部分不到总量 4%。
+- 唯一确定的可榨浪费是 shell 轮询：模型用 `Start-Sleep -Seconds N; Get-Content <file>` 自己轮询后台任务，182 次吃掉 3380 秒，占 shell 总时长 20361s 的 16.6%。`tool/plugin/shell.ts:110` 的 background 描述里已经明写 "DO NOT poll for completion"，照样不听 → 提示词救不了，只能运行时拦截（窄正则命中后返回错误并指引用 background:true）。
+- 两条被推翻的假想优化（实测无收益，别再做）：① `cd X && cmd` 改成 workdir 参数 —— 602 次看着多，但 cd 本身几乎不耗时，慢的是后面那条命令，换了省不了时间；② `ls/cat/find` 换成 read/glob/grep —— 261 次只省约 6 分钟，占 339 分钟不到 2%。原来以为是大头，实测不是。
+- 工具耗时分位（字段名 `session_message.data.content[].time.created/completed`，不是 start/end）：shell 中位 2623ms / P90 30665ms / 均值 10879ms；read 487、grep 694、glob 718、edit 1639、write 5951。shell 比专用工具慢 4.5 倍（中位），占工具执行总时长 71.4% 而调用只占 44%。
+- batch 并行段落只加在 7 个 provider txt + patch.txt + edit.ts，`session/runner/prompt/system.txt` 里没有；配合 `core/src/plugin/optimize.ts` 的 id 关键词命中规则，自定义 provider / GLM / Qwen / 本地模型一律拿不到。同模型对照（DeepSeek-V4.1-Flash）：无 batch 段并行率 7/9/20%，加段后 32/39/55%。注意 `system.txt:6` 那句 "Prefer parallelizing independent tool calls." 只换来 7-9% —— 空洞口号无效、5 行具体规范有效，修正此前「静态守则是负债」的结论。
+- RE/破解授权段落决定不改：8 个 prompt 文件（system.txt + 7 个 provider txt）每份都带 RE+Authorization，system.txt 那份是「无命中」模型（自定义 provider / GLM / Qwen / 本地）的唯一来源；删掉或改成按需注入，意图检测漏判就是灾难性失败（模型道德拒绝正当任务、不可自动恢复）。append 模式（anthropic/deepseek）会读到两份，属可接受啰嗦。
+- `<authorization>` 块从未被注入：全仓 grep 只存在于 .txt 引用里，没有任何代码把它塞进 session 的 system 数组，8 处都是死引用。观察项 —— RE 段其余条文独立生效，不影响现有能力。
+- 提示词体积：system.txt 1424 tok、工具静态 description 合计 609 tok，整体走极精简路线；RE 段在 system.txt 占 26% 篇幅、在 kimi/trinity/meta 里排到 74% 之后。
 
 ## 代码检索 / LSP
-
-
 
 - 面向 agent 的检索只有两层：`packages/core/src/tool/plugin/grep.ts:79` 是 ripgrep 正则/字面，返回 path:line 文本；`packages/core/src/filesystem/search.ts:38` 的 fff 索引是 fuzzysort 打文件路径。没有符号/定义/引用级检索。
 - LSP 实现不在仓库里：`packages/core/src` 无 lsp 目录，`lsp` 字样只出现在配置解析 `packages/core/src/config/normalize.ts:539` 和 `packages/core/src/file-mutation.ts:131` 的 TODO。131 行那个 TODO 不是「接了没通知」，是 runtime 本身不存在，别被它误导。
@@ -512,8 +568,21 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 相关事实（复核）：`ToolOutput.truncate` 落盘基建本就完整（`tool-output.ts` 的 `boundedEnds` 首尾保留 + `markerOf` 回填 + `outputPath` metadata），但 grep/glob/read/shell 自带 `metadata.truncated` 在 `truncate` 第一行短路。其中 shell 自己落盘（`shell.ts` 的 `info.file`）、read/glob 有 offset 分页能读回，唯一真缺口就是 grep 的 cap 字符截断。
 - **编辑工具面全模型族通吃（2026-10-26，对齐 Cursor「单一编辑语义，不做模型族分支」）**：上游 opencode 的 `patch.ts` 用 `usePatch` hook 按 `model.id` 互斥切换编辑工具——`gpt-*`（非 oss/gpt-4）只留 `patch`、删 `edit`+`write`，其余模型删 `patch`。这是 Cursor 逆向文档《四层工程逻辑对照》§0 明确点名的 opencode "band-aid"（#34491）：工具面随模型切换而漂移，换模型就 cache 失效 + 提示失效。Cursor 的做法是 `ToolCall` oneof 只给「str_replace + 整文件写」一套工具面全模型通吃、让模型自选。\n  - 改法：`patch.ts` 的 `hook` 从「互斥 delete」改成 no-op（`void event`），`edit`/`write`/`patch` 三个工具全模型族同时暴露，加 `// SiCode:` 注释说明理由。`internal.ts` 的「Render model prompts after the patch plugin selects the available editing tools」注释同步改为「...registers (it no longer prunes editing tools)」。\n  - 测试：`tool-patch.test.ts` 原测试「selects the same edit tools...」断言 `gpt.tools=["patch","read"]`、`claude.tools=["edit","write","read"]`（互斥锁），改为「keeps edit, write, and patch available to every model family」断言两者都 `["edit","patch","read","write"]`。\n  - 注意：`optimize.test.ts` 里 GPT 模型 tools 列表含 edit+patch+write 的断言，是因为 `OpenAIToolsPlugin`/`AnthropicToolsPlugin` 已「disabled intentionally」（`optimize.ts:33-34` 注释掉不导出），与本次无关，勿改回。\nEOF
 - echo "EXIT: $?"
+- 薄导航 LSP 已落地（2026-10-29）：按既有 P2 结论只做导航不做采集，自写约 700 行、零新依赖（未回收 44b6938b2a^ 的 3311 行旧实现，那个带 vscode-jsonrpc 依赖）。四个文件：`packages/core/src/lsp/protocol.ts`（Content-Length 分帧，纯函数 FrameDecoder，字节口径防 UTF-8 多字节截断）、`packages/core/src/lsp/config.ts`（从上游遗留 `lsp` 配置段按扩展名选服务器，extensionOf 兼容反斜杠）、`packages/core/src/lsp/client.ts`（spawn 走 Environment.spawner 照抄 mcp/stdio.ts 模式、initialize 握手 30s / 请求 15s 超时、publishDiagnostics 捕获、didOpen/didChange 全文同步、服务器反向请求 stub 应答）、`packages/core/src/tool/plugin/lsp.ts`（definition/references/hover/diagnostics 四 op，入参出参均 1-based，注册表懒启动+进程死亡自动出表）。
+- 注册单点：`packages/core/src/plugin/internal.ts` pre 数组 GrepTool.Plugin 之后。服务器进程挂插件激活 scope（forkIn），配置热重载即回收重启；Entry 声明用同步 claim（Deferred.makeUnsafe + Scope.makeUnsafe）防并发双 spawn。
+- diagnostics op 与旧结论「不做诊断」的区别：旧结论反对的是「全量采集+注入 prompt」；这个 op 是模型按需查询单文件（首次 publish 轮询 6s），不做预热不做注入。
+- effect 4 的 API 坑：无 Effect.catchAll（用 Effect.catch）、无 Effect.timeoutFail（用 Effect.timeoutOption + Option 判断）、无 Deferred.unsafeMake/Scope.unsafeMake（改 makeUnsafe）、无 Duration.unwrap（用 toMillis）、schema 解码类型取 `typeof X["Type"]`、错误类用 Data.TaggedError（Cause.YieldableError 是 interface 不能 extends）。
+- 测试：`test/lsp-protocol.test.ts`（7 条：分帧/跨 chunk/多字节截断/坏帧抛错）、`test/lsp-config.test.ts`（8 条：disabled/unconfigured/扩展名/降权/Windows 路径）、`test/lsp-client.test.ts`（5 条集成，真实 spawn `test/fixture/lsp-server.mjs` mock 服务器）。真实冒烟：typescript-language-server（bun global）+ 全局 typescript@5.9.3，对 src/lsp/config.ts 的 `extensions` hover 返回正确类型、references 3 处命中、干净关闭；tsserver 路径用 initializationOptions.tsserver.path 传（新版 server 已删 --tsserver-path CLI 参数）。
+- 冒烟环境注意：repo 的 typescript 6.0.2 无 tsserver.js（与旧结论一致），本机现以 bun global 的 5.9.3 兜底；生产的 tsserver 路径策略待定（旧笔记建议指到 .old_modules 的 @typescript/old）。
+- 纠偏：此前认为「fff 内容检索」是待做缺口，实际早已实现。`filesystem/fff.ts` 绑 `@ff-labs/fff-bun`（文件名模糊查找），`filesystem/trigram-search.ts` 是内容倒排，两层都在线。判为待做是错的。
+- 当前检索栈是四层：① fff 文件名模糊查找；② trigram 倒排给 grep 做候选预筛（`filesystem/trigram-search.ts:187` 起，默认启用条件 = 非 workspace-backed + 有 VCS + 不在 home）；③ ripgrep 精确扫描兼回退；④ LSP 符号导航。检索路径 see `tool/plugin/grep.ts:282-288` 的两阶段注释。
+- grep 两阶段具体流程：literal pattern 先问 trigram 拿候选文件，再只对候选跑 rg；命中回退的条件写在注释里——正则 pattern、索引还在构建、候选集超过 MAX_CANDIDATES、搜索落在索引根之外。rg 进程启动约 150ms，索引预热后路径可省。
+- 唯一没跑起来的是 LSP：`tool/plugin/lsp.ts` 提供 definition/references/hover/diagnostics，但工程里没有 opencode.json、没有 lsp 配置，等于没有 language server。实测 4342 次工具调用里 lsp 调用 **0 次**——不是模型不爱用，是压根没得用。
+- 检索不是时间瓶颈：探索类（read 566 / grep 436 / glob 32 / lsp 0）合计 1034 次占调用 23.8%，累计执行只有 799 秒（read 387 + grep 389 + glob 23），占 26.3 小时总量 0.8%。grep 436 次空结果为 0——搜得到，问题从来不是搜不到。
+- 所以「差索引」的正确表述：差的不是检索速度（已毫秒级），是**符号跳转没上线**。它的价值也不在执行毫秒数，而在减少步数——模型少走几步 grep+read 的往返，每步省约 13 秒模型时间。语义/向量索引那条已决策不做，且没有数据支持它值那个价。
 
 ## 侧边栏文件树
+
 
 
 
@@ -540,6 +609,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 - 组件是 `app/src/session/timeline/turn-rail.tsx` + `turn-rail.css`（未提交，SiCode 新功能），挂载点 `message-timeline.tsx:497` 的 `<SessionTurnRail>`，`<Show when={props.active !== false}>` 里。
 - 数据：`turnRailMessages` = `selectVisibleSessionUserMessages(selectSessionUserMessages(history.messages()), revert?.messageID)`；`turnRailFailed` 只看该轮最后一条 assistant 的 `error`。点击 tick → `onUnpin()` + `scrollToMessage(message,"smooth")`（`use-session-hash-scroll.ts:99`，靠 `#msg_` 锚点 + `revealMessage` 重试 4 帧）。
 - 高亮当前轮：`activeTurnID` 每帧 `scroller.querySelectorAll("[data-message-id]")` + 每行 rect，取 `scroller.top + 100` 那条线上的行。`data-message-id` 在 `session-ui/src/timeline/session-timeline-row.tsx:533`，值是所属 user message id，所以每行都能对上一个 tick。
@@ -559,11 +629,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 - 语义索引的基础设施盘点（2026-10-24 查证）：**有 SQLite**（`@effect/sql-sqlite-bun` + drizzle，`#sqlite` 条件导出分 workerd/bun/node 三实现）；**有 web-tree-sitter 0.25.10** 但只带 bash/powershell 语法，TS/TSX 语法包需另加；**没有 embedding 调用路径** —— provider 层只在 lmstudio 的 model type 字面量里出现过 "embedding"，`models.dev` 快照里 embedding 模型几乎为零，AI SDK 的 `EmbeddingModelV2` 接口没被任何 provider 实现。
 - 规模基准（本仓）：5146 个 `ts/tsx` 文件、**914,146 行**。按 25–40 行/语法块估 ≈ **2.5–3.6 万块**；384 维 float32 每块 1.5KB ⇒ 向量库约 **37–54MB**（内存或 SQLite blob 都放得下）。
 - 首次索引成本估算：本地 CPU 小模型（bge-small / all-MiniLM 量级）单块 5–15ms ⇒ 2.5 万块约 **2–6 分钟**；走 API（text-embedding-3-small 量级）约 100 万 token，费用可忽略但代码要出本地。
 - **关键判断：Cursor 的「懂整个项目」= 语义索引 + 自动注入，两件事缺一不可。** 我们现在的架构是 agent 主动调工具，模型必须自己想到去搜；只补索引不补注入，体感不会有 Cursor 那种「它自己就把相关文件带进来了」。这条比 embedding 选型更影响最终效果。
-- 「为什么需要语义检索」的实测证据（`packages/core/src`，`*.ts`）：问「上下文压缩什么时候触发」时，grep `compress` 只命中 **4 个文件**，且全是 OpenAI/Copilot 的 API 参数（`openai-responses-api-types.ts`、`openai-responses-prepare-tools.ts`、`plugin/provider/chatgpt.ts`、`plugin/provider/openai.ts`），跟上下文压缩毫无关系；真实实现在 `session/compaction.ts`，文件名里**没有 compress**。而 grep `compact|summariz|prune` 命中 50+ 文件（截断值）。⇒ 一个概念只有一种叫法，**猜错词不是命中率下降，是零命中 + 4 个误导项**，模型据此会得出「这个项目没有上下文压缩」的错误结论。
+- 「为什么需要语义检索」的实测证据（`packages/core/src`，`*.ts`）：问「上下文压缩什么时候触发」时，grep `compress` 只命中 **4 个文件**，且全是 OpenAI/Copilot 的 API 参数（`openai-responses-api-types.ts`、`openai-responses-prepare-tools.ts`、`core/src/plugin/provider/chatgpt.ts`、`core/src/plugin/provider/openai.ts`），跟上下文压缩毫无关系；真实实现在 `session/compaction.ts`，文件名里**没有 compress**。而 grep `compact|summariz|prune` 命中 50+ 文件（截断值）。⇒ 一个概念只有一种叫法，**猜错词不是命中率下降，是零命中 + 4 个误导项**，模型据此会得出「这个项目没有上下文压缩」的错误结论。
 - 对照：grep `retry` 命中 **25 个文件**，候选池大到模型只能挑几个读；语义检索的价值在这里是「把池子从几十个文件降到 8 个块」。
 - 一期收益的真实边界：只救「grep 猜错词」这一类失败。若一次任务里多数搜索都能靠 grep 猜对，一期收益接近零。⇒ 价值必须靠测试集度量，不能靠感觉。
 - 切块实测（5119 个 ts/tsx，`web-tree-sitter 0.25.10` + `tree-sitter-wasms 0.1.13`，**ABI 匹配**；0.27.1 配同一语法会报 `getDylinkMetadata` 失败，必须用 0.25.x）：解析耗时 **10.4 秒**，失败 3 个文件；顶层节点 35,292 → 二次切分后 40,361 → 相邻合并后 **19,941 块**。块长 P50=38、P90=80、max=236、均值 43 行；平均 1751 字符，文本合计 **34.9MB**；384 维向量约 30.6MB ⇒ 库约 **65MB**；首次建索引按 10ms/块估 ≈ **3.3 分钟**。
@@ -605,6 +676,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 - **中文 Windows 下 shell 输出乱码的根因（2026-10-25）**：宿主默认 `[Console]::OutputEncoding` 是 **gb2312 / codepage 936**（本机实测），ps 家族与原生控制台程序都按这个代码页写 stdout/stderr；而 `shell.ts` 的 `output()` 原来用 `buffer.subarray(...).toString("utf8")`，于是每个中文字符都变成 U+FFFD —— 恰好是解释命令为什么失败的那一行。例：`$($null.Count)` 的报错原文「无法对 Null 数组进行索引。」被存成 `�޷��� Null �������������`。
 - **修法一（根因）**：`shell/select.ts` 的 `args()` 给 ps 家族加前置 `try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}; `（`PS_PRELUDE`）。它同时修正两个方向：ps 自己写出的错误消息、以及 ps 解码原生程序输出时用的代码页。带 `try/catch` 是因为无控制台宿主下赋值可能抛错，不能让它连带整个命令失败。
 - **修法二（兜底）**：新增 `packages/util/src/decode.ts` 的 `Decode.outputText(bytes)`：先按 UTF-8 严格解码，失败且平台是 win32 时退到 `TextDecoder("gbk")`。关键细节是 `completeEnd()` 先剔掉尾部不完整的多字节序列再判断 —— 否则分片读取把字符切成两半时，合法 UTF-8 会被误判成 GBK，反而整段变乱码。放在 util 而不是 core，是因为 `util/src/process.ts` 的 `requireSuccess`/`requireExitIn` 也要用（`stderr.toString("utf8")` 是同一个 bug），而 util 不能依赖 core。
@@ -615,24 +687,26 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
+
 - **为什么默认关（代码依据，2026-10-25）**：`schema/src/config/experimental.ts` 的 `precompute_compaction` 描述原文就写了「Background summaries that are never used still cost tokens」，同目录 `portable_shell_scanner` / `todo` 也都是默认 false，experimental 这一档的约定就是显式 opt-in。更硬的一条是记账：`session/compaction.ts` 的 `held.usage.forEach(addSpent)` 只在 `usePrecomputed` 成功换入时执行，所以**被丢弃/失败/会话结束的后台摘要不进会话成本、也不发 `UsageRecorded`** —— provider 照扣费，界面上看不见。默认关本质是不让用户在一笔无法反查的账上花钱。
 - **兑现路径很窄**：`usePrecomputed` 的 `usable` 要求 `trigger.reason !== "overflow"`，即 provider 报上下文超限后的恢复性压缩**永远不用** held 摘要；native compaction 也不用。触发还要过 `estimateContext >= ceiling × PRECOMPUTE_RATIO(0.85)` 且实测 prompt ≥ `PRECOMPUTE_MIN_TOKENS(64k)`。`tailLimit = min(max(keep*2, 30000), budget*0.25)`，默认 keep=15000 → 恒为 30000；而 85%→100% 的余量是 `0.15 × 窗口`，所以**窗口 > ~200k 时可能在到点前又聊超 30k，held 过期重算**（日志里记作 `superseded`）。
-- **遥测落点（新增，零侵入）**：`core/src/compaction-metrics.ts` 只监听 Bus 的 `Compaction.Started` → `Ended`/`Failed`，用 `sessionID` 配对算耗时，不需要改 `session/` 主循环；注册在 `plugin/internal.ts` 的 node 列表（依赖 `Bus.node`，已在列表中）。因为 `Compaction.Ended` 的 schema 本身没有 duration 字段，配对是唯一不用改内核的算法。没有 Started 配对的 Ended 直接丢弃（重启后恢复的压缩，算出来是假的）。
+- **遥测落点（新增，零侵入）**：`core/src/compaction-metrics.ts` 只监听 Bus 的 `Compaction.Started` → `Ended`/`Failed`，用 `sessionID` 配对算耗时，不需要改 `session/` 主循环；注册在 `core/src/plugin/internal.ts` 的 node 列表（依赖 `Bus.node`，已在列表中）。因为 `Compaction.Ended` 的 schema 本身没有 duration 字段，配对是唯一不用改内核的算法。没有 Started 配对的 Ended 直接丢弃（重启后恢复的压缩，算出来是假的）。
 - **precompute 生命周期三条**（`session/compaction.ts`，新增 `Precomputed.startedAt` + `Effect.timed` 包 `summarize`）：`state=started` 带 `windowRatio`/`tailTokens`/`tailLimit`；`state=used` 带 `savedMs`（摘要自身生成耗时 = 真省下的等待）与 `leadMs`（提前多久准备好）；`state=discarded` 带 `reason`，取值 `precompute-off` / `overflow` / `native` / `stale-session` / `stale-tail` / `superseded` / `failed`。fiber 的返回类型因此从 `Result` 变成 `{ result, durationMs }`，`usePrecomputed` 里 `exit.value` 相应改成 `exit.value.result`。
 - **日志格式与解析契约**：`util/src/observability/logging.ts` 的 formatter 会把 `Effect.logInfo("msg", {obj})` 的**第二个参数 flatten 成平铺字段**，标量不加引号（正则 `/^[^\s="\\]+$/` 才免引号）。实际落盘形如 `message=compaction.timing outcome=completed reason=auto durationMs=41200`。`script/compaction-stats.ts` 就是按这个形状解析的；改任何一侧都要同步另一侧。Effect v4 里替换 logger 的 API 是 `Logger.layer([logger], { mergeWithExisting: false })`，`Logger.replace` 不存在（踩过）。
 - **判据（脚本自动给）**：`waste = discarded / (used + discarded)`，>50% 保持关；25–50% 记作 marginal；<25% 且累计 `savedMs ≥ 30s` 才判 justified。`unsettled = started - used - discarded` 代表会话结束或仍在跑、从未结算的那部分，是这套统计的固有盲区（进程退出即丢 held）。
 - **和 Cursor 的结构差异**：Cursor 的 9 个指标里有 `persisted`，说明它的后台摘要算完会落盘复用（`BackgroundAndPersistIfCompleted`）；SiCode 的 held 只在内存 `Map`（`compaction.ts` 的 `precomputed`），进程退出即丢，**所以它的浪费率天然更高**。这既解释了默认关，也说明「开关默认值」不该照抄 —— Cursor 的成本在自己账上，SiCode 的在用户 key 上。
-- **路径更正**：本文件（含「项目记忆」区域）里出现的 `packages/plugin/internal.ts` 都应读作 `packages/core/src/plugin/internal.ts` —— 插件表、node 列表、`SessionStore.Service` 注册全在 core 包内，仓库里没有前者这个路径；`bun script/notes.ts verify` 会把它报成 missing。
+- **路径更正**：本文件（含「项目记忆」区域）里凡写作 packages/plugin/internal.ts 的路径都应读作 `packages/core/src/plugin/internal.ts` —— 插件表、node 列表、`SessionStore.Service` 注册全在 core 包内，仓库里没有前者这个路径；`bun script/notes.ts verify` 会把它报成 missing。
 - **后台摘要落盘（2026-10-26，对齐 Cursor 的 `persisted`）**：`session/compaction.ts` 新增最小落盘层。fiber 完成时 `Effect.tap` 把 `{text, keepID, firstID, model, initial, tailLimit, failures}` 写到 `global.cache/compaction/<sessionID>.json`；`precompute` 入口在内存 Map 无值时读盘重建一个「已完成」的 held（`fiber = Effect.succeed(...).pipe(forkIn(scope))`，`usage=[]`、`startedAt=now`），`heldIndex` 校验通过就复用、跳过重新 summarize。消费时 `compact` 开头 `deletePersisted`（`usePrecomputed` 的 discarded/failed 分支不需要再删，因为文件已在 compact 开头删掉）。`superseded` 分支同步删盘。`node` deps 加 `Global.node`。
 - 语义边界：恢复摘要的 `usage=[]` 所以 `usePrecomputed` 不 `addSpent`（上次进程已计费，避免重复扣费）；`durationMs=0`/`leadMs=0` 让 `compaction-stats` 如实显示「落盘复用，非等待已算好摘要」。日志加 `state=recovered` 标记。
 - 收益面窄：precompute 默认关，只有「开了 precompute + 长会话跨天重启 + 摘要已算完但未 compact」才命中，省一次 LLM 摘要调用。
 
 ## 上游同步
 
+
 - 上游 remote `sst/opencode`（dev 分支），分叉基线 `76fd05ff45`（2026-10-22）。策略（用户拍板）：**不整体 merge，列清单按需摘取**。流程：① `git fetch upstream dev` 后 `git log --oneline 76fd05ff45..upstream/dev`，按内核修复/新功能/桌面端 UI/文档 CI 分类列清单并标注影响面；② 用户挑选；③ 没碰我们分叉文件（i18n/图标/桌面壳/SiCode 功能）的直接 cherry-pick，碰了就手工移植并保留 `// SiCode:` 注释；涉及依赖的移植完 `bun install --linker=hoisted`，再跑 `bun run check` 和相关包测试。完整流程在根 `UPSTREAM.md`（README 同步一节链接它）。
 - 2026-10-26 那次 upstream/dev 整体合并**已回滚**（`merge/upstream-2026-10-26` 停在 4b4aab66f6，即合并前的 0133662a23 之后若干提交）。合并本身当时是打通的，留档供以后按需摘取：cf2b4a89d5 解掉 174 处冲突，app/session-ui/gui-extensions/core/desktop tsc 全绿；测试 app 892 pass、session-ui 343 pass、gui-extensions 256 pass，core 官方入口 5828 pass / 89 fail 且失败均为环境性（ripgrep 下载被测试框架禁网拦截、MCP 本地 OAuth 回环、recorded 测试超时，合并前基线同样失败）。
 - 那次合并的手工回插清单（再合并时会重新遇到）：`diff.ts` 取上游数字 seq + 保留我们的 prompt 语义（数组改名 `promptBounds` 避免与函数重名）；`llm.ts` 的 steer / narrate / loop 全量回插；`session-header-actions` 清死代码（上游删了 terminalPlacement / dock API）；tab-nav 双侧菜单合并；browser 的 ⌘L 地址栏聚焦按新 ipc/connection/pane 结构回插；`SiteCookies` 回插 `panel.tsx`。stash pop 的冲突解法：message-content 的 meta 合成为 `MetaItem[]` + elapsed 追加项、ui i18n 双侧键都保留。
-- 合并线上试过但**未保留**的两处：`app/src/shell/tool-rail.tsx` 整文件删除（左侧工具栏，当时是半成品——删了文件但 `shell.tsx` 还在 import，编译不过），以及 `desktop/package.json` 的 `install-electron` 空脚本（绕过 electron postinstall，hoisted 环境用）。
+- 合并线上试过但**未保留**的两处：app/src/shell/tool-rail.tsx 整文件删除（该文件已不存在）（左侧工具栏，当时是半成品——删了文件但 `shell.tsx` 还在 import，编译不过），以及 `desktop/package.json` 的 `install-electron` 空脚本（绕过 electron postinstall，hoisted 环境用）。
 - `packages/core/src/plugin/warming.ts` 里 `ctx.event.subscribe({ types: [...] })` 的形态来自 `1434464f7e feat(plugin): filter event subscriptions by type`（38 文件 752 行，重写 event 订阅 API、client 生成代码、protocol/openapi）。单独摘 warming 类修复（`2bf756e3ab`）会得到 TS2554「Expected 0 arguments」加 `event.data.sessionID` 取不到，必须先有那条协议级改动。
 - `packages/desktop/resources/windows/installer.nsh` 的「各渠道独立目录」（`f4ecbbf71d`）调用 `!insertmacro removeStagedUpdates`，且 diff 上下文建立在 `8d5e6e23c0` 的进程枚举逻辑（`QueryFullProcessImageNameW` 循环）上，两条必须成对摘，单独摘必冲突。
 - 「`git diff base..main-sicode -- <file>` 为空就代表能干净 cherry-pick」这个判据不充分。还要看该提交在上游 base 之后的位置：`git rev-list --count 76fd05ff45..<commit>` 越大，中间被别的提交改过同一文件的概率越高。`f4ecbbf71d`（41）和 `c54677bece`（617）都比 `4371c29b5b`（655）更容易撞。
@@ -641,10 +715,11 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - `packages/desktop/scripts/windows-installer.test.ts` 是真实集成测试：会调 `getMakeNsisPath` 取 NSIS 工具链并编译脚本，其中一条用例要启动 `reg.exe` 改卸载注册表。在启用了程序黑名单的受限环境里那条必然 `EPERM uv_spawn 'reg.exe'`，属于环境限制，不能当代码回归。
 - 摘带测试的上游提交时，要检查测试里有没有硬编码「工具名/能力枚举」数组。`packages/core/test/location-layer.test.ts` 的 blocked/allowed location 用例就列全了工具清单，摘入上游版本会把我们的 `history`、`recall` 覆盖掉，测试立刻失败（`c17ae01645` 补回两处清单并加了 `// SiCode:` 注释）。同类风险点：任何断言 `tools.map(t => t.name)`、权限预设列表、provider 列表的测试。
 - 位置靠后的提交（`git rev-list --count base..<commit>` 大于 600）明显更好摘：`6135e07fae`(639)、`0ca7885f26`(640)、`dc21f528ac`(642) 三条全部 automerge 无冲突，而同批中位置 183 以后的 server 改动、位置 427 的 desktop 诊断改动都在我们改过的区域里。
-- 2026-10-27 上游 `dae4077a96` 把全局 `extension` 改叫 `plugin`：`packages/gui-extensions/` 整包变成 `packages/gui-plugins/`（旧目录消失），`packages/app/src/runtime/extension/` 变成 `runtime/plugin/`，共 928 个 rename、1179 文件。我们二开的 `gui-extensions/src/debug/*`（约 +335）和 `gui-extensions/src/browser/*` 必须整体搬到新路径，所有 `@opencode/gui-extensions` import 也要改。这是「跟到底」或「永远不跟」的二选一：不跟的话，以后任何 import `@opencode/gui-plugins` 的 app/desktop 提交都摘不了。
+- 2026-10-27 上游 `dae4077a96` 把全局 `extension` 改叫 `plugin`：`packages/gui-extensions/` 整包变成 gui-plugins/（旧目录；SiCode 没跟这次改名，仍是 gui-extensions），`packages/app/src/runtime/extension/` 变成 `runtime/plugin/`，共 928 个 rename、1179 文件。我们二开的 `gui-extensions/src/debug/*`（约 +335）和 `gui-extensions/src/browser/*` 必须整体搬到新路径，所有 `@opencode/gui-extensions` import 也要改。这是「跟到底」或「永远不跟」的二选一：不跟的话，以后任何 import `@opencode/gui-plugins` 的 app/desktop 提交都摘不了。
 - 上游 `51e4de1da6`（`put dev builds back on the shared service and database`）完整回退了 `8ee9351be9`，dev 构建重新用共享 service 和数据库。当时搁置那条的判断（local 频道不受影响、依赖 3 条链）因此被证实；以后不必再评估它。
 
 ## 会话审查 / 压缩
+
 
 
 
@@ -658,6 +733,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 权限 / 破坏性命令拦截
 
 
+
 - shell 工具每条命令都会过 ShellParse.scan → permission.assert（tool/plugin/shell.ts），resource 是完整命令文本；PowerShell 下 portable 扫描器会拆分复合命令，但管道/脚本块内嵌的调用可能不单独成命令（已知局限）。
 - 权限配置格式：opencode.jsonc 顶层 permission.<action> 是 {模式: ask/allow/deny}，last-match-wins（键序即策略，v1/config/permission.ts）；匹配用 util/wildcard.ts，Windows 下大小写不敏感（si 标志）、反斜杠归一化为 /，所以小写 "rd *" 能匹配 "RD ..."。
 - 默认放行来自 Agent.Info.default() 的 {action:"*",resource:"*",effect:"allow"}；config 规则在 all=[...agentRules,...savedRules] 里靠后、findLast 后写优先，所以 config 里的 ask 能压过默认 allow。
@@ -668,12 +744,14 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 会话时间线 / 指令更新通知
 
 
+
 - 「指令已更新 core/codemode, core/git-status」通知（独立 notice 行 + 分组折叠头「✓ 更新 …」）的链路：core 每次模型请求前 InstructionState.prepare 重读指令源（llm.ts:232）→ agent 干活时工作树变化使 core/git-status（builtins.ts:73，SiCode 自加的 git 快照）和 codemode 工具目录产生 delta → SessionEvent.InstructionsUpdated → message-updater.ts:151 生成 system 消息 → UI 两处渲染：session-timeline-row.tsx notice() 的独立行、tool-renderer.tsx:533 纯 notice 分组折叠头（label=ui.messagePart.context.updates「更新」+summary）。
 - 该 system 消息同时是模型上下文的一部分（history.ts messageEntries 不过滤 system，模型靠它获得更新后的 git 状态），所以只能做 UI 抑制、不能删 core 事件。
 - 已改：projection.ts 新增 isInstructionUpdateNotice()（system + metadata.notice==="instructions" 或 description 以 "Instructions updated: " 开头的旧格式），在全部三个 Notice 行发出点拦截——visibleNotice()（leading + turn entries 两处）和 constructMessageRows 的 case "notice"（651 行）。分组折叠从已发出行聚合，行不发出则胶囊也不会出现。
 - 验证：session-ui typecheck 237 文件全绿，timeline 88 测试全过；CDP reload 后 DOM 探针确认「指令已更新」「core/codemode」在渲染页面中零出现（历史消息同样被抑制）。
 
 ## 后台终端 / Shell 生命周期
+
 
 
 - 生命周期现状：进程句柄 scope 绑定（`shell.ts` create 的 `Effect.scoped` 管理 fiber），显式 `remove(id)` 或服务 finalizer（server 优雅退出）都会杀进程；已退出的 shell 内存保留 `EXITED_LIMIT` 个，输出文件 `sh_*.out` 每小时按 `RETENTION`（7 天）清理（`Shell.cleanup`）。
@@ -686,6 +764,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 会话时间线 / 问题工具已回答块
 
 
+
 - 问题工具的已回答块（tool-renderer.tsx 的 question 渲染器 + message-part.css 的 [data-component="question-answers"]）已从"灰字+绿竖线"改为过程壳行语言：每个问答对渲染成 question-row / answer-row 两行，各带 19px 图标列（help 问号 = faint，check = success 绿），与父行图标列同列对齐；文字色阶 faint/muted/base，字号行距走 --process-shell-* token，与过程链行同构。
 - 对齐验证：CDP 向真实时间线注入探针 DOM（含 data-component/data-slot 完整结构）后同步取 getBoundingClientRect——三列图标 x 坐标全部 261（宽 19），与 work-shell-head 图标列（x=266，含 4px 自身内边距）对齐；颜色 computedStyle 确认走 token。探针截图不可靠（Solid 重渲染/虚拟化会挪动），量几何比截图靠谱。
 - 注意：真实会话里复现该块很难（虚拟化 + 多 tab + 会话轮次折叠），注入探针法是验证这类时间线样式的可行替代。
@@ -693,11 +772,13 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 会话时间线 / 过程壳间距
 
 
+
 - 虚拟化时间线里行与行之间没有 gap（session-turn-message-container gap 0px、context-tool-group-list gap 1px），间距全靠 prose 自身 margin——所以两个过程壳面板背靠背时贴脸（实测 2px，全是边框），隔了文字的反而 40px+。
 - 修复：message-part.css 给 [data-component="collapsed-tool-group"][data-process-shell] 加 margin-block-end: 8px，统一尾部呼吸。链表内 pitch=8+1=9px，消息级=8px，肉眼等距。margin 会被算进行高（中间全是 flex column 容器，BFC 不塌陷），虚拟化测量安全。
 - 验证：CDP 注入三连探针面板，测得相邻间距 [8,8] 等距；真实窗口重启后无面板挂载时，注入探针法是验证时间线样式的可靠替代。
 
 ## 会话审查面板
+
 
 
 - HTML artifact 内嵌渲染（2026-10-26 落地）：agent write `.html/.htm` → 正文流末尾自动出 artifact 卡（sandboxed iframe `allow-scripts` srcdoc，无 origin）。结构：
@@ -720,6 +801,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 设置
 
 
+
 - 设置页 TRAE 风格改版（2026-10-26）：结构不变（左竖导航+右内容），纯视觉重排。settings.css：侧栏面板化（bg-layer-01 + 右 0.5px 分隔线，padding 20/16/24，原 50/24/64）；back 键整行+底部细线；新增 .settings-account 品牌卡（navigation.tsx，仅根设置页 searchable() 显示，Mark 头像+SiCode/Desktop 占位，无账号体系）；导航项 28→30px 高、radius 6、gap 10；组标签 12px faint。内容：settings-tab-title 15→18px；settings-section gap 16→10、标题 12.5px/560 带 2px 左缩进；settings-list radius 10、padding-inline 16；行 padding 20→14（catalog 变体仍 16）。general.tsx 偏好设置页拆三卡：常规(语言/标签页/默认环境+扩展段)/权限(自动接受)/输入(智能体/终端位置/后续消息/双指缩放/移动端标题栏)；i18n 加 settings.general.section.permissions、.input（en/zh，其余语言回退 en）。验证：CDP 实截 偏好设置/外观 两页正常；tsc -b 通过（bun check 报 artifact-card.tsx:81 Accessor 索引错误是 oxc 误报，真 tsc 无错）。
 - 侧栏大空隙：设置布局原来是 `justify-content: center` 整体居中，窗口一宽工具栏和侧栏面板之间就空出一大块（实测 95px）。修复：`.settings-screen > .settings` 加 `margin-inline-end: auto` 贴左，侧栏紧贴工具栏（x=68）。
 - 权限卡补第二行：演示稿承诺的「破坏性命令确认」开关此前没落地（拦截逻辑写死在 auto-approve.ts）。现已做成真设置 `settings.general.destructiveConfirm`（默认开）：关掉后 rm/del 等删除命令跟随自动接受。改 model.tsx（schema+default+context）、auto-approve.ts、requests/model.ts（弹窗显示同步）、general.tsx、i18n en/zh、search-catalog、model.test.ts。
@@ -733,6 +815,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 设置页没有 storybook fixture：`SettingsNavigation` 依赖 `useSettingsSurface`（router + layout + servers），`SettingsSearch` 还依赖 command/global，静态复刻脚手架很容易失效。要目测就起桌面端。
 
 ## artifact 侧边预览
+
 
 
 - 二次改向（用户拍板）：demo 打开不走自制 Kobalte 抽屉，走**内置侧边浏览器 pane**（gui-extensions/src/browser）。
@@ -751,12 +834,14 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 模型与变体
 
 
+
 - 输入框里的「思考程度」滑块 = `packages/app/src/composer/editor/editor.tsx:359` 的 `SteppedSlider`，只在 `view.variant.options().length > 1` 时渲染。options = `["default", ...model.variants 的 id]`（`packages/app/src/composer/model.ts:271`），所以模型没有 variant 就整个不显示，不是被藏起来了。
 - `model.variants` 由 config 决定：上游 `d889cb2044`（feat(core): read model reasoning from config）之后，`capabilities.reasoning` 一旦出现在配置里就会**替换**默认变体，改用 `Variant.supports()` 解释。`Variant.supports` 只认 `toggle` / `effort` / `budget`（`packages/core/src/variant.ts:13`），只写 `{"supported": true}` 会返回空数组 → `Variant.resolve` 得 `[]` → 滑块消失。要恢复就写 `"reasoning": { "supported": true, "effort": ["low","medium","high"] }`（官方文档 `services/www/src/docs/content/models.mdx:126` 起就是这个形状）。
 - 同一个提交前，配置没写 reasoning 时会走到 `Variant.resolve(model)` 的默认参数 `[{type:"effort"}]`，openai-compatible 包按 `EFFORTS = ["low","medium","high"]` 铺满——这就是「之前有、现在没了」的原因。
 - `openai-compatible` + modelID 含 deepseek 时，`effort === "none"` 会额外发 `body.thinking = { type: "disabled" }`（`packages/core/src/variant.ts:90` 的 SiCode 注释）。所以配置里把 `"none"` 加进 effort 数组能拿到真正的「关掉思考」档，其余档位发的是 `reasoningEffort`。
 
 ## Cursor 决策逻辑对照
+
 
 
 - 四道决策（问/答/查/写）对照落在 artifacts/agent-decide.html；能力维度对照是 artifacts/agent-compare.html（两者别混）。
@@ -771,6 +856,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 上下文注入
 
 
+
 - 新模块 `core/src/session/context-hints.ts`：把用户请求里提到的文件名/路径/标识符反查出候选文件，作为「线索」注入模型上下文。轻档实现（只给路径，不给内容）。
 - 接线点：`core/src/session/context.ts` 的 `load()`——它返回的 messages 只喂给本次请求的 `baseTranscript`，不写库，所以 hint 天然不进历史、不进 compaction、不污染 system 前缀（prompt cache 不动）。
 - 注入物 = 一条 `SessionMessage.Synthetic`（`metadata.notice = "context-hints"`），插在最后一条 user 消息之后；`toLLMMessages` 把它转成一条 role:user（`to-llm-message.ts:292`），所以 provider 交替规则/合并由现有适配负责。
@@ -780,6 +866,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - UI 零改动：hint 从不 publish 到 store，时间线里不出现，不需要投影过滤。
 
 ## 会话时间线 / 回合产出
+
 
 
 - 回合末尾那块「更改的文件」不是常驻：行由 `packages/session-ui/src/timeline/projection.ts` 的 `constructSessionMessageRows` 在 `idle` 时插入，条件是 `turnDiffs && execution.files.size`；`turnDiffs` 来自设置 `general.showTurnDiffs`（`packages/app/src/settings/model.tsx`），2026-10-27 起默认 true。
@@ -798,6 +885,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 收工闸门 / 最终回答
 
 
+
 - 新增 `core/src/session/runner/final-answer-gate.ts`（纯函数 `unansweredPrompt`）+ `llm.ts` 的 `Completed` 分支挂载（`completion-gate` 之后）。回答「改了文件却一句话不说」：`edit`/`write`/`patch` 成功执行且本轮零 assistant 文本 → 注入 `FINAL_ANSWER_PROMPT` 并强制再走一步。
 - 触发条件三连（缺一不触发）：最后一条 user 消息之后无 text part；存在 `state.status === "completed"` 的写类工具；未到步数上限。一次/prompt（`answerNudged` 按 prompt messageID），避免空转；steer 是新 prompt，各自检查。
 - 只读静默**故意不管**：那是 `explore-budget` 的职责（软 12 / 硬 24 步）。读了一堆不说话不算本次要治的形态。
@@ -806,6 +894,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 实测教训（重要）：不设限时 **57 个 session-runner 测试全挂**——上游夹具的回合本来就以「只有工具调用 + `TestLLM.stop()`」结束，零文本是常态不是异常。任何「每回合都触发」的闸都会撞这个假设，闸门必须绑定一个稀有事件（改文件）。收窄后 234/235 通过，唯一失败是 2026-10-26 记录的既有 compaction retained-turn。
 
 ## 冷启动 / 首屏加载
+
 
 
 - 新会话首屏那两个控件（模型选择器、工作区/分支行）都不是独立加载的，卡在同一批数据上：模型按钮原来整块被 `<Show when={!loading}>` 挡住（`packages/app/src/composer/composer.tsx`，loading = `!selection.ready() || !providers.ready()`，而 `providers.ready()` 要求 provider 与 **model** 列表都到齐）；工作区行 `packages/app/src/new-session/view.tsx` 里的 `<Show when={props.project.selected()}>` 同理。数据没到 = 控件不存在，不是占位。
@@ -820,6 +909,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## MCP 工具
 
 
+
 - 名字来源：MCP 工具在注册表里的名字是 `<namespace>_<tool>`——`packages/core/src/tool/mcp.ts:23` 的 `namespace()` 把 server 名里非 `[a-zA-Z0-9_-]` 换成 `_`（`.` 会被换掉，`-` 保留），再由 `packages/core/src/tool/runtime.ts:276` 的 `effectiveName` 拼成 `命名空间_工具名`。消息分片 `SessionMessage.AssistantTool`（`packages/schema/src/session-message.ts:164`）只有 `name`，**不带 server**，所以想按 server 展示只能反推。
 - 反推规则在 `packages/session-ui/src/tools/mcp-tool.ts` 的 `mcpToolIdentity(name, servers)`：拿 Location 的 MCP server 名单逐个算命名空间前缀，取最长匹配。必须最长——`acme` 与 `acme_ops` 并存时，短的那个会把 `acme_ops_run` 吞成 `acme / ops_run`。名单为空（storybook / 还没同步）就返回 undefined，行维持原名，不要瞎猜。
 - 名单来源是 `data.location.mcp.server.list({ directory })`（`packages/client/src/solid/data.ts`），由 `packages/app/src/shell/routes/session-ui-provider.tsx` 传进 `DataProvider` 的 `mcpServers`（`packages/session-ui/src/context/data.tsx`）。storybook 走 `CurrentSessionProviders` 的 `mcpServers` 入参，不传就不启用。
@@ -829,16 +919,23 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 自定义提供商
 
-
 - **自定义提供商的「获取模型」链路（2026-10-27，a93d3241d4）**：探测逻辑在 `packages/core/src/provider-probe.ts`（导出 `probeModels`，Effect 版），`POST /api/provider/models`（`packages/protocol/src/groups/provider.ts` 的 `provider.models`）和插件 SDK 的 provider domain（`core/src/plugin/host.ts`）都调它；客户端类型是生成的，改 protocol 后要在 `packages/client` 跑 `bun run generate`。
 - 探测的兼容面：响应接受 OpenAI `{data:[{id}]}`、Ollama `{models:[{name}]}`、裸数组三种；baseURL 不以 `/v1` 结尾时 404 会回退 `{base}/v1/models`；`Authorization` 只在用户没自定义同名 header 时才注入 Bearer；15s 超时；错误信息优先读响应体里的 `error.message`。
 - **给 protocol 加 endpoint 的固定成本清单**（这次踩全了）：protocol group、server handler、两处插件 SDK domain 实现（`core/src/plugin/host.ts` + `plugin/src/promise/adapter.ts`）、client 生成物（generate）、以及 core 测试夹具里的 provider stub（`core/test/fixture/policy.ts`、`core/test/plugin/host.ts` 的 providerHost/noProviders/默认 overrides）——缺一处 typecheck 就挂。
 - 表单：`packages/app/src/providers/credentials/dialog.tsx` 分三区（连接/模型/可折叠请求头），保存按钮固定在弹窗底部（form 内部滚动，外层 `max-h-[min(56vh,520px)]`）；「获取模型」按钮 → 内联面板（搜索+多选，已存在 id 显示「已添加」并禁用）。模型显示名改为可选（`form.ts` 的 `validateCustomProvider` 里空名兜底用 id），历史行为不变。
 - i18n 只加了 en/zh/zht：`language.tsx` 里每个语言字典都是 `{...base(en), ...该语言}` 合并，缺 key 自动回退英文，不用改 40 个文件。
 - **服务端改动必须重启桌面端才生效（2026-10-28，bbd5a3ac0a 验证）**：`serve --service` 是常驻进程、从源码启动，提交后不重启就还是旧代码。用户报「获取模型有问题」实测就是运行中的 3084 对 `/api/provider/models` 回 404——服务端代码本身没问题，双击 dev.bat 重启即可。排查时可用 `com.sicode.desktop.dev/opencode/service-local.json` 里的密码做 Basic auth（用户名 `opencode`）直接 curl 运行实例。
-- 测试整条 HTTP 链路别用 `Effect.runPromise(Layer.build(...))`：Scope 会被提前关闭、服务拆光，所有请求都回空体 503。要用 `core/test/lib/effect` 的 `it.live`（整个用例包在 scope 里，像 `provider.test.ts`），并且要先 `SdkPlugins.register` 一个能完成的插件——路由中间件等插件激活，不等就 503。
+- 测试整条 HTTP 链路别用 `Effect.runPromise(Layer.build(...))`：Scope 会被提前关闭、服务拆光，所有请求都回空体 503。要用 `core/test/lib/effect.ts` 的 `it.live`（整个用例包在 scope 里，像 `provider.test.ts`），并且要先 `SdkPlugins.register` 一个能完成的插件——路由中间件等插件激活，不等就 503。
+- 自定义提供商「获取模型」修了三处（2026-10-28）：①core/src/provider-probe.ts 现在解析表单的 {env:NAME} 语法（服务端 process.env 取值；缺失时明确报「Environment variable X is not set on the server」），原来把字面量 {env:X} 当 Bearer 发出去必 401；②探测顺序改为 /v1/models 先于 /models（OpenAI 兼容网关的规范路径；base 已含 /v1 时只试 /models）；③失败信息改为逐次列出「/v1/models → 403 Forbidden — Insufficient account balance; /models → …」，不再只留最后一次错误。app/src/providers/credentials/dialog.tsx 的模型搜索框拦了 Enter（原来会触发表单提交=保存并关闭弹窗），Esc 收起列表。实测三种输入（字面量/缺 env/有 env）行为正确；core+app typecheck 干净。注：用户的 403 Insufficient account balance 是网关账号余额问题，不是代码问题（假 key 探两条路径都是 401 而非 404，说明路径对）。
+- 自定义提供商第二轮优化（2026-10-28，参考 WorkBuddy 添加模型弹窗）：①模型行加折叠「能力与窗口」——工具调用/图片输入/思考模式三个勾选 + 上下文窗口与最大输出两栏（预设 32K/64K/128K/256K 与 8K/16K/32K/64K），只把偏离默认值的字段写进 config（capabilities/limit），编辑时 formFromConfig 回读并自动展开；②「测试连接」按钮（API Key 右边）→ 新端点 provider.test：有模型 id 时发一次 max_tokens=1 的 chat/completions，没有则退回 /models，返回 {mode}；③拉取列表加「全选/清除」（作用于当前搜索结果）与数量提示，空态区分「端点没返回模型」和「搜索无匹配」；④删除提供商加确认弹窗；⑤填名称自动生成 providerID（用户改过 id 后不再覆盖）。core 侧 provider-probe 抽出 prepare/candidates 复用，probeChat 与 models 同样逐条报错；plugin 的 ProviderDomain 与 promise adapter 补了 test 方法，core 测试桩同步。验证：app/core/plugin typecheck 干净，server 仅既有 client-mcp 测试错；form 6 个测试过（含能力/limit 写入与非法窗口校验）；probeChat 实测两条路径都报出来。
+- **保存自定义提供商必报「Integration not found: <providerID>」（2026-10-29 修复）**：保存流程（`packages/app/src/providers/credentials/dialog.tsx` saveMutation）在有明文 API Key 时无条件走 `integration.connect.key`，但该端点（`packages/server/src/handlers/integration.ts:68`）先校验 integration 注册表——自定义 providerID（如从名称生成的 `m-c-api`）不在表里 → 整个保存 404，且 config.update 已先行落库（保存半成功）。报错 toast 标题是 `common.requestFailed`（保存按钮的），不是测试连接的「连接失败」。
+- 正确的落库路径早就在：自定义提供商的 config 本就不含 apiKey（`form.ts` validateCustomProvider 只写 `{env:NAME}` 引用），明文 key 设计上存 credential 库；运行时 `packages/core/src/model-resolver.ts:381` 对无 integration 的 provider 用 `providerID ?? integrationID` 兜底查 `connection.active`，`credentials.list`/`create`（`core/src/credential.ts`）不校验 integrationID、`activate` 默认激活。所以修法：先 `integration.get` 探测（404 即非注册），已知 integration 才走 `connect.key`，否则直接 `credential.create({integrationID: providerID, value:{type:"key",key}, activate:true})`。registered-integration 路径行为不变。
+- **自定义提供商全链路体检（2026-10-29）**：①运行时链路闭合——package `aisdk:@ai-sdk/openai-compatible` 经 `provider.ts` 的 `packageName()` 剥前缀 → `core/src/plugin/provider/dynamic.ts`（DynamicProviderPlugin 兜底任意包）npm 装 `@ai-sdk/openai-compatible@ai-v6`（`sdk-factory.ts` 的 installSpec 钉 v6 tag）→ 取 `create*` 导出；`aisdk.ts` 的 `prepareOptions` 把 settings（baseURL）+ `nativeCredentialSettings`（credential type:"key" → `{apiKey}`）+ config headers 全部传入工厂。②credential 两条路都能到：明文 key 存 credential 库 → `model-resolver.ts:381` 按 providerID 查 `connection.active`；`{env:NAME}` 走合成 integration 的 env method → `connection.resolve` 读 `process.env[name]`。③config provider 插件（`config/plugin/provider.ts:29`）会给每个配置化 provider 注册**合成 integration**（key 或 env method）——用户撞的 404 本质是保存弹窗在 config.update 返回后立刻 connect.key、注册表 reload 未完成的**时序竞态**；直接 credential.create 的修法对该竞态免疫，两种状态都正确。④schema（`schema/src/config/provider.ts`）完整接受表单形状：settings 走 StructWithRest、capabilities（tools/input/reasoning）与 limit（context/output）字段全对上。
+- 体检中另修两处：②`CustomProviderActions.remove` 原样调 `integration.get` 无 catch——删除自定义提供商必报「Integration not found」（与保存同根因），已加 404 回退到 `credential.list()` 按 integrationID 过滤；③zht 缺 5 个 key（deleted.title/description、edit.title、field.apiKey.editDescription）已补繁体。
+- 已知瑕疵（未修，低危）：`listCustomProviders` 只回读 settings.baseURL，手工调过 timeout 等其它 settings 的 config 在编辑保存后会被丢；`{env:...}` 提供商改为明文 key 保存时，若合成 integration 只有 env method，`connect.key` 会 `Effect.die`（Key method not found → 500），刷新后重存可绕过；config.update 先于 key 存储执行，key 存储失败会留下「无 key 的提供商」（修复后概率极低）。
 
 ## shell 发现 / 别名兜底
+
 
 
 - 现象：SiCode 在 Windows 上选中 5.1（`System32\WindowsPowerShell\v1.0\powershell.EXE`），pwsh 7 没进候选。
@@ -850,9 +947,210 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 项目地图
 
+
 - 注入端：`packages/core/src/config/plugin/project-map.ts` 把 `.sicode/structure.md` 全文和 `.sicode/notes.md` 的 `## ` 标题清单拼进每个请求。notes 只给标题是刻意的——全文约 28KB，每请求重放比模型自己按需读那一节更贵；地图全文注入则是划算的，它省掉「先读一遍再动手」的往返（约 1.3k tokens）。
-- 生成端：`packages/cli/src/commands/handlers/init.ts`，命令是 `opencode init`（bin 名仍是 `opencode`，见 `packages/cli/package.json` 的 bin）。它从 cwd 往上找 `.git`/`package.json`/`Cargo.toml`/`go.mod`/`pyproject.toml` 定项目根，扫一级目录（跳过 node_modules、dist、隐藏目录等）、`package.json` 里 dev/build/test/check/lint 开头的脚本、README 第一段散文，产出带 TODO 的骨架；文件已存在就提示并退出，不覆盖。
+- 生成端：cli/src/commands/handlers/init.ts（已随该命令一起撤销），命令曾是 `opencode init`（bin 名仍是 `opencode`，见 `packages/cli/package.json` 的 bin）。它从 cwd 往上找 `.git`/`package.json`/`Cargo.toml`/`go.mod`/`pyproject.toml` 定项目根，扫一级目录（跳过 node_modules、dist、隐藏目录等）、`package.json` 里 dev/build/test/check/lint 开头的脚本、README 第一段散文，产出带 TODO 的骨架；文件已存在就提示并退出，不覆盖。
 - 有意不给「目录职责」「改动该去哪」下结论：静态扫描猜错比留 TODO 更糟，模型会当真。这两节留给 agent 或人填。
 - `.sicode/` 只读不建是长期状态：`ConfigDiscovery` 的 `projectDirectories = [".sicode", ".opencode"]` 只用于发现，全仓没有任何地方 mkdir 它，所以新项目里那套注入不会生效，除非跑一次 init 或手工写文件。
 - 生成入口只有一个：core 的内置斜杠命令 `/init`（`packages/core/src/config/plugin/command.ts`，注册在配置命令之前，用户自建 `init` 可覆盖）。它把「读代码写 `.sicode/structure.md`」整件事交给模型，prompt 里约束篇幅（一页）、排除易过期内容（文件清单/行数/TODO/版本号）、要求已存在时就地改进。桌面端在 composer 打 `/init` 即触发，命令经 `GET /api/command` 暴露，app 侧无需改动。
 - 曾经写过一个 CLI 版 `opencode init`（静态扫描目录 + package.json 脚本 + README 首段，1 秒出骨架），已撤销（`a7aa342ec3`）。撤销理由：桌面端用户不该被要求开终端；两个同名不同行为的入口会让人猜用哪个。静态扫描的价值不足以维护第二份模板。
+
+## 并行编辑与 DeepSeek 兼容
+
+- **结论：SiCode 侧对 DeepSeek 并行的支持已经齐了，不用改内核代码；缺的只是「模型愿不愿意」+「配置里要不要显式开」。**
+- 用户本机跑的根本不是官方 DeepSeek provider，而是三个中转站 openai-compatible（`~/.config/opencode/opencode.jsonc`）：`lianyi`（`@opencode/ai/providers/openai-compatible`）、`deepseek1` 与 `zy50009`（`aisdk:@ai-sdk/openai-compatible`）。两条路最后都落到同一个协议/解析器。
+- 解析层实测通过（临时测试，已删）：新写 3 条用例喂真实分片格式——① 首帧一次宣告 3 个 tool_call（带 index/id/name），后续按 index 流式拼参数；② 后续 delta 省略 index（兼容差的网关）；③ 默认不发 `parallel_tool_calls`。全过。`packages/ai/src/protocols/openai-chat.ts:1103-1154` 的多调用累积用 `tool.index ?? matched ?? (id 不一致 ? nextToolIndex : fallback)` 定位，注释明说为「省略 index 的兼容 provider」和并行 delta 设计。
+- 请求层：`resolveParallelToolCalls`（`open-responses.ts:783`）= `options.parallelToolCalls ?? (disableParallelToolUse === undefined ? undefined : !disabled)`，全仓无一处设 `disableParallelToolUse`，所以**默认不发送该字段**，由 provider 自己取默认（DeepSeek 官方默认 true）。`openai-chat.ts:785` 只在非 undefined 时写入 body；`hasActiveTools` 为假时也不发（OpenAI 会 400）。
+- 可配置路径实测通过（临时测试，已删）：无论原生路（`DeepSeek.configure`/`OpenAICompatible.configure` 的 `providerOptions`）还是 aisdk 路，`providerOptions: { parallelToolCalls: true }` 都能落到请求体 `parallel_tool_calls: true`。所以「要不要显式声明」是配置问题、不是代码缺口。
+- 提示词侧：`optimize.ts:65` 的 `DeepSeekPlugin` 是 **append** 模式，走 `deepseek.txt`（含 `## Tool batching` + `# Batch independent edits`）。`deepseek.txt` 措辞只是「batch aggressively / 一轮读完」，**没有 Cursor 那种「默认并行、要串行得自证」**；对比 `gpt.txt`/`gpt-astra.txt` 有 `- Prefer parallelizing independent tool calls.`，`kimi.txt:13` 更是 HIGHLY RECOMMENDED。deepseek.txt 是唯一连基础并行句都没有的主提示词文件。
+- 上游默认提示词 `packages/core/src/session/runner/prompt/system.txt:6` 本身就有 `- Prefer parallelizing independent tool calls.`——append 模式不覆盖它，所以 DeepSeek 至少继承了这一句。
+- 真瓶颈：并行工具调用（一条消息多发、无隔离）早已端到端具备（请求层不禁用 + `step.ts:121-133` 每个 tool-call `forkScoped` + `edit.ts:320` per-path 锁），缺的是模型在同一条消息里多发几个 edit 的「意愿」。改提示词强度是唯一剩下能推动的杠杆。
+- batch 规范已提进 `session/runner/prompt/system.txt`（新增 `# Batching tool calls` 段），内容是「deepseek 独有的 Tool batching 5 条」+「Batch independent edits 核心句」的合并超集：一次读齐文件 / 一次宽搜代替多次窄搜 / 合并独立 shell / 用 offset-limit 读区间 / 编辑点确定后一次发完再统一校验 / 改完再验证不做 edit-verify-edit，末尾兜一句「只有真正依赖前一步结果时才逐个来」。
+- 同步清理：`anthropic.txt` 与 `deepseek.txt` 是 append 模式（`packages/core/src/plugin/optimize.ts` 的 `mode="append"`，拼法是 `${system.text}\n\n${rendered}`），若不删会读两遍 → 删掉两者的 `# Batch independent edits` 段，并删掉 `deepseek.txt` 开头的 `## Tool batching` 段（信息已完整进 system.txt）。`deepseek.txt` 的 `## Say what you found` 是沟通规范，保留不变。
+- 5 个 override 的 txt（gpt / kimi / trinity / meta / gpt-astra）**一个字没动**：override 是完全替换 system.txt，它们读不到新段，删掉自己的那段反而会丢规范。判據 结论：每种命中模式最终恰好读到一份 batch 规范（无命中 0→1，append 2→1，override 仍 1）。
+- 改动前后字节数（含此前未提交的 stay in scope / verify once 两条，它们占 system.txt 增量的约 430 字节）：无命中模型 3877→5008（+1131）；append deepseek 7787→7978（**仅 +191**）；append anthropic 6829→7486（+657）；override gpt 5272→5272（0）。
+- 体感判断（重要）：deepseek 用户（用户自用模型）净变化只有 +191 字节 ≈ 2.4，因为删掉的重复段与新段落基本抵消、内容等价 —— **对自己日常使用体感接近 0**。这批改动的真实价值是覆盖面：自定义 provider / GLM / Qwen / 本地模型过去一份 batch 规范都没有，现在有 1 份；按同模型对照（无此段并行率 7-20%、有此段 32-55%）预期它们从 ~10% 提到 40%+，但这仍是预期不是实测。
+- `system.txt:6` 的 "Prefer parallelizing independent tool calls." 这句空洞口号早就存在，实测只换来 7-9% 并行率；同样意图写成 5 行具体规范才有 32-55%。这条修正了此前「静态守则是负债」的结论 —— 失效的不是守则，是不具体的守则。那句口号保留未删（避免多余 diff）。
+- 验证：core `bun run typecheck` 1727 文件 0 错误；`test/plugin/optimize.test.ts` 12 pass 0 fail（该文件 import 了 anthropic.txt，但断言用同一份文件现算，删段落不影响）。
+
+## DeepInfer 对 SiCode 的可迁移思路
+
+- 来源：https://github.com/deepseek-ai/DeepInfer（2026-10 开源，Apache-2.0）+ doc/inference_deployment_qa.md。**层次错位，代码不可迁移**：它是 vLLM 系的大规模推理服务框架（FlashMLA/DeepGEMM/DeepEP 内核、EP+EPLB、prefill/decode 分离、KV cache 存储、结构化输出），跑在 SM100/Ascend 950 上。SiCode 是客户端 agent harness，两者不在同一层。
+- **可迁移的是设计思路，最值钱的一条**：「验证是一个调度问题，不只是算法问题」（verification is a scheduling problem, not just an algorithm problem）。他们放弃了固定长度验证，改成按数据（代码 vs 对话）与当前负载动态决定验多长、并**在进入 batch 前先剪掉低置信度的 token**，因为「盲目验证整块草稿会浪费算力」。
+- 对应到 SiCode：一次消息里发多个 edit 就是**投机执行**（草稿=多个 edit，验证=批后的检查）。DSpark 的三件事各自有对应物——① 置信度剪枝 ↔ 没读过的改点不进批、先读；② 有界验证 ↔ 批后只验一次且深度按风险，不必全量；③ 后缀衰减（越靠后越不可靠）↔ 批越长尾部越可能过时，长批后要重新落地。这比现有 `# Batch independent edits` 的「一句格言」更有解释力，因为它给了**判据**（是否已定位）和**边界**（批多长、批后干什么）。
+- 另一条：他们把 KV cache 保留拉到 **>72 小时**，因为「缓存命中时省掉的重复 prefill」是最大的单点杠杆。SiCode 对应物是 prompt prefix cache（`promptCacheKey`/`cache_control`/`x-session-affinity`，`llm.ts:328` 已有「把工具定义留在最后一个 Step 以保住 provider 缓存前缀」的注释）。可做的审计：中途变更工具集/系统提示词前缀会不会打掉整段缓存；steer 注入替换请求尾部是安全的（尾部），但每回合动态追加的前缀内容会毁缓存。
+- 他们自报的生产数字：单集群 155T tokens/天、$38/GPU-hour（低谷价）；DSpark 让单用户生成速度 +60~85%（Flash）。这些对 SiCode 没什么用，但「用吞吐/延迟两个维度分别度量」的纪律对应我先前建议的**耗时统计**（工具耗时 vs 模型耗时、每任务 round trip 数）——瓶颈定位就该这么做，而不是只看总时长。
+- 注意别被搜索结果带偏：网上把 DSpark（投机解码框架，MIT，配套 DeepSpec 训练仓库，PKU 合作）当独立项目讲，它在这里是 DeepInfer 的一个 feature；`DEEPINFER_ENABLE_MTP_VARLEN` / `DEEPINFER_USE_NEXTN_DECODE`（默认草稿长度 5）是它的开关。
+
+## shell 超时与阻塞成本
+
+- **结论反转：shell 超时不是真问题。** 实测 1506 次 shell 调用（活的 `opencode-local.db`）：只有 **9 次**真的打到超时，总耗时 296.5 分钟，p50 3.1s / p90 31.6s / p99 122s。原先「437 次 >5s 共 241 分钟、多为探测跑满 300s」的说法来自 >5s 这个过低门槛，不是超时问题。
+- 时间真正花在哪：173 次 ≥30s 的调用占了 190.9 分钟（64%），其中 158 次正常完成、30 次返回 <200 字符（约 30 分钟基本白等）。173 次里 1463 前台 / 43 后台 —— 模型几乎不用 `background: true`。另有 26 次是 `Start-Sleep` 显式轮询，15.4 分钟纯等待（工具说明里已明令禁止仍然发生）。
+- **真 bug（已修）**：`packages/core/src/tool/plugin/shell.ts` 里前台命令被转后台时 `shell.timeout(info.id, 0)` 把超时**清零**，和同文件 24 小时后台上限的注释自相矛盾——被转后台的进程此后永不超时（实测有 302s 的调用）。改为 `backgroundedTimeout(input)`：保留调用者显式给的 timeout，否则套用 24h。
+- **新增成本反馈**：前后台阻塞 ≥30s 时，在工具结果 content 末尾追加一行「This command blocked the session for Ns and returned M characters…」。原因是模型看不到阻塞代价——它会把一次 78s 只吐 2 个字符的探测再跑一遍。阈值放在可变对象 `slowTimings` 里，测试可以调小。计时从 `jobs.block` 开始（`waitedFrom`），不含权限确认的等待。
+- **坑（浪费了一小时，务必记住）**：`test/tool-shell.test.ts` 的 pwsh 多行用例（`Write-Output \`` 续行、`@'...'@` here-string，共 4 个）**会整组偶发失败**，表现是 exit 1 + 无输出。把 `execute` 从箭头表达式改成等价的块体（零语义变化）也能复现；反过来 pristine 连续跑 5 次全绿。结论：是环境抖动（负载/pwsh 启动），与代码无关。**不要为它改设计**，隔一会儿重跑即可（全量 52~53 pass / 63 skip / 0 fail）。
+- 对照实验的教训：这个仓库 HEAD 与工作区不一致（测试文件 HEAD 有 50 个用例、工作区 115 个），`git stash` 拿到的「基线」并不是我的改动去掉后的状态，前几轮 A/B 全是错的。以后做前后对比只用 `git diff` 确认「只含我的 hunk」再谈基线。
+- **现已确认那 5 个 pwsh 用例是既有的并行负载抖动**：把改动全部 `git checkout` 回 pristine，用同一条命令跑同样的 5 个文件，结果一样是 `84 pass / 63 skip / 5 fail`（我只多出 3 个新用例通过）。单跑 `test/tool-shell.test.ts` 则 53 pass / 63 skip / 0 fail。所以别为这 5 个红去改设计，也别把它们当成自己的回归。
+- 排查时踩的第二个坑：`bun test test/syntax-check*.test.ts ...` 在 Bash 里由 shell 展开、在 PowerShell 里**不展开**（bun 拿到的字面 glob 只匹配到部分文件），两次「对照」跑的根本不是同一组文件。跨 shell 做 A/B 时先确认展开结果一致。
+- shell 轮询拦截已落地：`tool/plugin/shell.ts` 新增 `detectPollingWait()` + `pollTimings.minSeconds = 20`，在 `execute` 里 `input.command` 校验通过之后、`resolveTimeout` 之前调用，命中就 `Effect.fail`。
+- 规则（三条件同时成立才拦）：① 没传 `background: true`（后台调用不阻塞，不管）；② 命令里最长的 sleep ≥ 20 秒（`Start-Sleep [-Seconds|-s] N` 与 bash `sleep N` 两种写法）；③ 命令里有读文件动作（Get-Content / Get-ChildItem / Test-Path / Get-Item / cat|tail|head|less|more + 非空格）。缺任一条放行。
+- 为什么必须运行时拦：`BACKGROUND_INSTRUCTION`（同文件 62 行）早已写明「反复 sleep 再读输出文件就是轮询，不是有效工作」，措辞比 `background` 参数的 "DO NOT poll" 更详细，模型照样轮询 —— 提示词这条路已被证伪两次。
+- 真实数据回放（本机 1687 条 shell 调用 / 288 分钟）：拦下 17 条、省 14.6 分钟、平均每次 52 秒，占 shell 总时长 5.1%。被拦的全部是 `Start-Sleep -Seconds N; Get-Content <opencode/shell/<hash>/sh_*>`，即模型在轮询自己后台任务的输出文件。
+- 零误伤验证：真实数据里最长的 8 条调用（300 秒级的 `node tools/diag-*.js` 等重活）**全部放行**；5 条合理等待也全部放行 —— 等端口 240s（Get-NetTCPConnection）、等 90s 再 curl、等 20s 再跑 `node tools/mailbox.js`、短 sleep 2s 后读文件、`npm run build`。
+- **修正此前数字（重要）**：早先说的「182 次吃掉 3380 秒 / 56 分钟 / 占总时长 3.6%」归因错了 —— 那把「所有含 sleep 的调用」的总耗时都算成了 sleep 的开销，但那些调用里大部分时间其实是别的命令在跑（`node tools/*.js` 之类）。按「可拦截」的精确口径是 17 条 14.6 分钟，占总时长约 0.9% 而不是 3.6%。以后引用用后者。
+- 验证：新增 `test/shell-poll-detection.test.ts` 11 pass 0 fail（含边界 20s/19s、多次 sleep 取最长、`Start-Sleep` 不带 -Seconds、`asleep` 这类词内匹配不误判、background 豁免）；core typecheck 1728 文件 0 错误；`test/tool-shell.test.ts` 48 pass / 5 fail，失败项全是 approvals 相关，属本机会话 shell 环境抖动（历史基线 8-16 fail），与本次改动无关。
+
+## 语法回灌
+
+- `.cpp` 已接入：本机其实一直装着 LLVM（`C:\Program Files\LLVM\bin\clang++.exe`，clang 22.1.6），只是不在 PATH——所以早前 `which clang` 探测全空、误判为「无编译器」。runner 现在先 `which("clang++")`，失败后按固定安装位置探测（Windows LLVM 目录、Homebrew、/usr/local、/usr）。
+- 命令是 `clang++ -fsyntax-only -ferror-limit=5`：不编译不链接，只查语法；上限 5 条防止模板爆炸刷屏。标准库 include 可用（机器上有 Windows Kits SDK），带 `#include <vector>` 的文件实测 exit 0。
+- 解析器 `parseClangOutput` 只取 `error:` / `fatal error:` 行，丢 note（那是给已报错误作解释的）和 warning（会让模型去「修」能编译的代码）。
+- `.h` 故意不接：纯 C 头按 C++ 查会误报合法 C。宁缺勿错。
+- clang e2e 测试按 clangAvailable 条件注册（自定义 it 没有 skipIf，直接 if 包住 it.effect）。
+- UI 修复：主页项目下拉弹层（`home/projects/view.tsx` 的 Popover.Content）原来用 `bg-v2-background-bg-base`，深色主题下是 grey-1100 近纯黑，和其它已统一为 layer-01 + 细描边的弹层（context-menu、dock-toolbar）不一致——用户截图点名。已对齐，并在 `view.css` 加 dropdown 作用域：行默认/hover 各提一级 layer，NavButton 的 Tailwind hover 类用同文件非 layered 规则覆盖（非 layered 规则优先于 utilities）。
+
+## webfetch 网络/代理
+
+- packages/core/src/tool/plugin/webfetch.ts: webfetch 用 Effect FetchHttpClient -> 全局 fetch（Bun 运行时），直连目标 URL，默认 30s 超时（Effect.timeoutOrElse）；"transport error" 是 fetch 在 TCP/TLS 层失败（连接被重置或挂起超时），不是工具代码 bug。
+- packages/core/src/effect/app-node-platform.ts + packages/util/src/effect/app-node-platform.ts: HttpClient 层没有代理包装；Bun fetch 会尊重 HTTP_PROXY/HTTPS_PROXY env，但前提是服务进程里有这些变量。WebSocket 走 packages/core/src/effect/websocket-constructor.ts（自己解析代理 env），HTTP 没有。
+- packages/desktop/src/main/lifecycle/environment.ts:24: preferApplicationEnvironment 在 win32 明确跳过 shell env 探测（shellEnv=null），所以 Windows 桌面端 sidecar 继承的是 Electron 的系统 env，不会拿到 ~/.bashrc 里的代理 export。
+- 结论：bash 工具 curl 200 而 webfetch transport error 的差异来自网络路径不同（curl 有 happy-eyeballs/独立 env；sidecar fetch 直连缺代理 env 或走坏 IPv6），排查时先在 bash 工具里 echo $HTTPS_PROXY 看 sidecar env。
+- 修复（packages/desktop/src/main/service/system-proxy.ts 新增 + lifecycle/desktop-initialization.ts 单点注册）：app.whenReady 后用 session.resolveProxy() 把 OS 系统代理（注册表/PAC，Chromium 已知）解析出来，以 ??= 注入 HTTP_PROXY/HTTPS_PROXY（含小写变体）到 process.env，再让 sidecar 继承；Bun fetch 认这些 env。已设 env 的不覆盖。解析器 parseChromiumProxy 有单测（system-proxy.test.ts），tsc 干净。
+- 本机实证：裸连 github.com 目前是通的（200），系统代理 127.0.0.1:7897 开着；失败当时应为瞬时 TLS 重置或直连不通。curl -6 无 IPv6。
+
+## shell scanner
+
+- shell 报错 "Portable shell scanner cannot analyze command: invalid-redirect" 根因：Windows 会话 shell 是 pwsh（select.ts win() 默认），模型发的是 bash heredoc（<< 在 pwsh 里不存在）；桌面端 channel=local/dev 强制便携扫描器（shell.ts:172）。用 demo.json 原文复现：pwsh 扫描器报 invalid-redirect（与报错一致）、bash 扫描器也拒（invalid-structure）。改进：parse.ts 报错信息追加 (session shell: <name>)，帮模型自我纠正；parity 测试已同步。
+
+## 左侧栏
+
+- 头部结构终态（`packages/app/src/shell/left-sidebar.tsx:388` 起）：左侧带文字的主操作「＋ 新建会话」(`command.session.new`)，右侧仅剩搜索 + 收起两个纯图标；新建图标从右侧删掉，避免同一动作出现两次。
+- 头部与搜索框之间保留 1px `bg-v2-border-border-base` 分隔线（`left-sidebar.tsx:422`）。项目名标签、主页入口、版本号都被用户否掉，理由是下方分组标题已经在命名每个项目。
+- 头部主操作是**长条按钮**：`left-sidebar.tsx` 里 `h-7 min-w-0 flex-1 rounded-[7px] bg-v2-background-bg-layer-02`，图标+文字左对齐、hover 升到 layer-03；右侧搜索/收起各 28px 图标与其同行。首版做成 shrink-0 的小文字按钮被否（用户要「长条」），关键区别是 flex-1 + 有底色才读得出是按钮。
+- 视觉收口：新建会话长条改 `justify-center`（左对齐被用户否）；项目分组头用 `ProjectIcon`（16px，来自 `@opencode/ui/project-avatar`，服务端 `Project.Info` 的 id/name/icon 与 `LocalProject` 结构性兼容，tsc 通过）。
+- 树形缩进：会话行 `ps-[27px]` → `ps-[42px]`，与项目名左边缘对齐（4 ps-1 + 10 chevron + 6 gap + 16 avatar + 6 gap = 42）；active 竖条 `start-3.5` → `start-[30px]` 跟着进缩进槽。
+- 布局收口：项目分组头/会话行统一 28px（h-[26px] → h-7），分组内 mb-3.5，行内 gap 保持 6px；同一列里两套行高会让左边缘看起来锯齿状。
+- 搜索框改为**按需展开**：头部搜索图标变成开关（`data-active` 用 overlay-pressed 高亮，`aria-expanded`），点开才渲染 input（Escape 关闭并清空），默认收起后项目列表紧贴分隔线，首屏多出约两行。`searchInput` 焦点用 `queueMicrotask` 延后，因为 input 在 Show 里按需挂载。
+- 列表空态原来什么都不显示，读起来像坏了；现在 `visibleGroups().length === 0` 时按 query 有无显示 `dock.projects.empty` / 新增的 `dock.search.empty`（en-only key）。
+- 选中态不再用硬编码 `bg-[rgba(255,255,255,0.08)]`（浅色主题下几乎不可见），改用 token `bg-v2-overlay-simple-overlay-pressed`，浅色/深色都成立。
+- 分组名 `font-[500]` → `text-12-medium`（同一 12px 阶梯，且走 token 而非字面量）。
+- 新建会话入口的终态（packages/app/src/shell/left-sidebar.tsx:405-414）：头部只有一条全宽入口，用 <Button variant="neutral" class="h-7 min-w-0 flex-1">。换掉原来的裸 button + bg-layer-02，因为满宽圆角浅底空心在形状上就是一个输入框，而整列唯一的输入框是搜索——它一直在冒充搜索框。
+- 项目分组头悬停的 "+" 已删除（原来 absolute end-0.5 ... opacity-0 group-hover/head:opacity-100），用户明确要求「只保留全宽的，其他去掉」。删后分组头不再需要 group/head，按钮 pe-6 收成 pe-2，否则标题为不存在的图标留了 24px 空白。newSessionIn() 仍被右键菜单 projectMenu 使用，没有变成死代码。
+- 侧栏的层级原则：**只回答「我要继续哪个会话」**。项目是容器，不该比内容更响。项目名 `text-v2-text-text-muted`，会话名 `text-v2-text-text-base`，时间戳 `text-v2-text-text-faint`，悬停/选中时项目名才升到 base。此前项目名是 base，六个空分组全是亮白，列表读起来像六张标题，真正的会话沉在下面。
+- 字重不能承担分层：`text-12-medium` 是 500，`text-12-regular` 是 460，微软雅黑下笔画粗细几乎一样（`packages/ui/AGENTS.md` 也写了 460 对 400 看不出来）。所以分组名与会话名的区分必须靠颜色，不能靠字重。
+- 头部收成**一行一块**（`packages/app/src/shell/left-sidebar.tsx` 的头部 div）：新建会话 `Button variant="neutral"` 独占填充，搜索和收起是裸图标（`size-7` + `rounded-[6px]` + hover overlay），只有一个填充块，层级才读得出「这是动作，那些是工具」。早先是搜索框一行 + 新建按钮一行，三个同色填充块挤在 60px 里互相抵消。
+- 搜索**按需展开**用 `searchOpen` 信号：点放大镜才挂载 input（`ref` 里 `queueMicrotask` 聚焦，因为 input 在 `Show` 里后挂载），Escape 清空并关闭，关闭时也清空 query —— 否则收起的搜索会继续过滤列表，用户看不出为什么少了一半。
+- 没有会话的项目**不画折叠箭头**，用 `<Show when={group.sessions.length > 0} fallback={<span class="size-2.5 shrink-0" />}>` 留空槽保持头像对齐。空分组点不开，箭头是死控件。头像仍是 16px `ProjectIcon`，缩进链 ps-1 + 2.5 + gap 1.5 + 16 + gap 1.5 仍对齐会话行的 ps-[42px]。
+- 项目名升到 base 后，项目行按钮上的 `data-[active=true]:text-v2-text-text-base` 和 `text-muted hover:text-base` 都失去视觉作用，一并删掉，否则后人会以为还有一层状态。
+- 对比 demo：`.sicode/demos/sidebar-hierarchy.html`，左现态右改态，可切深/浅色，带「标记改动」「悬停第一行」两个开关。token 值是从 `packages/ui/src/styles/tokens/theme.css` + `colors.css` 抄的实值，不是近似色。
+- 会话行和已归档行都改成 `div.group/session` 包一个行按钮 + 一个绝对定位的三点按钮（`end-1`、`size-5`、`arrow` 图标 `outline-dots`、无障碍名 `common.moreOptions`）。原因：HTML 不允许 button 嵌套 button，内层点击会被吞。
+- 悬停底色挪到外层 div（`hover:bg-v2-overlay-simple-overlay-hover` + `data-active` 在 div 上），不再挂在按钮上：三点的位置在行按钮之外，底色若只跟随按钮 hover，鼠标移到三点上会闪断。
+- 空闲行右侧不再显示相对时间，只保留运行中的转圈（`SessionProgressIndicatorV2`），这是状态而不是装饰；两者共用一个 28px 的右侧留白（`pe-7`），三点按钮落在这块留白里，所以长标题不会钻到三点下面。
+- 三点用 `hover-reveal`（`opacity-0` + `transition-opacity`，`hover: none` 下恒为 1）加 `group-hover/session:opacity-100` / `group-focus-within/session:opacity-100` 出现，点击 `stopPropagation` 后按 `getBoundingClientRect()` 的 `right` / `bottom + 4` 定位，复用同一个 `menu` 信号与 `sessionMenu` / `archivedMenu`，所以和右键是同一份菜单。
+- 原有的 `relative()` 相对时间格式化函数在去掉时间戳后已无调用点，随之删除。
+- 批量选择（删除 / 归档）状态放 `createStore({ active, ids })`，`ids` 是复合串 `${serverKey}\u001f${session.id}`。不能用 `SessionInfo` 对象身份：每次 sync 都会重建对象，选择会在中途悄悄清空。
+- 可选范围 `selectable()` 只覆盖 `visibleGroups()` 的主列表，所以已归档架子在批量模式下整体隐藏（`Show when={!selection.active && ...}`），而不是留着点不动的行。
+- 入口三个：会话右键「选择会话」（`select-element` 图标）、项目右键（整组进入，仅 `sessions.length > 0` 时出现）、以及项目头本身——批量模式下项目头那个 chevron 槽换成复选框，折叠分组也能整组选；空分组保留空槽并回落到原来的折叠行为。
+- 选中后头部两行整体换成批量条：关闭 + 「已选择 N 个」(复用 `home.sessions.select.count`) + 全选/取消全选，下面归档/删除两个按钮。`Escape` 退出（aside 的 onKeyDown，跳过 input/textarea），进入时清空 `query()`，因为搜索框在批量模式下已不在屏幕上，残留的过滤会静默藏起行。
+- 批量模式下会话行的三点菜单隐藏（`Show when={!selection.active}`）：那时行是复选框，单会话菜单是另一条更窄的路径。
+- 批量执行按 **server + directory** 分组（`byLocation`），不是只按 server：`notifySessionTabsRemoved` 一次只接受一个目录，而同一台服务器可以挂多个项目。归档走 `session.update({ archived: true })`、删除走 `data.session.remove(id)` + `sessionTreeIDs` 带子会话，每个都用 `Promise.allSettled`；失败只报第一个，成功的部分照常生效，选择集由剪枝 effect 收缩。
+- 文案复用 `session.delete.many.*`，归档新增 `dock.session.archive.many.*`，另有 `dock.session.select`、`dock.select.exit`；zh/zht 已同步（归档/封存）。
+- `projectMenu` 的入参类型放宽成 `ProjectGroup & { sessions: readonly SessionInfo[] }`：菜单需要整组进入批量，而 `ProjectGroup` 本身只描述连接与项目。
+- 会话行三点按钮（`left-sidebar.tsx`，`end-1 top-1/2 size-5`）悬浮不是手指指针，真因不是按钮自身缺 `cursor-pointer`：`ui-inspect` 的评论阶段整屏覆盖层（`[data-component="ui-inspect"][data-phase="comment"]`）设了 `cursor: default` 且默认接收指针事件，页面上所有元素在「选中元素评论」时都只能报覆盖层的光标。现改成该阶段 `pointer-events: none`，仅 `[data-slot="ui-inspect-editor"]` 收回 `pointer-events: auto`；点空白关闭改由 `overlay.tsx` 的 document 捕获监听处理（`pointerdown` + `click` 双拦，避免关闭评论的那一下把下面的按钮按了）。
+- 第二层原因：`ScrollView` 的隐形滚动条 thumb（`scroll-view.css` `.scroll-view__thumb`，`opacity: 0` 但 `pointer-events: auto`，纵向占 `inset-inline-end: 0`、宽 12px）压在列表右边缘，会抢走 `end-1` 那 20px 按钮的右侧命中。三点按钮加 `z-10` 提到它之上。
+- 会话行右槽现在是「时间 ↔ 三点」共用一个位置：时间用行内 `shrink-0`（不是 absolute，否则会和标题重叠），`group-hover/session:opacity-0` 淡出让位给三点。时间复用 `@/shell/time` 的 `getRelativeTime` 和 `common.time.*` 四键；上一轮新加的 `dock.time.*` 五键因此无人使用，已从 en/zh/zht 删除。
+- 批量条从侧栏头部移到 `DockToolbar`（本地工作区）正上方，跟着它一起消失在批量模式之外；头部恢复成常驻的「搜索 + 收起」和「新建会话」两行。
+- 折叠联动是双向的（`left-sidebar.tsx:338`）：右侧面板打开时自动收起并记 `autoCollapsed`；面板关闭时若该标记还在就自动展开。用户手动点收起会清掉标记——手动收起优先于自动展开。展开按钮不清标记（此时栏已展开，标记残留只会变成 no-op）。
+- 项目置顶落在 `packages/app/src/runtime/server/persistence.ts` 的 `ProjectList`（`pinned: Persistence.fallback(Schema.Boolean, () => false)`），写入方法是 `registry.tsx` 的 `createServerProjects().setPinned(directory, pinned)`，读取经由 `runtime.tsx` 的 `enrich` 展开 `...project` 透传，所以 `LocalProject`（`shell/state/layout.tsx`）要补 `pinned?: boolean`。
+- 排序只在 `shell/left-sidebar.tsx` 的 `groups()` 末尾做一次稳定 `sort`（pinned 优先），不动 `projects.list()`，否则首页项目视图的顺序也会跟着变；`sort` 稳定才能保证取消置顶后回到用户原本排的位置。
+- `Persistence.fallback` 让字段在 store 类型里变成**必填**，因此所有直接构造项目对象的投影（`registry.tsx` 的 `open()`、`persistence.test.ts`、`registry.test.ts`）都必须显式给 `pinned: false`，否则 `typecheck` 报 TS2741/TS2769。
+- 置顶是纯展示顺序，行内要配一个 `pin` 图标（`packages/ui/src/icons/catalog.ts` 新增），否则置顶与未置顶的行外观完全相同，用户看不出状态。
+- 批量或单条删除后，侧栏那行仍在显示（服务端其实已删）：`shell/left-sidebar.tsx` 的会话来自两处合并，`fetched` resource 是 `session.list` 快照，`ctx.data.session.list()` 是本地实时缓存；合并用 `byId.set` 按 id 覆盖，**只能覆盖，不能删除**。删除只让实时缓存里那条消失，快照里那份还留着，于是旧行复活。
+- 归档不会复现这个问题，因为它改的是字段（`time.archived`），实时缓存里那条还在，覆盖得回去；这也是为什么这个 bug 只在删除上暴露。
+- 修复：`createResource` 取出 `refetch`，`deleteBatch` 成功路径与单条 `remove` 的 `.then` 各调一次 `refetchSessions()`。批量路径在 `dialog.close()` 之前 await，避免关框的瞬间看到行回闪。
+- 首页列表没有同样问题：`home/sessions/controller.tsx` 的 `remove` / `removeMany` 在 `.finally` 里 `queryClient.invalidateQueries({ queryKey: ["home-sessions", conn] })`，侧栏只是缺这一步等价动作。
+- 判断标准：往这个 `groups()` 的合并里加新数据源时，先问删除能不能表达。只能按 id 覆盖的合并，任何「消失」型变更都必须配合失效/重取。
+- 修 bug：右面板开着时点展开按钮「没反应」——联动 effect 见 !collapsed 立即压回。改归因模型：`foldCause: "user"|"auto"|undefined` + `foldManually()`；effect 只在 cause≠"user" 时自动收，cause==="auto" 且面板关时才自动开。手动展开（cause="user"）面板开着也保持展开。上版 `autoCollapsed` 布尔被替换。
+- 搜索框拟态（2026-10-29）试过一版又整体撤回，用户结论是「不要拟态，恢复」。撤回范围：`left-sidebar.tsx` 的 `<label>` 回到 `flex h-7 min-w-0 flex-1 items-center rounded-[6px] bg-v2-background-bg-layer-02 px-2 text-12-regular`（无 shadow、无 transition、去掉 `focus-within`），`tokens/theme.css` 三个生效区块里的 `--v2-elevation-input-inset` / `--v2-elevation-input-inset-focus` 一并删除，当时那版拟态 demo 也删了。现在仓库里 grep `input-inset` 零命中。
+- 那版的写法备查（要再试只改一处即可）：底色换成 `bg-v2-background-bg-deep`（与侧栏同色），凹感全部由成对内阴影给出——`inset 1px 1px 2px alpha-dark-14` 暗面 + `inset -1px -1px 2px alpha-light-100` 亮面 + `inset 0 0 0 0.5px` 内描边；聚焦加深到 1.5px/3px 并把内描边换 `--v2-border-border-focus`。深色主题必须反向配：暗面用 `alpha-dark-100`（纯黑），高光降到 `alpha-light-10/16`，因为深色栏底上暗面几乎不成立，靠的是那圈微亮边缘。
+- 拟态成立的前提只有一条：**面和它的背景必须同色**，凹感全靠内阴影。原来 `layer-02` 比侧栏亮一档，浅色下近乎白对白（#f2f2f2 vs #fafafa）、深色下又比栏底亮（#2e2e2e vs #080808），无论哪种都读成「凸起的小卡片」，这正是它不好看的原因，不是阴影参数的问题。
+- 它还偏离 `packages/ui/DESIGN.md` 的 Elevation 规则（默认扁平，只有菜单/popover/hover card/dialog/toast 这类真浮层才用 elevation token）。如果以后要在别处引入凹面输入控件，先把这条规则补成「凹面输入可用 `input-inset` 系列」再推广，别只加 token 不写规则。
+- rail 对齐（2026-10-29）：折叠态和展开态是同一颗折叠控件，位置和尺寸都必须一致。展开态在 `left-sidebar.tsx` 顶部的 `px-1.5` 容器里再套 `px-0.5 pt-0.5`，所以按钮实际落在 x=8、y=10；rail 里子元素是 `items-center`（垂直居中）＋整栏居中，52px 下按钮落在 x=12，看着一收一放就"跳"。修法：折叠态也套一层 `flex w-full flex-col items-start gap-1 px-2 pt-0.5`，并把折叠宽度从 `w-[52px]` 改成 `w-[45px]`——45 = 8 + 28 + 8 + 1（末尾 1px 是 `border-e`，border-box 会从内容宽里扣掉）。拆开写 44px 会差 1px 放不下两颗 28px 按钮。
+- 尺寸只有一档：折叠态两颗按钮和展开态「收起左栏」都是 `size-7`（28px），等于 `[data-component="button-v2"][data-size="normal"]` 的高度，也是这一列所有行（`h-7`）的高度。原来折叠态是 `size-8`（32px），比它所在的行还高。
+- 底部 dock 触发件（`dock-toolbar.tsx`）也统一到 28px：`rail` 变体从 `flex h-9 w-9`（36px、`layer-02` 自绘底）改成 `<Button variant="neutral" class="size-7 p-0">`，和上面两颗同一原语同一尺寸；`pill` 变体改成 `<Button variant="ghost" class="flex h-auto w-full justify-start p-[5px]">`。开合态用 `data-state={open() ? "pressed" : undefined}`（Button 的 pressed 态就是 `neutral` 的 `background-image` 叠加），不再依赖 `data-[expanded]`——Kobalte 的 `Popover.Trigger` 本身会给 `data-expanded`，但原语没有针对它的样式。
+- logo 铺满：`Mark` 是 256×256 的方形 app 图标，四周本来就带自己的圆角边缘，所以 rail 里给 `size-6`（24px）落在 28px 按钮里留 2px，图像撑满控件视觉——原来 `size-[18px]` 在 36px 方块里像一枚小徽章。
+- `dock-toolbar` 的 `Popover.Trigger` 现在 `as={Button}`，所以 `aria-label`、`data-action`、`type` 都由 Kobalte 透传到 button；`rail` 下按钮只有图标没有文字子节点，`aria-label` 是唯一可访问名，不能删。
+- 确认弹窗（2026-10-29）：侧栏里凡是让一行「消失」的动作，都必须先问一次。此前只有「删除会话」有确认，理由是归档可逆、关闭项目不删数据——但用户看到的是同一件事：点了，行没了。现在三条都走 `dialog.show` + `Dialog/DialogHeader/DialogTitleGroup/DialogFooter`（形状照 `remove`）：单条归档（`dock.session.archive.title` / `.confirm`）、单条恢复（`dock.session.restore.title` / `.confirm`）、关闭项目（`dock.project.close.title` / `.description`）。归档/恢复合并成一个 `setArchived(key, session, archived)`，用布尔值选标题、说明和按钮，避免两份几乎相同的弹窗。关闭项目用 `contrast` 而不是 `danger`：它不删任何东西，红色会谎报严重性；说明句里写明「会话会从侧栏移除，但不会被删除——重新打开该目录即可恢复」，这是弹窗存在的全部价值。原来 `closeProject` 和 `projectMenu` 上「Nothing is deleted, so no confirmation dialog」的注释已相应改写，否则下次读代码的人会以为确认是被误加的。
+- 底部 dock 上下间距（2026-10-29）：`<aside>` 自己带 `pb-[var(--shell-bottom-inset,8px)]`，底部分区又写了 `py-2`，于是 divider 到触发件 8px、触发件到窗口边 16px，视觉上「本地工作区」往下坠。改成 `px-2 pt-2`，下边距交给 aside 的 `pb` 承担，两边各 8px。判断这类间距时先看父级的 shell inset 变量，别在子容器里补第二份——补的是叠加，不是对齐。
+- `dock-toolbar.tsx` 的 rail 触发件用 `variant="ghost"` + `rounded-[7px]`，静止透明、只显示 `Mark`，hover 与菜单打开（`data-state="pressed"` / Kobalte `data-expanded`）才出现淡底。原先的 `neutral` 让底部那颗和上面的方块排成一列，看起来像多出一个按钮。
+- `Mark` 取 `size-6`（24px）：没有底板时图标要吃掉 28px 控件里除 2px 边距外的全部空间，否则读起来是角落里的小徽标。
+- 侧栏展开态只有一个横向内缩：每个块各自 `px-2`（外层不再带横向内缩），搜索行、新建会话按钮、项目头、会话行、归档行都落在同一条 8px 边线上。列表容器原先用 `pe-2.5` 给滚动条让位，导致项目头比上面的按钮窄 8px，整列看起来像两套网格；滚动条是 12px 覆盖层、只在滚动时出现，行可以从它下面通过。`ScrollView` 必须全宽，thumb 用 `inset-inline-end: 0` 贴的是它自己的盒子，外层一旦有横向内缩，滚动条就离开侧栏右缘。
+- 折叠联动终版是**转移触发**而非状态监听（`left-sidebar.tsx:347`）：effect 只在右面板 open→closed / closed→open 的瞬间执行，内部用 `untrack` 读 collapsed/foldCause，避免面板开着时 effect 跟着 collapsed() 变化重跑（那会把用户点展开立即压回去——两轮 bug 的共同根因）。规则：面板打开瞬间，展开态→折叠并记 cause=auto（已折叠则不动，不覆盖手动意图）；面板关闭瞬间，仅 cause==="auto" 才展开。`foldCause()!=="user"` 的持续门槛版本会让「曾手动展开」的栏此后永远不被面板折叠，已废弃。
+
+## harness 止损机制
+
+- packages/core/src/session/runner/ 已有完整止损层：loop-detection.ts（fingerprint + 先 nudge 后 stop，LOOP_MIN_REPETITIONS=3，NEVER_NUDGE 白名单含 todowrite）、completion-gate.ts、failure-streak.ts、explore-budget.ts；prompt-prefix.ts 有 cache 指纹；project-memory.ts 有 dedupe。做新 nudge 前先看这些，别重复造。
+- 缺口：loop-detection 只匹配「同参数 + 同结果」的完全重复（same_calls_and_results / same_calls_only），抓不到「同一文件换不同命令或参数反复查」——Flash 那次查 package.json 用 Select-String / python json 轮流来就漏网。真要补，是补这个缺口，不是另起一套。
+- 长输出落盘已实现（shell.ts:78 描述：满结果写文件 + 截断预览），对应 Cursor dynamic-context-discovery §1，无需再做。
+- 未确认两项：一轮内多工具调用是否并行（model-request.ts:386 把 executeTool 交给 AI SDK，runner 无 concurrency 原语）；MCP 是否全量 schema 进 catalog（Cursor 是 per-server 目录懒加载）。
+- 本地逆向稿 D:\软件丨工具\cursor逆向专区\文档\Cursor-四层工程逻辑对照.md §3/§4.2 明确「不要抄大段 DO NOT 清单；每条规则必须是工具行为定义或结构校验」，且声明无任何本地二进制证据（app/code/tools 目录空，asar 未解）。
+- 并行执行：已实现。session/runner/step.ts:122-134 对流里的每个 tool-call 事件 fork 一个 fiber（Effect.forkScoped），最后 Fiber.awaitAll 汇合；注释 step.ts:103 说明每源保序靠各自 fiber 串行发布，不靠共享写队列。所以一轮内多个工具调用是**真并发**，不是串行。缺的是模型愿不愿意一次发多个，不是执行层。
+- 依赖栅栏：step.ts 没有 wait_for_previous 类字段，依赖顺序靠模型自觉。但因为并发是真的，同时改同一文件有 tool-write-lock（core/test/tool-write-lock.test.ts 覆盖）兜底。
+- MCP 动态加载：已实现且比 Cursor 更进一步。core/src/codemode/instructions.ts:13-15 只渲染部分目录（catalog.shown < catalog.total），超出时用 search() 查；packages/codemode/src/tool-runtime.ts:175 「Search ranks paths and descriptions first; only returned matches need their schemas rendered」——正是 Cursor dynamic-context-discovery §4 的效果，且是运行时函数而非落盘目录。
+- 结论：逆向稿 §4.2 建议的 2（并行栅栏）与 4（MCP 目录化），SiCode 都不缺。真缺口只剩 loop-detection 覆盖不到「同文件不同参数反复查」。
+- 新增重复探查检测：packages/core/src/session/runner/loop-detection.ts 的 detectRepeatedProbe()。detectLoop 要求「同参数+同结果」，模型换着花样查同一文件（grep → Select-String → python json）就漏网；新检测按文件计数，写入即清零（读回校验不算），每步对同一文件只计一次。
+- 路径提取 touchedPaths()：结构化字段 path/filePath/file/dir/directory + 对命令文本扫 PATH_TOKEN；必须含分隔符或命中 FILE_EXTENSIONS 白名单，否则 `json.load` 这类点号调用会被当文件（真实会话里误报过一次）。绝对路径与相对路径用 samePath 后缀比较视为同一文件。
+- 介入方式：steer.ts 新增 probeNudged（字符串=路径），排在 loopNudged 之后、failureNudged 之前；**只 nudge，绝不 stop**（模糊检测，误停代价太大）。llm.ts 里 probeNudged 是 per-turn Set，每个文件只报一次；runStep 需要显式传参（它不是 drain 内的闭包，是独立 Effect.fn）。
+- 真实会话回放（ses_e7c562f2，87 步）介入 4 次：step22 package.json（核心病理）、step40 solid-js 内部文件（发散）、step59 theme.css、step64 utilities.css；left-sidebar/dock-toolbar 的「改完再读」未被误伤。
+- 本仓库既有失败（与本次改动无关）：session-runner.test.ts 的 compaction 用例、session-runner-recorded 的 5s 超时用例，基线同样失败。
+
+## shell 扫描器
+
+- 落地：packages/core/src/tool/plugin/shell.ts 的 description() 之前是**空参调用**（第 332 行），所以「Commands run on ${OS} using ${shell}」这行从来没渲染出来过，模型一直不知道自己在什么 shell 里。现在注册时解析 shellSelect.resolve({priority:"config"}) → ShellSelect.name() 得到方言名（pwsh/bash/cmd），传入 description()，并在 ps(shell) 为真时追加两句工具行为定义：here-string 与输入重定向非法、多行 stdin 先写文件再 Get-Content -Raw 管道。带 SiCode 注释。
+- 验证：ShellSelect.name 对完整 Windows 路径 "C:\Program Files\...\pwsh.exe" 也返回 pwsh，ps() 返回 true；bash/cmd 不触发。tsc 干净。
+- 注意：test/tool-shell.test.ts 在本机有环境相关抖动（基线两次跑分别 16 / 8 条 fail，带改动 10 / 5 条，都是 pwsh 相关用例），判定改动前后需多跑一次对照，别只看单次数值。
+
+## 项目头像色板
+
+- 头像色板在 `packages/ui/src/styles/tokens/theme.css` 的三处（root 浅色、`[data-color-scheme="light"]`、`[data-color-scheme="dark"]`），必须三处同步加；`packages/ui/src/data-display/project-avatar/project-avatar.css` 再加一条 `[data-variant="…"]` 映射。
+- 新增色还要动 `PROJECT_AVATAR_VARIANTS` 和 `getProjectAvatarVariant` 的白名单（它是逐个 `===` 判断，不是查表），以及 `packages/app/src/runtime/i18n/en.ts` 的 `common.color.*`；漏加词典键时 typecheck 会卡住，是有效防线。
+- `lime` 和 `mint` 已经是 `getProjectAvatarVariant` 里的历史别名（分别映射 green/cyan），新颜色不能叫这两个名字，否则用户选中的颜色会被解析成别的色。
+- 已上线的 9 组色对可以反推出两条稳定规律：浅色边框 = 同 H/S、L 乘 0.87（9 组全部吻合，误差不超过 1.4pt）；暗色底 = 同 H、S 乘 0.8、L 乘 0.58，暗色边框 = 同 H/S、L 乘 1.14 并截到 72。加新色按此推导，不要取平均值，平均线在暗色上会偏 8 到 12pt。
+- 选色先量化再决定：现有 9 色在 OKLab 下的最小间距是 7.0、白字最低对比度 1.98（yellow），新色必须同时越过这两个下限才算看得清区别且字还读得清。脚本在 `.sicode/scratch/palette-check.mjs` 和 `palette-derive.mjs`。
+- 变体数量变化会让 `DERIVED_VARIANTS` 的长度变，所有项目派生出来的颜色会重新分配一次；这是纯展示层派生（不写库），只影响观感，不覆盖用户手动选过的颜色。
+
+## 数据迁移 toast
+
+- toast「数据迁移失败 / Transport: Failed to fetch」来自 desktop/src/renderer/migration-status.tsx（zh.ts:766 文案）：渲染进程每秒轮询 /api/experimental/migration/v1，任何异常都 toast。ClientError("Transport", cause)（client/promise/generated/client-error.ts:8）只表示 fetch 层连不上 sidecar；真正迁移失败是服务端返回 status:"error"（v1-migration.bun.ts:519 记录 error 文本）。
+- 实证（本机）：opencode-local.db 里没有 V1 `session` 表、只有 session_v2，即无需迁移；sidecar 活着（GET /api/experimental/migration/v1 返回 UnauthorizedError 而非连接失败）。所以弹窗是启动瞬间连不上的误报，无数据风险。迁移本身可断点续传（cursor 写 kv 表 migration.v1-v2）。
+- 修复：Transport 类错误放进 30s 宽限期静默重试（isTransportError 用 name==="ClientError" && message 以 "Transport:" 开头，因为 ClientError 未从 index 导出），只有 status:="error" 或超过宽限才 toast。tsc 干净。
+- 排除代理嫌疑：desktop-initialization.ts 中 loadProxyEnvironment（内含 ensureLoopbackNoProxy，补 127.0.0.1/localhost/::1 到 NO_PROXY）在 29 行，syncSystemProxy 在 34 行且只 ??= 写 HTTP(S)_PROXY、不动 NO_PROXY，本地请求始终免代理。
+
+## 会话加载态
+
+- `packages/app/src/session/screen.tsx` 的会话分支（`<Match when={session.identity.params.id}>`）原来只在 `messagesReady()` 为真时渲染 `timelineView()`，为假时除页头外什么都不画，所以冷启动落到会话标签页时整块正文是空的。
+- `messagesReady` 来自 `session/timeline/model.ts` 的 `ready` memo：`resource` 已解析到当前 id，或 `data.session.message.list(id)` 里已有非 inbox 消息时为真。因此 `!ready` 等价于"一条可显示的消息都没有"，加载态只会出现在真正空白的首屏，不会在切换已加载过的会话时闪一下。
+- 加载 UI 抽在 `packages/app/src/session/session-loading.tsx`（`Spinner` + `session.messages.loading`，文案各语言都已有）。两处调用：`screen.tsx` 的消息区、`route.tsx` 的 `PendingSessionState`（`data.session.get(id)` 还没拿到 directory 时）。
+- `screen.tsx` 里页头与时间线/加载态现在包在一个 `flex size-full min-h-0 flex-col` 容器里：父级 `relative flex-1 min-h-0 overflow-hidden` 是块级元素，子级 `flex-1` 不拉伸；加容器后加载态才能占满剩余高度而不压住页头。
+- `packages/app/src/session/route.tsx` 的 `PendingSessionState` 直接复用同一组件：`SessionPanelFrame` 本身是 flex column，页头下方 `flex-1` 直接生效。
+- 更正上一条的布局做法：最终没有加 flex 容器（时间线在父级里按自身 `h-full` 量高度，多一个兄弟节点会让它重算）。`screen.tsx` 里加载态是一个 `absolute inset-0 flex` 的覆盖层，只在 `!messagesReady()` 时挂载，时间线照旧。
+- `packages/app/src/session/session-identity-header.tsx` 的页头是 `sticky top-0 z-30`，覆盖层的父级 `relative` 已存在，不需要调整层级；但覆盖层会盖住页头，所以只在页头也处于加载态（`isDesktop() && !messagesReady()`）时一起出现，两者同时消失。
+
+## 协作定位 / 交付边界
+
+- 2026-10-29 定调：**这里的协作关系是开发 SiCode 本身**。用户是 SiCode 的开发者，不是它的终端使用者（用哪个开发工具是个人选择，不写进文档）。默认交付物 = packages/* 下的代码改动，要能随仓库/安装包抵达下一个用户；只改本机环境（用户级配置、安装命令、「你重启试试」）不算交付，那只在一台机器上生效。
+- 反面案例：LSP 符号跳转的收益被我做成了往 `~/.config/opencode/opencode.jsonc` 写 `lsp.typescript` 段 + 建议对方重启跑两天看数据 — 三处错：① 改的是用户本机、进不了产品；② 把开发者当测试员；③ 后续还顺着讨论「要不要再装 CSS/Astro language server」，继续在优化一台机器而不是产品。正确形态是把能力做进产品（例如检测到 `tsconfig.json` 自动接 language server），本机只作验证场地。
+- 判据一句话：这个改动会不会随仓库/安装包抵达下一个用户？不会 → 它只是验证手段，交付时必须明说这层区别，不许包装成成果。
+- 由此重排的优化待办形态（都是改代码，不是改本机）：batch 并行段落提进 `session/runner/prompt/system.txt`（覆盖无 provider 命中的模型，现在只有 7 个 provider txt 有）；shell 轮询（`Start-Sleep -Seconds N; Get-Content f`）在 `tool/plugin/shell.ts` 运行时拦截；LSP 做成自动检测接入。
+- 本机 `~/.config/opencode/opencode.jsonc` 由上面那条已加的 lsp 段处于「待决」状态：它是验证用的临时配置，不是产品交付，含 provider 凭据故不能进仓库；原文件已备份 `opencode.jsonc.bak-1029-0514`。
+
+## 正文渲染
+
+- 引用块二次改版（用户嫌 accent 硬竖条+半圆角不好看）：`packages/session-ui/src/components/markdown.css` blockquote 改「圆角软卡片（radius 8 + accent 6% 淡底）+ `::before` 内嵌药丸条（3px、radius 999、inset-inline-start 5px、上下各留 10px、accent 65%）」，padding 10px 16px。对照 demo artifacts/markdown-polish-demo.html §② 的「现状」列设为旧硬竖条（.was-quote）、「提案」列为新样式，预览 artifacts/blockquote-preview.png。
+- 注意 `bun test` 在 session-ui 会误跑 component-tests/*.spec.ts（Playwright 用例，报 "did not expect test() to be called here"），与单测无关；单测 39 pass。
+- 列表美化（`markdown.css` Lists 段）：`li::marker` 降为 `--v2-text-text-faint`（原来符号=正文色，在塞满行内代码的列表里跟正文抢眼）；ul/ol 缩进 32→24px（ol 28px，给两位序号留位）；li 间距 8→6px；补 `li > ul, li > ol { margin: 6px 0 0 }`。demo 加 §⑦ 列表对照（`.was-list` 现状 / `.proposal` 提案，内容取自用户真实会话那段 ScrollView 列表）。
+- 验证方式：Playwright + CentBrowser `executablePath` 读 `getComputedStyle(li, "::marker").color` 与 padding/margin——截图肉眼分不出 24/32px 和 faint 差异，必须读计算样式。
+- 验证方式：Playwright + CentBrowser `executablePath` 读 `getComputedStyle(li, "::marker").color` 与 padding/margin——截图肉眼分不出 24/32px 与 faint 差异，必须读计算样式。
+- 列表改成软容器（用户要求「美化成容器」）：`markdown.css` 的 ul/ol 加 `background: color-mix(in oklch, var(--v2-text-text-base) 5%, transparent)` + `border-radius: 8px` + `padding: 10px 16px 10px 36px`（36 = 16 呼吸 + 20 符号位），margin 统一 14px；删掉 ol 单独的 28px 覆盖。嵌套 `li > ul/ol` 保留 20px 缩进但 `background: none; border-radius: 0`（子行不是块）。淡符号（`li::marker` faint）保留。
+- demo §⑦ 现状=淡符号+紧缩进（.was-list），提案=容器版（.proposal）；新增一段有序列表验证序号不被容器边缘裁掉。预览 artifacts/list-container-preview.png。
+- 验证手法：Playwright 指定 CentBrowser executablePath；截图用 `locator("#sec-list").screenshot()` 而非 --screenshot + #anchor（后者在本机 headless 会截到空白）。

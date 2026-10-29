@@ -10,7 +10,7 @@
  */
 import { EXPLORE_BUDGET_PROMPT, EXPLORE_SOFT_PROMPT } from "./explore-budget.js"
 import { FAILURE_RESEARCH_PROMPT } from "./failure-streak.js"
-import { LOOP_NUDGE_PROMPT, LOOP_STOP_PROMPT } from "./loop-detection.js"
+import { LOOP_NUDGE_PROMPT, LOOP_STOP_PROMPT, probeNudgePrompt } from "./loop-detection.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
 import { NARRATE_PROMPT } from "./narrate.js"
 
@@ -29,6 +29,8 @@ export interface SteerInput {
   readonly exploreHard: boolean
   /** A loop seen for the first time this turn. */
   readonly loopNudged: boolean
+  /** The file a turn keeps re-reading without changing, when that is worth saying once. */
+  readonly probeNudged?: string
   /** A failure streak that crossed its threshold this step. */
   readonly failureNudged: boolean
   readonly narrate: boolean
@@ -40,6 +42,10 @@ export function selectSteer(input: SteerInput): Steer | undefined {
   if (input.loopStopped) return { prompt: LOOP_STOP_PROMPT, role: "assistant", stop: true }
   if (input.exploreHard) return { prompt: EXPLORE_BUDGET_PROMPT, role: "assistant", stop: true }
   if (input.loopNudged) return { prompt: LOOP_NUDGE_PROMPT, role: "system", stop: false }
+  // SiCode: softer than a loop and deliberately never fatal — a re-read can still be legitimate,
+  // so this only suggests, and only once per file.
+  if (input.probeNudged !== undefined)
+    return { prompt: probeNudgePrompt(input.probeNudged), role: "system", stop: false }
   if (input.failureNudged) return { prompt: FAILURE_RESEARCH_PROMPT, role: "system", stop: false }
   if (input.narrate) return { prompt: NARRATE_PROMPT, role: "system", stop: false }
   if (input.exploreSoft) return { prompt: EXPLORE_SOFT_PROMPT, role: "system", stop: false }

@@ -42,7 +42,7 @@ describe("server persistence schema", () => {
         },
       ],
       hidden: {},
-      projects: input.projects,
+      projects: { local: [{ worktree: "/project", expanded: true, pinned: false }] },
       lastProject: {},
       recentlyClosed: {},
     })
@@ -66,7 +66,7 @@ describe("server persistence schema", () => {
     ).toEqual({
       ...empty,
       list: [{ type: "http", http: { url: "https://valid.example" } }],
-      projects: { local: [{ worktree: "/project", expanded: true }], remote: [] },
+      projects: { local: [{ worktree: "/project", expanded: true, pinned: false }], remote: [] },
       recentlyClosed: { local: ["/closed"], remote: [] },
     })
   })
@@ -92,10 +92,10 @@ describe("server persistence schema", () => {
 
     expect(state.projects).toEqual({
       local: [
-        { worktree: "/local", expanded: false },
-        { worktree: "/remote", expanded: true },
+        { worktree: "/local", expanded: false, pinned: false },
+        { worktree: "/remote", expanded: true, pinned: false },
       ],
-      other: [{ worktree: "/other", expanded: true }],
+      other: [{ worktree: "/other", expanded: true, pinned: false }],
     })
     expect(state.lastProject).toEqual({ local: "/local", other: "/other" })
     expect(state.list[0]?.http.url).toBe("https://opencode.example.com")
@@ -114,13 +114,15 @@ describe("server persistence schema", () => {
       projects: { remote: [{ worktree: "/project", expanded: true }] },
       lastProject: { remote: "/project" },
     }
+    const remote = { remote: [{ worktree: "/project", expanded: true, pinned: false }] }
+    const local = { local: [{ worktree: "/project", expanded: true, pinned: false }] }
 
-    expect(decode(input).projects).toEqual(input.projects)
+    expect(decode(input).projects).toEqual(remote)
     props.canonicalLocalServer = "remote"
-    expect(decode(input).projects).toEqual({ local: [{ worktree: "/project", expanded: true }] })
+    expect(decode(input).projects).toEqual(local)
     expect(decode(input).lastProject).toEqual({ local: "/project" })
     props.canonicalLocalServer = "local"
-    expect(decode(input).projects).toEqual(input.projects)
+    expect(decode(input).projects).toEqual(remote)
     expect(input.lastProject).toEqual({ remote: "/project" })
     props.canonicalLocalServer = "remote"
     expect(decode({ lastProject: { remote: "/project" } })).toEqual({ ...initial, lastProject: { local: "/project" } })

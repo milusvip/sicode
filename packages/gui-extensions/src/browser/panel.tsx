@@ -18,6 +18,14 @@ import type { Browser } from "@opencode/plugin-browser/rpc"
 import { createKeyed, useExtension, usePanel, type PanelTab, type MountedSession, type SessionScreen } from "../sdk"
 import { addressParts, connection, loopback, resolveAddress, SEARCH_ENGINES, searchQuery, searches } from "./address"
 import { commentNote, pageNote } from "./comment"
+import type { CookieLoginState } from "./connection"
+
+// SiCode: one label per login-state read, shown as the paste toast's description.
+const COOKIE_LOGIN_LABEL: Record<CookieLoginState["state"], string> = {
+  likely: "cookies.login.likely",
+  unclear: "cookies.login.unclear",
+  unlikely: "cookies.login.unlikely",
+}
 import { bare, completes, highlight, suggest, type Visit } from "./history"
 import type { Model } from "./model"
 import type { PaneElement } from "./ipc"
@@ -1186,7 +1194,7 @@ function SiteCookies(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Writes the paste for the page's site and reloads it; undefined while the pane cannot answer. */
-  write: (text: string) => Promise<{ cookies: number }> | undefined
+  write: (text: string) => Promise<{ cookies: number; login: CookieLoginState }> | undefined
 }) {
   const extension = useExtension()
   const [state, setState] = createStore<{ text: string; writing: boolean; error?: string }>({ text: "", writing: false })
@@ -1211,7 +1219,12 @@ function SiteCookies(props: {
       .then(
         (value) => {
           close()
-          showToast({ title: extension.plural("cookies.written", value.cookies) })
+          // SiCode: the paste toast doubles as the login-state read — the site kept the pasted
+          // cookies, a login form is still up, or the page could not say in time.
+          showToast({
+            title: extension.plural("cookies.written", value.cookies),
+            description: extension.t(COOKIE_LOGIN_LABEL[value.login.state]),
+          })
         },
         // The pane refused the paste: an unknown pair, a domain that is not this site, or a cookie Chromium rejected.
         (cause: unknown) => setState("error", cause instanceof Error ? cause.message : String(cause)),

@@ -1,13 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessageAssistant, SessionMessageAssistantTool } from "@opencode/client/promise"
-import { htmlArtifactsForTurn, isHtmlPath, latestHtmlArtifact } from "./artifact"
+import { isHtmlPath, latestHtmlChange } from "./artifact"
 
-function writeTool(partID: string, path: string, content: string, status: SessionMessageAssistantTool["state"]["status"] = "completed"): SessionMessageAssistantTool {
+function tool(
+  partID: string,
+  name: "write" | "edit",
+  path: string,
+  input: Record<string, unknown>,
+  status: SessionMessageAssistantTool["state"]["status"] = "completed",
+): SessionMessageAssistantTool {
   return {
     id: partID,
     type: "tool",
-    name: "write",
-    state: { status, input: { path, content } },
+    name,
+    state: { status, input: { path, ...input } },
   } as unknown as SessionMessageAssistantTool
 }
 
@@ -22,7 +28,7 @@ function assistant(id: string, content: SessionMessageAssistant["content"]): Ses
   } as unknown as SessionMessageAssistant
 }
 
-describe("html artifacts", () => {
+describe("html changes", () => {
   test("recognises html paths case-insensitively and rejects others", () => {
     expect(isHtmlPath("demo.html")).toBe(true)
     expect(isHtmlPath("demo.HTML")).toBe(true)
@@ -32,65 +38,55 @@ describe("html artifacts", () => {
     expect(isHtmlPath("dir.html/readme")).toBe(false)
   })
 
-  test("one card per path per turn, last write wins", () => {
+  test("a write carries the page it wrote", () => {
+    const change = latestHtmlChange([
+      assistant("m1", [tool("p1", "write", "demo.html", { content: "<h1>v1</h1>" })]),
+    ])
+
+    expect(change?.path).toBe("demo.html")
+    expect(change?.ref).toEqual({ messageID: "m1", partID: "p1" })
+    expect(change?.content).toBe("<h1>v1</h1>")
+    expect(change?.streaming).toBe(false)
+  })
+
+  test("an edit names the page but carries no snapshot: the pane reloads it instead", () => {
+    const change = latestHtmlChange([
+      assistant("m1", [tool("p1", "edit", "demo.html", { oldString: "a", newString: "b" })]),
+    ])
+
+    expect(change?.path).toBe("demo.html")
+    expect(change?.content).toBeUndefined()
+  })
+
+  test("the latest step wins: a write followed by an edit reports the edit", () => {
+    const change = latestHtmlChange([
+      assistant("m1", [tool("p1", "write", "demo.html", { content: "<h1>v1</h1>" })]),
+      assistant("m2", [tool("p2", "edit", "demo.html", { oldString: "v1", newString: "v2" })]),
+    ])
+
+    expect(change?.ref.partID).toBe("p2")
+    expect(change?.content).toBeUndefined()
+  })
+
+  test("non-html paths, other tools and errors never qualify", () => {
     const messages = [
       assistant("m1", [
-        writeTool("p1", "demo.html", "<h1>v1</h1>"),
-        writeTool("p2", "demo.html", "<h1>v2</h1>"),
-        writeTool("p3", "other.html", "<h1>o</h1>"),
-      ]),
+        tool("p1", "write", "app.tsx", { content: "x" }),
+        tool("p2", "write", "demo.html", { content: "x" }, "error"),
+        { id: "p3", type: "tool", name: "read", state: { status: "completed", input: { path: "demo.html" } } },
+      ] as SessionMessageAssistant["content"]),
     ]
 
-    const artifacts = htmlArtifactsForTurn(messages)
-
-    expect(artifacts).toHaveLength(2)
-    // Map order keeps first-insertion position: demo.html was written first, other.html second.
-    expect(artifacts[0].path).toBe("demo.html")
-    expect(artifacts[1].path).toBe("other.html")
-    // Last write wins for a path: p2 overwrote p1 in the same turn.
-    expect(artifacts[0].ref.partID).toBe("p2")
+    expect(latestHtmlChange(messages)).toBeUndefined()
+    expect(latestHtmlChange([assistant("m1", [{ id: "t1", type: "text", text: "hi" } as never])])).toBeUndefined()
   })
 
-  test("non-write tools, non-html writes and errors never qualify", () => {
-    const edit = { id: "p1", type: "tool", name: "edit", state: { status: "completed", input: { path: "demo.html" } } }
-    const failed = writeTool("p2", "demo.html", "", "error")
-    const messages = [assistant("m1", [edit, failed] as SessionMessageAssistant["content"])]
+  test("a still-streaming call qualifies but is flagged, with partial content", () => {
+    const change = latestHtmlChange([
+      assistant("m1", [tool("p1", "write", "demo.html", { content: "<h1>par" }, "streaming")]),
+    ])
 
-    expect(htmlArtifactsForTurn(messages)).toHaveLength(0)
-  })
-
-  test("a still-streaming write qualifies but is flagged", () => {
-    const messages = [assistant("m1", [writeTool("p1", "demo.html", "", "streaming")])]
-
-    const artifacts = htmlArtifactsForTurn(messages)
-
-    expect(artifacts).toHaveLength(1)
-    expect(artifacts[0].streaming).toBe(true)
-  })
-
-  test("latest artifact is the last write in message order and carries its content", () => {
-    const messages = [
-      assistant("m1", [writeTool("p1", "demo.html", "<h1>v1</h1>"), writeTool("p2", "chart.html", "<svg/>")]),
-      assistant("m2", [writeTool("p3", "demo.html", "<h1>v2</h1>")]),
-    ]
-
-    const latest = latestHtmlArtifact(messages)
-
-    expect(latest?.ref.partID).toBe("p3")
-    expect(latest?.path).toBe("demo.html")
-    expect(latest?.content).toBe("<h1>v2</h1>")
-    expect(latest?.streaming).toBe(false)
-  })
-
-  test("latest artifact skips errored writes and reports none when absent", () => {
-    expect(latestHtmlArtifact([assistant("m1", [writeTool("p1", "demo.html", "<h1>x</h1>", "error")])])).toBeUndefined()
-    expect(latestHtmlArtifact([assistant("m1", [{ id: "t1", type: "text", text: "hi" } as never])])).toBeUndefined()
-  })
-
-  test("a streaming latest write still reports, flagged, with partial content", () => {
-    const latest = latestHtmlArtifact([assistant("m1", [writeTool("p1", "demo.html", "<h1>par", "streaming")])])
-
-    expect(latest?.streaming).toBe(true)
-    expect(latest?.content).toBe("<h1>par")
+    expect(change?.streaming).toBe(true)
+    expect(change?.content).toBe("<h1>par")
   })
 })

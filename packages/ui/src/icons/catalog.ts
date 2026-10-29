@@ -138,6 +138,12 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/>`,
   },
+  pin: {
+    viewBox: "0 0 16 16",
+    // Solid, not a 1px outline: at 14px a stroked pin is a whisper beside the 12px row text it
+    // marks, and this glyph is the only thing that says why a project sits at the top of the list.
+    body: `<path d="M5.25 2.75H10.75V4.15H9.5V7L11.5 9.2H8.65V13.1A0.65 0.65 0 0 1 7.35 13.1V9.2H4.5L6.5 7V4.15H5.25Z" fill="currentColor"/>`,
+  },
   "outline-dots": {
     viewBox: "0 0 16 16",
     body: `<path d="M2.5 7.5H3.5V8.5H2.5V7.5Z" stroke="currentColor"/><path d="M7.5 7.5H8.5V8.5H7.5V7.5Z" stroke="currentColor"/><path d="M12.5 7.5H13.5V8.5H12.5V7.5Z" stroke="currentColor"/>`,

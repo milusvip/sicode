@@ -16,7 +16,7 @@ import { useServerSDK } from "@/runtime/server/client"
 import { formatServerError } from "@/runtime/server/errors"
 import { CONSOLE_INTEGRATION, CONSOLE_PROVIDERS } from "@/providers/connect/controller"
 import { DialogConnectProvider, useProviderConnectController } from "@/providers/connect/dialog"
-import { CustomProviderActions, listCustomProviders } from "@/providers/credentials/dialog"
+import { CustomProviderActions, listCustomProviders, showCustomProviderEditor } from "@/providers/credentials/dialog"
 import { ProviderModelIcon } from "@/providers/models/provider-group"
 import { SettingsList } from "@/settings/list"
 import { activeProviderAccount, providerAccounts, type ProviderAccount } from "./accounts"
@@ -413,6 +413,16 @@ export const SettingsProviders: Component<{
             <h2 class="settings-tab-title">{language.t("settings.providers.title")}</h2>
             <span class="text-11-regular text-v2-text-text-muted">{language.t("settings.providers.description")}</span>
           </div>
+          {/* SiCode: the custom-provider editor only had an entry behind "view all", which reads as
+              "browse a catalog" rather than "define your own". Put it where the page is titled. */}
+          <Button
+            size="normal"
+            variant="neutral"
+            icon="plus"
+            onClick={() => showCustomProviderEditor({ dialog, onSaved: refreshCustom })}
+          >
+            {language.t("provider.custom.title")}
+          </Button>
         </div>
       </div>
 

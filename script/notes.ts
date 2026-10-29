@@ -170,6 +170,13 @@ export function list() {
   }
 }
 
+/** Correct a note that names the wrong path, in the same lock every writer already takes. */
+export function fix(pairs: ReadonlyArray<readonly [string, string]>) {
+  if (pairs.length === 0) throw new Error('fix needs --from "old" --to "new"')
+  const changed = edit((text) => pairs.reduce((next, [from, to]) => next.split(from).join(to), text))
+  console.log(changed ? `fixed ${pairs.length} pattern(s)` : "nothing to fix")
+}
+
 const ROOTS = ["packages", "script", ".sicode", "docs"]
 
 /**
@@ -179,14 +186,18 @@ const ROOTS = ["packages", "script", ".sicode", "docs"]
  * cries wolf about `@opencode/ui/logo` teaches everyone to ignore it.
  */
 export function fileOf(value: string) {
-  const cleaned = value.replace(/:\d+(?:-\d+)?$/, "").trim()
+  const cleaned = value.replace(/:\d+(?:-\d+)?$/, "").trim().replace(/\/+$/, "")
   if (/[\s"'=<>|]/.test(cleaned)) return
   if (/[*?]/.test(cleaned)) return
   if (/^[@#]|^https?:/.test(cleaned)) return
   if (/[A-Z]{3,}/.test(cleaned)) return
+  // Not paths: an HTTP route or absolute path (`/init`, `/assets/main.js`), a brace-expanded list
+  // (`packages/{client,app}`), or an elision (`app/.../virtualizer.tsx`). Reading a leading slash as
+  // a first segment turned every route into `packages//init` and reported it missing.
+  if (/^\/|\/\/|[{}]|\.\.\./.test(cleaned)) return
 
   const [first, ...rest] = cleaned.split("/")
-  if (rest.length === 0) return
+  if (!first || rest.length === 0) return
   if (ROOTS.includes(first)) return cleaned
   if (fs.existsSync(path.join(ROOT, "packages", first))) return `packages/${cleaned}`
   return
@@ -296,6 +307,15 @@ if (command === "add") {
   list()
 } else if (command === "verify") {
   verify()
+} else if (command === "fix") {
+  const from: string[] = []
+  const to: string[] = []
+  for (let at = 0; at < rest.length; at++) {
+    if (rest[at] === "--from") from.push(rest[++at] ?? "")
+    else if (rest[at] === "--to") to.push(rest[++at] ?? "")
+  }
+  if (from.length !== to.length) throw new Error("fix needs one --to per --from")
+  fix(from.map((value, index) => [value, to[index]!] as const))
 } else if (command === "merge") {
   merge(aliases(rest))
 } else {

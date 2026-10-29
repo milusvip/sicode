@@ -2,17 +2,20 @@ import type { SessionMessageAssistant, SessionMessageAssistantTool } from "@open
 import { currentToolInput } from "../message/current-tool-state.js"
 
 /**
- * An HTML render the assistant produced by writing a file. The panel hangs off the write
- * tool's part, so the snapshot is the content that call carried — immutable, and it survives a
- * session reload because tool inputs are persisted with the message.
+ * An HTML page the assistant produced or changed. The side panel shows the file the write
+ * carried — immutable, and it survives a session reload because tool inputs are persisted with
+ * the message. An edit carries no snapshot: the browser pane reloads the file from disk instead.
  */
 export type HtmlArtifact = {
   path: string
   ref: { messageID: string; partID: string }
-  /** The write call is still streaming its arguments; the panel waits until it lands. */
+  /** The call is still streaming its arguments; the panel waits until it lands. */
   streaming: boolean
-  /** The HTML the write call carried so far. Empty while the arguments are still arriving. */
-  content: string
+  /**
+   * The whole page, only for a `write`. An `edit` changes a file the pane already shows, so it
+   * has no snapshot to render — absent means "refresh, do not open".
+   */
+  content?: string
 }
 
 /** Extensions an inline render makes sense for. Anything else stays a plain file card. */
@@ -25,10 +28,11 @@ export function isHtmlPath(path: string): boolean {
   return htmlExtensions.has(path.slice(index).toLowerCase())
 }
 
-function writeArtifact(message: SessionMessageAssistant, tool: SessionMessageAssistantTool): HtmlArtifact | undefined {
-  if (tool.name !== "write") return undefined
+/** A demo is built in steps: writes rewrite the page, edits patch it. Both land on one path. */
+function htmlChange(message: SessionMessageAssistant, tool: SessionMessageAssistantTool): HtmlArtifact | undefined {
+  if (tool.name !== "write" && tool.name !== "edit") return undefined
 
-  // A failed or errored write produced nothing renderable.
+  // A failed call changed nothing renderable.
   if (tool.state.status === "error") return undefined
 
   const input = currentToolInput(tool)
@@ -39,43 +43,22 @@ function writeArtifact(message: SessionMessageAssistant, tool: SessionMessageAss
     path,
     ref: { messageID: message.id, partID: tool.id },
     streaming: tool.state.status === "streaming",
-    content: typeof input.content === "string" ? input.content : "",
+    content: tool.name === "write" && typeof input.content === "string" ? input.content : undefined,
   }
 }
 
 /**
- * One entry per path per turn: a turn that writes then rewrites a demo keeps only its final call.
- * Multiple paths in one turn each get an entry, in first-written order.
+ * The most recent change to an HTML page across the session, in message order. A write carries
+ * the page; an edit only says the file moved on, which the browser pane answers by reloading it.
  */
-export function htmlArtifactsForTurn(messages: SessionMessageAssistant[]): HtmlArtifact[] {
-  const byPath = new Map<string, HtmlArtifact>()
-
-  for (const message of messages) {
-    for (const content of message.content) {
-      if (content.type !== "tool") continue
-
-      const found = writeArtifact(message, content)
-      if (!found) continue
-
-      byPath.set(found.path, found)
-    }
-  }
-
-  return [...byPath.values()]
-}
-
-/**
- * The most recent HTML write across the whole session, in message order — this is what the side
- * panel shows. The write's own part carries the content, so the snapshot is immutable.
- */
-export function latestHtmlArtifact(messages: SessionMessageAssistant[]): HtmlArtifact | undefined {
+export function latestHtmlChange(messages: SessionMessageAssistant[]): HtmlArtifact | undefined {
   let latest: HtmlArtifact | undefined
 
   for (const message of messages) {
     for (const content of message.content) {
       if (content.type !== "tool") continue
 
-      const found = writeArtifact(message, content)
+      const found = htmlChange(message, content)
       if (!found) continue
 
       latest = found

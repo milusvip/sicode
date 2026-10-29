@@ -11,6 +11,7 @@ import { Dynamic } from "solid-js/web"
 import { CommandProvider } from "@/shell/commands/command"
 import { DesktopCommands } from "@/shell/commands/desktop"
 import { AppContextMenu } from "@/shell/context-menu/context-menu"
+import { SelectionMenu } from "@/shell/selection-menu/popup"
 import { UiInspectOverlay } from "@/shell/ui-inspect/overlay"
 import { GlobalProvider } from "@/runtime/server/runtime"
 import { LanguageProvider, UiI18nBridge, type Locale } from "@/runtime/i18n/language"
@@ -102,6 +103,7 @@ export function AppInterface(props: {
         <CommandProvider>
           <DesktopCommands />
           <AppContextMenu />
+          <SelectionMenu />
           <UiInspectOverlay />
           {props.children}
           {rootProps.children}

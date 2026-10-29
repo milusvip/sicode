@@ -76,7 +76,7 @@ function fixture(strip: string[] = []) {
     zoom: async () => undefined,
     site: async () => ({ cookies: 0 }),
     clearSite: async () => undefined,
-    setCookies: async () => ({ cookies: 0 }),
+    setCookies: async () => ({ cookies: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
     close: async (input) => {
       closed.push(input.binding)
     },

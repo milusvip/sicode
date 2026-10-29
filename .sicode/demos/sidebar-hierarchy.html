@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh-CN" data-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>左侧栏列表 · 现在 vs 改后</title>
+<style>
+  /* Token values copied from packages/ui/src/styles/tokens/theme.css + colors.css, so the
+     mock shows the real palette instead of an approximation. */
+  :root {
+    --grey-50: #ffffff;  --grey-100: #fafafa; --grey-200: #f2f2f2; --grey-300: #eeeeee;
+    --grey-400: #dbdbdb; --grey-500: #aeaeae; --grey-600: #808080; --grey-700: #5c5c5c;
+    --grey-800: #3a3a3a; --grey-900: #2e2e2e;  --grey-1000: #242424; --grey-1100: #161616;
+    --grey-1200: #080808;
+    --sans: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    --page: #0d0d0d;
+  }
+
+  [data-scheme="dark"] {
+    --bg-deep: var(--grey-1200);
+    --field: var(--grey-900);
+    --text-base: var(--grey-200); --text-muted: var(--grey-500); --text-faint: var(--grey-600);
+    --icon-faint: var(--grey-700); --icon-muted: var(--grey-600);
+    --hover: rgba(255,255,255,.059); --pressed: rgba(255,255,255,.102);
+    --ring: rgba(255,255,255,.08);
+    --border: rgba(255,255,255,.10);
+    --btn-neutral: rgba(255,255,255,.055);
+  }
+  [data-scheme="light"] {
+    --page: #f2f2f2;
+    --bg-deep: var(--grey-100);
+    --field: var(--grey-200);
+    --text-base: var(--grey-1100); --text-muted: var(--grey-700); --text-faint: var(--grey-600);
+    --icon-faint: var(--grey-500); --icon-muted: var(--grey-600);
+    --hover: rgba(0,0,0,.039); --pressed: rgba(0,0,0,.078);
+    --ring: rgba(0,0,0,.09);
+    --border: rgba(0,0,0,.10);
+    --btn-neutral: #ffffff;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0; padding: 22px 18px 44px;
+    background: var(--page); color: var(--text-muted);
+    font-family: var(--sans); font-size: 13px; line-height: 20px;
+  }
+  .wrap { max-width: 660px; margin: 0 auto; }
+
+  header { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { flex: 1 1 220px; margin: 0; font-size: 15px; font-weight: 700; line-height: 22px; color: var(--text-base); }
+
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; }
+  .toggle { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg-deep); border: 1px solid var(--ring); }
+  .toggle button {
+    appearance: none; border: 0; height: 24px; padding: 0 10px; border-radius: 6px;
+    background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .toggle button[aria-pressed="true"] { background: var(--pressed); color: var(--text-base); }
+
+  .lede { margin: 0 0 20px; max-width: 64ch; }
+  .lede b { color: var(--text-base); font-weight: 500; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 236px), 1fr)); gap: 18px; }
+
+  .panel { min-width: 0; }
+  .panel > h2 {
+    margin: 0 0 8px; display: flex; align-items: center; gap: 7px; min-height: 20px;
+    font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint);
+  }
+  .tag { padding: 1px 7px; border-radius: 999px; background: var(--pressed); color: var(--text-muted); font-size: 10.5px; letter-spacing: 0; text-transform: none; }
+
+  /* ── the sidebar ── */
+  .side {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px;
+    background: var(--bg-deep); border: 1px solid var(--ring); border-radius: 10px;
+    overflow: hidden;
+  }
+
+  /* header is unchanged between the two states — the current build keeps the standing
+     search field and the filled collapse button */
+  .top { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 4px; }
+  .searchrow { display: flex; align-items: center; gap: 4px; }
+  .field {
+    display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 6px;
+    height: 28px; padding: 0 8px; border-radius: 6px;
+    background: var(--field); font-size: 12px; color: var(--text-faint);
+  }
+  .field .grow-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .field svg { flex: none; width: 14px; height: 14px; color: var(--text-faint); }
+  .collapse {
+    display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 6px;
+    background: var(--btn-neutral); box-shadow: inset 0 0 0 1px var(--ring);
+    color: var(--icon-muted);
+  }
+  .collapse svg { width: 14px; height: 14px; }
+  .newbtn {
+    display: flex; height: 28px; align-items: center; justify-content: center; gap: 5px;
+    border-radius: 6px; background: var(--btn-neutral); box-shadow: inset 0 0 0 1px var(--ring);
+    font-size: 12px; font-weight: 500; color: var(--text-base);
+  }
+  .newbtn svg { flex: none; width: 14px; height: 14px; }
+
+  .list { display: flex; flex-direction: column; padding: 0 4px 2px; }
+
+  /* spacing is the first thing under test */
+  .now .grp { margin-bottom: 14px; }
+  .after .grp { margin-bottom: 8px; }
+
+  .grp { display: flex; flex-direction: column; }
+  .grp:last-child { margin-bottom: 4px; }
+
+  .grow {
+    display: flex; height: 28px; align-items: center; gap: 6px; padding: 0 8px 0 4px;
+    border-radius: 5px; font-size: 12px;
+  }
+  .chev { flex: none; width: 10px; height: 10px; color: var(--icon-faint); }
+  .chev.closed { transform: rotate(-90deg); }
+  .spacer { flex: none; width: 10px; height: 10px; }
+
+  .av {
+    flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px;
+    background: var(--av); color: #fff; font-size: 11px; font-weight: 530; line-height: 1;
+    text-shadow: 0 0 4px rgba(0,0,0,.3);
+  }
+  .gname { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+
+  .spin { flex: none; width: 12px; height: 12px; color: var(--icon-muted); }
+
+  .sess {
+    display: flex; height: 28px; align-items: center; gap: 8px; padding: 0 8px 0 42px;
+    border-radius: 6px; font-size: 12px;
+  }
+  .sess .st { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sess .time { flex: none; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+  /* No rail. packages/ui/DESIGN.md is explicit: separate groups with distance, not with an
+     extra border, divider, or background fill. The 8px gap is the distance; the 42px indent
+     already carries the nesting. */
+  .sessions { padding-bottom: 8px; }
+
+  .archived {
+    display: flex; height: 28px; align-items: center; gap: 4px; padding: 0 8px 0 4px;
+    border-radius: 5px; font-size: 12px; color: var(--text-muted);
+  }
+  .now .archived { margin-top: 4px; }
+  .after .archived { margin-top: 12px; }
+  .archived .grow-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .archived > svg { flex: none; width: 10px; height: 10px; color: var(--icon-muted); transform: rotate(-90deg); }
+  .count { flex: none; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .count.chip {
+    padding: 0 6px; border-radius: 999px; background: var(--pressed);
+    color: var(--text-muted); line-height: 16px;
+  }
+  .arc-row {
+    display: flex; height: 28px; align-items: center; gap: 8px; border-radius: 6px;
+    padding: 0 8px; font-size: 12px;
+  }
+  .arc-row .st { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .arc-row .src { flex: none; font-size: 10.5px; color: var(--text-faint); }
+
+  /* ── the states under test ── */
+  .now .gname { color: var(--text-base); }
+  .now .sess { color: var(--text-muted); }
+  .now .arc-row { color: var(--text-faint); padding-inline-start: 42px; }
+
+  /* folded groups carry the emphasis their hidden sessions cannot; expanded ones step back */
+  .after .grp[data-open] .gname { color: var(--text-muted); }
+  .after .grp:not([data-open]) .gname { color: var(--text-base); }
+  .after .sess { color: var(--text-base); }
+  .after .arc-row { color: var(--text-muted); padding-inline-start: 19px; }
+
+  body[data-hover="1"] .now .grp[data-open] .grow,
+  body[data-hover="1"] .now .grp:not([data-open]) .grow,
+  body[data-hover="1"] .after .grp[data-open] .grow,
+  body[data-hover="1"] .after .grp:not([data-open]) .grow { background: var(--hover); }
+  body[data-hover="1"] .now .gname { color: var(--text-base); }
+  body[data-hover="1"] .after .grp[data-open] .gname { color: var(--text-base); }
+
+  body.marked [data-change] { outline: 1px dashed #4a9eff; outline-offset: 1px; border-radius: 4px; }
+
+  ol.legend { margin: 24px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+  ol.legend li { display: flex; gap: 10px; max-width: 64ch; }
+  ol.legend .n {
+    flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px;
+    border-radius: 999px; background: var(--pressed); color: var(--text-base);
+    font-size: 10.5px; font-weight: 500; font-variant-numeric: tabular-nums;
+  }
+  ol.legend .body { min-width: 0; }
+  ol.legend .body b { color: var(--text-base); font-weight: 500; }
+  ol.legend .why { display: block; color: var(--text-faint); }
+
+  .foot { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--ring); color: var(--text-faint); max-width: 64ch; }
+  .foot b { color: var(--text-muted); font-weight: 500; }
+
+  @media (max-width: 540px) { body { padding: 18px 14px 36px; } }
+</style>
+</head>
+<body data-scheme-host>
+<div class="wrap">
+
+  <header>
+    <h1>左侧栏列表：间距、导轨、明暗</h1>
+    <div class="controls">
+      <div class="toggle" role="group" aria-label="主题">
+        <button type="button" data-set="dark" aria-pressed="true">深色</button>
+        <button type="button" data-set="light" aria-pressed="false">浅色</button>
+      </div>
+      <div class="toggle" role="group" aria-label="标记">
+        <button type="button" data-flag="marked" aria-pressed="false">标记改动</button>
+        <button type="button" data-flag="hover" aria-pressed="false">悬停第一行</button>
+      </div>
+    </div>
+  </header>
+
+  <p class="lede">
+    头部不动，只改列表。四处：<b>分组间距 14px → 8px</b>、<b>运行中只出转圈不出时间</b>、<b>折叠时项目名亮 / 展开时让位给会话</b>、<b>「已归档」独立成层</b>。
+  </p>
+
+  <div class="grid">
+
+    <!-- ───────────────── 现在 ───────────────── -->
+    <section class="panel now">
+      <h2>现在 <span class="tag">14px 间距 · 无导轨</span></h2>
+      <div class="side">
+        <div class="top">
+          <div class="searchrow">
+            <div class="field">
+              <span class="grow-t">搜索会话</span>
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.2" stroke="currentColor" stroke-width="1.3"/><path d="M10.2 10.2L13.5 13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <span class="collapse">
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 4L5.5 8l4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+          </div>
+          <div class="newbtn">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <span>新建会话</span>
+          </div>
+        </div>
+
+        <div class="list">
+          <div class="grp">
+            <div class="grow">
+              <svg class="chev closed" viewBox="0 0 10 10" aria-hidden="true" data-change="3"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#2a8a7a">C</span>
+              <span class="gname">cursor</span>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <svg class="chev closed" viewBox="0 0 10 10" aria-hidden="true" data-change="3"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#9a6b3f">F</span>
+              <span class="gname">FZ-Mortuus</span>
+            </div>
+          </div>
+
+          <div class="grp" data-open>
+            <div class="grow">
+              <svg class="chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#c74b8e">脚</span>
+              <span class="gname" data-change="1">脚本</span>
+            </div>
+            <div class="sessions">
+              <div class="sess">
+                <span class="st" data-change="2">问候</span>
+                <span class="time">昨天</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <svg class="chev closed" viewBox="0 0 10 10" aria-hidden="true" data-change="3"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#5b45c8">D</span>
+              <span class="gname">ds-free-api</span>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <svg class="chev closed" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#c96442">S</span>
+              <span class="gname">SiCode</span>
+              <svg class="spin" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="14" height="14" rx="3" fill="currentColor" opacity=".18"/><rect x="4" y="4" width="8" height="8" rx="2" fill="currentColor"/></svg>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <svg class="chev closed" viewBox="0 0 10 10" aria-hidden="true" data-change="3"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#7c8b3f">默</span>
+              <span class="gname">默认项目</span>
+            </div>
+          </div>
+
+          <div class="archived" data-change="4">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="grow-t">已归档</span>
+            <span class="count">1</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────── 改后 ───────────────── -->
+    <section class="panel after">
+      <h2>改后 <span class="tag">8px · 导轨 · 让位</span></h2>
+      <div class="side">
+        <div class="top">
+          <div class="searchrow">
+            <div class="field">
+              <span class="grow-t">搜索会话</span>
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.2" stroke="currentColor" stroke-width="1.3"/><path d="M10.2 10.2L13.5 13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <span class="collapse">
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 4L5.5 8l4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+          </div>
+          <div class="newbtn">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <span>新建会话</span>
+          </div>
+        </div>
+
+        <div class="list">
+          <div class="grp">
+            <div class="grow">
+              <span class="spacer" data-change="3"></span>
+              <span class="av" style="--av:#2a8a7a">C</span>
+              <span class="gname">cursor</span>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <span class="spacer" data-change="3"></span>
+              <span class="av" style="--av:#9a6b3f">F</span>
+              <span class="gname">FZ-Mortuus</span>
+            </div>
+          </div>
+
+          <div class="grp" data-open>
+            <div class="grow">
+              <svg class="chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#c74b8e">脚</span>
+              <span class="gname" data-change="1">脚本</span>
+            </div>
+            <div class="sessions" data-railed>
+              <div class="sess">
+                <span class="st" data-change="2">问候</span>
+                <span class="time">昨天</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <span class="spacer" data-change="3"></span>
+              <span class="av" style="--av:#5b45c8">D</span>
+              <span class="gname">ds-free-api</span>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <svg class="chev closed" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="av" style="--av:#c96442">S</span>
+              <span class="gname">SiCode</span>
+              <svg class="spin" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="14" height="14" rx="3" fill="currentColor" opacity=".18"/><rect x="4" y="4" width="8" height="8" rx="2" fill="currentColor"/></svg>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="grow">
+              <span class="spacer" data-change="3"></span>
+              <span class="av" style="--av:#7c8b3f">默</span>
+              <span class="gname">默认项目</span>
+            </div>
+          </div>
+
+          <div class="archived" data-change="4">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.75L5 6.25l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="grow-t">已归档</span>
+            <span class="count chip">1</span>
+          </div>
+          <div class="arc-row" data-change="4">
+            <span class="st">问候</span>
+            <span class="src">脚本</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <ol class="legend">
+    <li>
+      <span class="n">1</span>
+      <span class="body">
+        <b>间距 14px → 8px</b>，展开时再补 8px 下沿。
+        <span class="why">原来六个折叠项目之间空得一样宽，跟「项目+它的会话」之间的距离差不多，分组边界读不出来。</span>
+      </span>
+    </li>
+    <li>
+      <span class="n">2</span>
+      <span class="body">
+        <b>展开的会话加一条 1px 导轨</b>，从项目行下沿到最后一个会话。
+        <span class="why">42px 缩进是「声称」嵌套，导轨是「显示」嵌套。导轨位置在头像列下方，不是随便一条线。</span>
+      </span>
+    </li>
+    <li>
+      <span class="n">3</span>
+      <span class="body">
+        <b>折叠的项目名用 base，展开的退到 muted</b>；没有会话的项目不画箭头。
+        <span class="why">折叠时项目名是唯一可见的东西，它得承载会话的位置；展开后会话才是内容，项目名让位。一组只给一个重点。</span>
+      </span>
+    </li>
+    <li>
+      <span class="n">4</span>
+      <span class="body">
+        <b>「已归档」独立成层</b>：上间距 12px、计数改成胶囊、展开后的行挂在自己名下并标出来源项目。
+        <span class="why">原来归档行 ps-[42px] 跟项目的会话对齐，读起来像挂在最后一个项目下面；计数用 faint 又像另一个时间戳。</span>
+      </span>
+    </li>
+  </ol>
+
+  <p class="foot">
+    头部完全没动 —— 那个是上一轮撤回掉的。<b>也没动</b>：头像、28px 行高、时间戳位置、转圈。
+  </p>
+
+</div>
+
+<script>
+  const root = document.documentElement
+  const body = document.body
+
+  for (const button of document.querySelectorAll("[data-set]")) {
+    button.addEventListener("click", () => {
+      root.dataset.scheme = button.dataset.set
+      for (const other of document.querySelectorAll("[data-set]"))
+        other.setAttribute("aria-pressed", String(other === button))
+    })
+  }
+
+  for (const button of document.querySelectorAll("[data-flag]")) {
+    button.addEventListener("click", () => {
+      const flag = button.dataset.flag
+      const on = body.dataset[flag] !== "1"
+      body.dataset[flag] = on ? "1" : "0"
+      button.setAttribute("aria-pressed", String(on))
+    })
+  }
+</script>
+</body>
+</html>

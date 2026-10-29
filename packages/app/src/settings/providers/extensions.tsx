@@ -86,45 +86,17 @@ export const SettingsExtensions: Component<{
       <div class="settings-tab-body">
         <Tabs
           variant="pill"
-          value={props.subtab ?? "mcps"}
+          value={props.subtab ?? "plugins"}
           onChange={(value) => {
             if (value === "mcps" || value === "plugins" || value === "skills") props.onSubtab(value)
           }}
           class="settings-extensions-tabs settings-subtabs"
         >
           <Tabs.List>
-            <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
             <Tabs.Trigger value="plugins">{language.t("settings.extensions.tab.plugins")}</Tabs.Trigger>
             <Tabs.Trigger value="skills">{language.t("settings.extensions.tab.skills")}</Tabs.Trigger>
+            <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
           </Tabs.List>
-
-          <Tabs.Content value="mcps">
-            <div class="settings-section">
-              <div class="flex items-center justify-between">
-                <span class="settings-extension-heading text-13-medium">
-                  {language.t("settings.extensions.availableAll")}
-                </span>
-                <span class="text-13-regular text-v2-text-text-muted">
-                  {language.t("settings.extensions.manageConfig")}
-                </span>
-              </div>
-              <SettingsList variant="catalog">
-                <For each={mcps()}>
-                  {(item) => (
-                    <div class="settings-extension-row">
-                      <div class="settings-extension-lead">
-                        <Icon name="mcp" class="text-v2-icon-icon-muted shrink-0" />
-                        <span class="settings-extension-name truncate">{item.name}</span>
-                      </div>
-                      <Switch checked={item.enabled} onChange={(checked) => handleMcpToggle(item, checked)} hideLabel>
-                        {item.name}
-                      </Switch>
-                    </div>
-                  )}
-                </For>
-              </SettingsList>
-            </div>
-          </Tabs.Content>
 
           <Tabs.Content value="plugins">
             <div class="settings-section">
@@ -169,6 +141,34 @@ export const SettingsExtensions: Component<{
                         <Icon name="post-skill" class="text-v2-icon-icon-muted shrink-0" />
                         <span class="settings-extension-name truncate">{skill.name}</span>
                       </div>
+                    </div>
+                  )}
+                </For>
+              </SettingsList>
+            </div>
+          </Tabs.Content>
+
+          <Tabs.Content value="mcps">
+            <div class="settings-section">
+              <div class="flex items-center justify-between">
+                <span class="settings-extension-heading text-13-medium">
+                  {language.t("settings.extensions.availableAll")}
+                </span>
+                <span class="text-13-regular text-v2-text-text-muted">
+                  {language.t("settings.extensions.manageConfig")}
+                </span>
+              </div>
+              <SettingsList variant="catalog">
+                <For each={mcps()}>
+                  {(item) => (
+                    <div class="settings-extension-row">
+                      <div class="settings-extension-lead">
+                        <Icon name="mcp" class="text-v2-icon-icon-muted shrink-0" />
+                        <span class="settings-extension-name truncate">{item.name}</span>
+                      </div>
+                      <Switch checked={item.enabled} onChange={(checked) => handleMcpToggle(item, checked)} hideLabel>
+                        {item.name}
+                      </Switch>
                     </div>
                   )}
                 </For>

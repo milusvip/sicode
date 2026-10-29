@@ -2,7 +2,7 @@ export * as ShellSelect from "./select.js"
 
 import path from "path"
 import { readFile } from "fs/promises"
-import { statSync } from "fs"
+import { lstatSync, statSync } from "fs"
 import { Context, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -53,11 +53,38 @@ export interface Interface extends State.Transformable<Editor> {
 export class Service extends Context.Service<Service, Interface>()("@opencode/ShellSelect") {}
 
 function stat(file: string) {
-  return statSync(file, { throwIfNoEntry: false }) ?? undefined
+  // SiCode: Bun raises EACCES (not ENOENT) when statting an App Execution Alias, so the option
+  // above is not enough; a missing or unreadable entry is simply not a stat-able shell.
+  try {
+    return statSync(file, { throwIfNoEntry: false }) ?? undefined
+  } catch {
+    return undefined
+  }
 }
 
 function findExecutable(name: string, bin?: string) {
   return which(name, undefined, bin)
+}
+
+// SiCode: Bun's fs cannot follow App Execution Aliases — the store/MSIX form of PowerShell 7 lives
+// only as a `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` reparse point, where `stat` fails with
+// EACCES and `which` reports nothing, so a stock Windows box silently fell back to 5.1. The alias
+// is probed with lstat instead: the reparse stub reports a small non-zero size where a missing
+// file reports nothing at all.
+const APP_ALIAS = path.join("Microsoft", "WindowsApps")
+
+function appAlias(name: string): string | undefined {
+  if (process.platform !== "win32") return
+  const local = process.env.LOCALAPPDATA
+  if (!local) return
+  const file = path.join(local, APP_ALIAS, `${name}.exe`)
+  const item = lstatSync(file, { throwIfNoEntry: false })
+  return item && item.size > 0 && item.size < 4096 ? file : undefined
+}
+
+function isAppAlias(file: string): boolean {
+  const item = lstatSync(file, { throwIfNoEntry: false })
+  return item !== undefined && !item.isFile() && item.size > 0 && item.size < 4096
 }
 
 function full(file: string, options?: Options, bin?: string) {
@@ -87,6 +114,8 @@ function executable(file: string, options?: Options, bin?: string) {
   const shell = full(file, options, bin)
   if (rooted(shell)) {
     if (stat(shell)?.isFile()) return shell
+    // SiCode: a stat-invisible App Execution Alias is still runnable; see appAlias above.
+    if (isAppAlias(shell)) return shell
     return
   }
   return findExecutable(shell, bin) ?? undefined
@@ -96,7 +125,8 @@ function win(options?: Options, bin?: string) {
   return Array.from(
     new Set(
       [
-        findExecutable("pwsh", bin),
+        // SiCode: the alias fallback keeps store-installed pwsh in the race that `which` cannot see.
+        findExecutable("pwsh", bin) ?? appAlias("pwsh"),
         findExecutable("powershell", bin),
         gitbash(options, bin),
         process.env.COMSPEC || "cmd.exe",

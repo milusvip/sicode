@@ -406,7 +406,39 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     void connection.command(action).catch(failed)
   }
 
-  const openURL = (session: Session, url: string) => command(session, { type: "tabs.open", url })
+  // A file:// URL compared after decoding, so an encoded and a literal form of one path match.
+  const sameURL = (a: string | undefined, b: string) => {
+    if (!a) return false
+    if (a === b) return true
+
+    try {
+      return decodeURI(a) === decodeURI(b)
+    } catch {
+      return false
+    }
+  }
+
+  const openURL = (session: Session, url: string) => {
+    // A file the pane already shows reloads in place: a rewritten demo must refresh the tab the
+    // user has, not pile up another one. HTTP(s) keeps the browser's own new-tab semantics.
+    if (url.startsWith("file:")) {
+      const entry = live.get(session.key)
+
+      if (entry) {
+        const existing = attachment(entry.ref)?.browser?.tabs.find((item) => sameURL(item.url, url))
+
+        if (existing) {
+          entry.openingURL = undefined
+          command(session, { type: "reload", tabID: existing.id })
+          layout.open(key(existing.id), entry.ref, { tab: "select" })
+
+          return
+        }
+      }
+    }
+
+    command(session, { type: "tabs.open", url })
+  }
 
   // Only the routed session has a file model to resolve workspace paths with: the session screen's.
   const files = (session: Session) => {

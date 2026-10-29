@@ -1,21 +1,22 @@
-import { createEffect, createSignal, Show } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import type { SessionMessageAssistant } from "@opencode/client/promise"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { useDialog } from "@opencode/ui/context/dialog"
 import { useI18n } from "@opencode/ui/context/i18n"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
-import { latestHtmlArtifact } from "../timeline/artifact"
+import { latestHtmlChange, type HtmlArtifact } from "../timeline/artifact"
 import "./artifact-panel.css"
 
 /**
  * SiCode: HTML demos the assistant writes never render inside the conversation — the timeline
- * stays pure prose and tool chains. When a new demo lands this watcher opens it in the host's
- * side browser (injected via `open`, the desktop's browser pane) and falls back to the built-in
- * drawer where that pane is unavailable (web, remote servers, the preview shell).
+ * stays pure prose and tool chains. When a demo lands this watcher opens it in the host's side
+ * browser (injected via `open`, the desktop's browser pane) and falls back to the built-in drawer
+ * where that pane is unavailable (web, remote servers, the preview shell).
  *
- * A rewrite of a path the browser already shows does not open again — that would pile up tabs —
- * the pane's own reload shows the new snapshot. The drawer fallback replaces its content instead.
+ * A demo is usually built in steps, so the same page sees several writes and edits. Only a write
+ * may open a page; anything after that just asks the pane to refresh the tab it already shows, and
+ * bursts of them collapse into one refresh so the panel does not flash on every step.
  */
 export function ArtifactPanel(props: {
   messages: () => SessionMessageAssistant[]
@@ -23,34 +24,53 @@ export function ArtifactPanel(props: {
   open?: (path: string) => boolean
 }) {
   const dialog = useDialog()
-  // The artifact this view has already handled, by part. Undefined until the first pass, so
-  // loading a session with history never auto-opens its last demo — only live writes do.
+  // The change this view has already handled, by part. Undefined until the first pass, so
+  // loading a session with history never auto-opens its last demo — only live work does.
   const [seen, setSeen] = createSignal<string | undefined>(undefined)
-  // Paths already handed to the host's browser; a later write of one of these is a refresh, not a new tab.
+  // Pages this view opened in the host's browser: every later change to them is a refresh.
   const opened = new Set<string>()
+  let pending: ReturnType<typeof setTimeout> | undefined
+  let queued: HtmlArtifact | undefined
+
+  onCleanup(() => pending !== undefined && clearTimeout(pending))
+
+  const flush = () => {
+    pending = undefined
+    const change = queued
+    queued = undefined
+
+    if (!change) return
+    // An edit has no snapshot: it may only refresh a page the pane already shows.
+    if (change.content === undefined && !opened.has(change.path)) return
+
+    if (props.open?.(change.path)) {
+      opened.add(change.path)
+
+      return
+    }
+
+    if (change.content === undefined) return
+    // `show` replaces whatever is on the dialog stack, so a later step swaps into the open drawer.
+    dialog.show(() => <ArtifactDrawer path={change.path} content={change.content!} />, undefined, "artifact")
+  }
 
   createEffect(() => {
-    const artifact = latestHtmlArtifact(props.messages())
+    const change = latestHtmlChange(props.messages())
 
-    // A streaming write has no final content yet; the completed pass re-runs this effect.
-    if (!artifact || artifact.streaming || !artifact.content) return
+    // A streaming call has no final arguments yet; the completed pass re-runs this effect.
+    if (!change || change.streaming) return
 
-    const key = `${artifact.ref.messageID}:${artifact.ref.partID}`
+    const key = `${change.ref.messageID}:${change.ref.partID}`
     const previous = seen()
 
     setSeen(key)
 
     if (previous === undefined || previous === key) return
-    if (opened.has(artifact.path)) return
 
-    if (props.open?.(artifact.path)) {
-      opened.add(artifact.path)
-
-      return
-    }
-
-    // `show` replaces whatever is on the dialog stack, so a v2 write swaps into the open drawer.
-    dialog.show(() => <ArtifactDrawer path={artifact.path} content={artifact.content} />, undefined, "artifact")
+    // Steps of one build arrive close together; the panel refreshes once they settle.
+    queued = change
+    if (pending !== undefined) clearTimeout(pending)
+    pending = setTimeout(flush, 400)
   })
 
   return null

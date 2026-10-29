@@ -407,4 +407,27 @@ describe("WriteTool", () => {
         ),
     ),
   )
+
+  it.live("warns when a batch file is written with non-ASCII content", () =>
+    withTempDir((tmp) => {
+      const fixture = makeWriteFixture()
+      return withTool(tmp.path, fixture, (registry) =>
+        Effect.gen(function* () {
+          // SiCode: cmd.exe parses .bat in the ANSI code page, so UTF-8 Chinese comments break the
+          // script at run time; the result must tell the model to rewrite ASCII-only.
+          const batch = yield* executeTool(
+            registry,
+            call({ path: "run.bat", content: "@echo off\r\nrem 文件夹\r\n" }),
+          )
+          expect(batch.status).toBe("completed")
+          expect(batch.content).toEqual([
+            { type: "text", text: expect.stringContaining("SiCode warning: this Windows batch file contains non-ASCII") },
+          ])
+          // The same characters in a non-batch file draw no warning.
+          const plain = yield* executeTool(registry, call({ path: "notes.txt", content: "中文说明" }))
+          expect(plain.content).toEqual([{ type: "text", text: "Created file successfully: notes.txt" }])
+        }),
+      )
+    }),
+  )
 })

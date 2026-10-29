@@ -3,6 +3,7 @@ export * as DesktopInitialization from "./desktop-initialization"
 import { app } from "electron"
 import { Context, Effect, Layer } from "effect"
 import { DesktopLogging } from "../native/logging"
+import { syncSystemProxy } from "../service/system-proxy"
 import { marks } from "./marks"
 import {
   loadProxyEnvironment,
@@ -28,6 +29,9 @@ export const layer = Layer.effect(
       prepareApplicationEnvironment.pipe(Effect.andThen(loadProxyEnvironment), Effect.andThen(logging.startNetwork)),
     )
     yield* Effect.promise(() => app.whenReady())
+    // SiCode: mirror the OS proxy into env before anything spawns the server, so the sidecar's
+    // fetch sees HTTP_PROXY/HTTPS_PROXY on GUI launches that inherit no shell profile.
+    yield* syncSystemProxy
     yield* prepareDesktop
     marks.init = Date.now()
 

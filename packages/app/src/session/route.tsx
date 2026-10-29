@@ -15,6 +15,7 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useNotification } from "@/shell/notifications/notification"
 import { ComposerPersistenceProvider } from "@/composer/persistence"
 import { UiInspectComposerBridge } from "@/shell/ui-inspect/bridge"
+import { SelectionQuoteBridge } from "@/shell/selection-menu/bridge"
 import { useData, useServer } from "@/runtime/server/current"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useSettingsCommand } from "@/settings/command"
@@ -28,6 +29,7 @@ import { IncompatibleServerPanel } from "./incompatible-server-panel"
 import { SessionErrorFallback } from "./route-error"
 import { createSessionResolution } from "./session-resolution"
 import { SessionScreenView } from "./screen"
+import { SessionLoadingState } from "./session-loading"
 import { PreparingComposer } from "./preparing-composer"
 
 export function TargetSessionRouteContent() {
@@ -157,6 +159,7 @@ function PendingSessionState(props: { sessionID: string }) {
   return (
     <SessionStatePanel>
       <SessionIdentityHeader sessionID={props.sessionID} />
+      <SessionLoadingState />
     </SessionStatePanel>
   )
 }
@@ -176,6 +179,7 @@ function TargetSessionPage() {
     <FileProvider>
       <ComposerPersistenceProvider>
         <UiInspectComposerBridge />
+        <SelectionQuoteBridge />
         <CommentsProvider>
           <SessionPage />
         </CommentsProvider>

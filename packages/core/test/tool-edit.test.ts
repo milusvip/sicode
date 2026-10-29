@@ -797,4 +797,26 @@ describe("EditTool", () => {
       )
     }),
   )
+
+  it.live("warns when an edit introduces non-ASCII into a batch file", () =>
+    withTempDir((tmp) => {
+      const edit = makeEditFixture()
+      const target = path.join(tmp.path, "run.cmd")
+      return Effect.promise(() => fs.writeFile(target, "rem setup\r\nexit /b 0\r\n")).pipe(
+        Effect.andThen(
+          withTool(tmp.path, edit, (registry) =>
+            executeTool(registry, call({ path: "run.cmd", oldString: "rem setup", newString: "rem 文件夹" })),
+          ),
+        ),
+        Effect.andThen((settled) =>
+          Effect.gen(function* () {
+            // SiCode: cmd.exe parses .cmd in the ANSI code page; the edit result must carry the same
+            // ASCII-only rewrite warning the write tool gives.
+            expect(settled).toMatchObject({ status: "completed" })
+            expect(settled.content).toEqual([{ type: "text", text: expect.stringContaining("SiCode warning") }])
+          }),
+        ),
+      )
+    }),
+  )
 })

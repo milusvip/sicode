@@ -48,6 +48,23 @@ export const Info = Schema.Struct({
             { action: "read", resource: "*.env", effect: "ask" },
             { action: "read", resource: "*.env.*", effect: "ask" },
             { action: "read", resource: "*.env.example", effect: "allow" },
+            // SiCode: irreversible shell work asks once before it runs — recursive delete, and the git
+            // commands that discard commits or the working tree. A single-file `rm` stays allowed on
+            // purpose: it is routine cleanup, and confirming it every time would spend the whole point
+            // of running unattended. The shell tool reports each parsed sub-command as its resource, so
+            // these match the command line as typed (`rm -rf build`, not the whole shell string).
+            { action: "shell", resource: "rm -rf*", effect: "ask" },
+            { action: "shell", resource: "rm -fr*", effect: "ask" },
+            { action: "shell", resource: "rm -r*", effect: "ask" },
+            { action: "shell", resource: "sudo rm -rf*", effect: "ask" },
+            { action: "shell", resource: "rmdir *", effect: "ask" },
+            { action: "shell", resource: "git push --force*", effect: "ask" },
+            { action: "shell", resource: "git push -f*", effect: "ask" },
+            { action: "shell", resource: "git reset --hard*", effect: "ask" },
+            { action: "shell", resource: "git clean -f*", effect: "ask" },
+            { action: "shell", resource: "del /s*", effect: "ask" },
+            { action: "shell", resource: "del /f*", effect: "ask" },
+            { action: "shell", resource: "format *", effect: "ask" },
           ],
         }) satisfies Info,
     })),

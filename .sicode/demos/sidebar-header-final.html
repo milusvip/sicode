@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-CN" data-color-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>左侧栏头部 · 最终形态</title>
+<style>
+  :root {
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "SF Mono", Menlo, monospace;
+  }
+  [data-color-scheme="dark"] {
+    --bg-base: #161616;   --bg-deep: #080808;
+    --layer-01: #242424;  --layer-02: #2e2e2e;  --layer-03: #3a3a3a;
+    --text-base: #fafafa; --text-muted: #aeaeae; --text-faint: #808080;
+    --icon-muted: #808080; --icon-faint: #5c5c5c;
+    --border-muted: rgba(255,255,255,.078);
+    --border-base: rgba(255,255,255,.102);
+    --hover: rgba(255,255,255,.059);
+    --pressed: rgba(255,255,255,.102);
+    /* button-neutral / elevation-button-neutral（dark） */
+    --btn-bg: rgba(255,255,255,.059);
+    --btn-ring: rgba(255,255,255,.20);
+    --btn-shadow: 0 1px 2px rgba(0,0,0,.40), 0 0 0 .5px rgba(255,255,255,.20), 0 -0.5px 0 rgba(255,255,255,.10);
+    --ok: #49c970;
+  }
+  [data-color-scheme="light"] {
+    --bg-base: #fafafa;   --bg-deep: #fafafa;
+    --layer-01: #fafafa;  --layer-02: #f2f2f2;  --layer-03: #eeeeee;
+    --text-base: #161616; --text-muted: #5c5c5c; --text-faint: #808080;
+    --icon-muted: #808080; --icon-faint: #aeaeae;
+    --border-muted: rgba(0,0,0,.078);
+    --border-base: rgba(0,0,0,.102);
+    --hover: rgba(0,0,0,.039);
+    --pressed: rgba(0,0,0,.078);
+    --btn-bg: #ffffff;
+    --btn-ring: rgba(0,0,0,.14);
+    --btn-shadow: 0 1px 1.5px rgba(0,0,0,.10), 0 0 0 .5px rgba(0,0,0,.14);
+    --ok: #2f9e52;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg-base); color: var(--text-base);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 900px; margin: 0 auto; padding: 32px 18px 64px; }
+
+  h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 6px; }
+  .sub { color: var(--text-muted); margin: 0 0 20px; max-width: 76ch; font-size: 13px; }
+  .sub code { font-family: var(--mono); font-size: 11.5px; background: var(--layer-02); padding: 1px 5px; border-radius: 4px; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; }
+  .seg { display: inline-flex; background: var(--layer-01); border-radius: 8px; padding: 2px; gap: 2px; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; height: 26px; padding: 0 11px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--layer-03); color: var(--text-base); }
+
+  .stage { display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start; }
+  .col { min-width: 0; }
+  .cap { font-size: 12.5px; font-weight: 600; margin: 0 0 8px; display: flex; align-items: center; gap: 7px; }
+  .cap .tag { font-size: 10.5px; font-weight: 400; padding: 1px 7px; border-radius: 999px; background: var(--layer-02); color: var(--text-muted); }
+
+  /* ── 侧栏：与生产同宽 256px ── */
+  .side {
+    width: 256px; height: 396px;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg-deep); border: 1px solid var(--border-muted); border-radius: 12px;
+    font-size: 13px;
+  }
+  .wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding: 0 6px; }
+
+  /* 头部：搜索整行 + 全宽按钮，垂直 gap 4px，与列表之间只有间距没有分隔线 */
+  .top { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 4px; flex: none; }
+  .row { display: flex; align-items: center; gap: 4px; }
+  .field {
+    display: flex; align-items: center; height: 28px; flex: 1 1 auto; min-width: 0;
+    border-radius: 6px; background: var(--layer-02); padding: 0 8px; font-size: 12px;
+  }
+  .field input { min-width: 0; flex: 1 1 auto; border: 0; background: transparent; color: var(--text-base); font: inherit; outline: none; }
+  .field input::placeholder { color: var(--text-faint); }
+  .field svg { flex: none; color: var(--text-faint); }
+
+  .ico {
+    display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+    border: 0; border-radius: 6px; background: transparent; color: var(--icon-muted); cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .ico:hover { background: var(--hover); color: var(--text-base); }
+
+  /* 全宽按钮：Button variant="neutral" —— 实心底 + 0.5px 细环 + raised 阴影，不是悬浮背景 */
+  .new {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; height: 28px; padding: 0 11px;
+    border: 0; border-radius: 6px; cursor: pointer;
+    background: var(--btn-bg); color: var(--text-base);
+    box-shadow: var(--btn-shadow);
+    font: inherit; font-size: 12px; font-weight: 530;
+    transition: background-color .12s ease;
+  }
+  .new:hover { background: color-mix(in srgb, var(--btn-bg) 88%, white 12%); }
+  .new span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* 同为 Button variant="neutral"，只是 28×28 无内边距 */
+  .btnIcon {
+    display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+    border: 0; border-radius: 6px; cursor: pointer;
+    background: var(--btn-bg); color: var(--text-muted);
+    box-shadow: var(--btn-shadow);
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .btnIcon:hover { color: var(--text-base); background: color-mix(in srgb, var(--btn-bg) 88%, white 12%); }
+
+  /* 列表：直接开始，没有分类标题 */
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 6px 10px; }
+  .list::-webkit-scrollbar { width: 8px; }
+  .list::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+  .sec { display: flex; align-items: center; height: 22px; margin: 8px 0 2px; padding: 0 6px; font-size: 11px; line-height: 14px; color: var(--text-faint); }
+
+  .grphead { position: relative; display: flex; height: 28px; align-items: center; border-radius: 5px; }
+  .grphead:hover { background: var(--hover); }
+  .gtoggle {
+    display: flex; height: 100%; min-width: 0; flex: 1 1 auto; align-items: center; gap: 6px;
+    padding: 0 8px 0 4px; border: 0; border-radius: 5px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer;
+  }
+  .grphead[data-active="1"] .gtoggle { color: var(--text-base); }
+  .pav { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--c); color: #fff; font-size: 9px; font-weight: 700; }
+  .gname { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+  .chev { flex: none; color: var(--icon-faint); transition: transform .13s ease; }
+  .grp[data-open="0"] .chev { transform: rotate(-90deg); }
+  .grp[data-open="0"] .rows { display: none; }
+
+  .sess {
+    position: relative; display: flex; width: 100%; height: 28px; align-items: center; gap: 8px;
+    padding: 0 8px 0 42px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .sess:hover { background: var(--hover); color: var(--text-base); }
+  .sess.active { background: var(--pressed); color: var(--text-base); }
+  .sess.active::before { content: ""; position: absolute; left: 30px; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--text-base); }
+  .stitle { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .stime { flex: none; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--border-base); border-top-color: var(--text-muted); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .dockfoot { border-top: 1px solid var(--border-muted); padding: 8px; flex: none; }
+  .pill { display: flex; width: 100%; align-items: center; gap: 8px; padding: 5px; border: 0; border-radius: 7px; background: transparent; color: var(--text-base); font: inherit; cursor: pointer; text-align: start; }
+  .pill:hover { background: var(--hover); }
+  .pill .nm { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+  .slot { flex: none; display: grid; place-items: center; width: 22px; height: 22px; color: var(--icon-muted); }
+
+  /* 说明 */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  th, td { text-align: start; padding: 9px 12px 9px 0; vertical-align: top; border-bottom: 1px solid var(--border-muted); }
+  th { font-size: 11px; font-weight: 500; color: var(--text-faint); }
+  td.k { width: 132px; font-weight: 500; }
+  td.why { color: var(--text-faint); }
+  td code, .why code { font-family: var(--mono); font-size: 11px; background: var(--layer-02); padding: 0 4px; border-radius: 3px; }
+  h3.st { font-size: 13px; font-weight: 700; margin: 40px 0 4px; }
+  .foot-note { margin-top: 28px; font-size: 12px; color: var(--text-faint); border-top: 1px solid var(--border-muted); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1>左侧栏头部 · 最终形态</h1>
+    <p class="sub">
+      按你的红框改的：搜索框独占一行、放大镜在框内右侧；下面是全宽的「新建会话」按钮，带按钮表面（实底 + 0.5px 细环 + raised 阴影），不是悬浮背景；
+      按钮上方没有任何分类标题，列表直接开始。点按钮可看按下反馈，切浅色验证细环是否还在。
+    </p>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="主题">
+      <button type="button" aria-pressed="true" data-scheme="dark">暗色</button>
+      <button type="button" aria-pressed="false" data-scheme="light">浅色</button>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <section class="col">
+      <div class="cap">暗色 <span class="tag">已落地</span></div>
+      <aside class="side">
+        <div class="wrap">
+          <div class="top">
+            <div class="row">
+              <label class="field">
+                <input type="text" placeholder="搜索会话">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg>
+              </label>
+              <button class="btnIcon" type="button" aria-label="收起侧栏"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8 3.8"/></svg></button>
+            </div>
+            <button class="new" type="button"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span>新建会话</span></button>
+          </div>
+          <div class="list" data-list></div>
+        </div>
+        <div class="dockfoot">
+          <button class="pill" type="button"><span class="slot"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4.6 5.2 2.6 2.8-2.6 2.8"/><path d="M8.8 11.4h2.8"/></svg></span><span class="nm">本地工作区</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="col">
+      <div class="cap">浅色 <span class="tag">验证细环</span></div>
+      <aside class="side" data-scheme-scope="light" style="background:#fafafa;border-color:rgba(0,0,0,.078)">
+        <div class="wrap">
+          <div class="top">
+            <div class="row">
+              <label class="field" style="background:#f2f2f2">
+                <input type="text" placeholder="搜索会话" style="color:#161616">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#808080" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg>
+              </label>
+              <button class="btnIcon" type="button" aria-label="收起侧栏" style="background:#ffffff;color:#808080;box-shadow:0 1px 1.5px rgba(0,0,0,.10),0 0 0 .5px rgba(0,0,0,.14)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8 3.8"/></svg></button>
+            </div>
+            <button class="new" type="button" style="background:#ffffff;color:#161616;box-shadow:0 1px 1.5px rgba(0,0,0,.10),0 0 0 .5px rgba(0,0,0,.14)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span>新建会话</span></button>
+          </div>
+          <div class="list" data-list data-light="1"></div>
+        </div>
+        <div class="dockfoot" style="border-color:rgba(0,0,0,.078)">
+          <button class="pill" type="button" style="color:#161616"><span class="slot" style="color:#808080"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4.6 5.2 2.6 2.8-2.6 2.8"/><path d="M8.8 11.4h2.8"/></svg></span><span class="nm">本地工作区</span></button>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <h3 class="st">这一版改了什么</h3>
+  <table>
+    <thead><tr><th>项</th><th>现在</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k">搜索框</td>
+        <td>整行常驻，<code>layer-02</code> 实底，放大镜在框内右侧，收起按钮在框外右侧</td>
+        <td class="why">之前是「图标开关 + 点开才出现」，多一次点击才够得着搜索。图标挪到框内右侧，与红框一致，也不必再和左侧输入光标抢位置。</td>
+      </tr>
+      <tr>
+        <td class="k">新建会话</td>
+        <td>第二行，<code>w-full</code>，<code>Button variant="neutral"</code></td>
+        <td class="why"><code>neutral</code> 带 0.5px 细环 + raised 阴影 + 实底，是「按钮」；之前的裸 <code>bg-layer-02</code> 悬空一块，才读成悬浮背景／空输入框。</td>
+      </tr>
+      <tr>
+        <td class="k">分类标题</td>
+        <td>没有</td>
+        <td class="why">生产代码里本来就没有「新建」这个标签（那只是 demo 的陪衬）。列表紧接按钮开始，序列是「搜索 → 动作 → 内容」三段，中间不再插标题。</td>
+      </tr>
+      <tr>
+        <td class="k">分隔线</td>
+        <td>去掉</td>
+        <td class="why">搜索框和按钮各自有边界，中间再来一根 1px 线，等于在 40px 内画三道横线。用 4px 间距分组就够（DESIGN.md：分组用距离，不用额外 divider）。</td>
+      </tr>
+      <tr>
+        <td class="k">项目行悬停 +</td>
+        <td>已删除</td>
+        <td class="why">上一轮按「只保留全宽」的要求去掉了。新建入口现在侧栏里只有一个，不再有两种形状争注意力。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot-note">
+    <b>落点：</b><code>packages/app/src/shell/left-sidebar.tsx</code> 头部区块（现 387–423 行），连同 <code>searchOpen / openSearch / closeSearch / searchInput</code> 四个只为「按需展开」存在的局部状态一起删除。<code>bun run typecheck</code> 通过。
+  </p>
+</div>
+
+<script>
+  const DATA = [
+    { name: "SiCode", initial: "S", color: "#4c6ef5", active: true, sessions: [
+      { title: "左侧栏重新设计", time: "刚刚", active: true },
+      { title: "主题卡片调整",   time: "2 小时" },
+    ]},
+    { name: "Cursor", initial: "C", color: "#0096b8", sessions: [
+      { title: "自动恢复停止排查", time: "10 小时" },
+      { title: "会话恢复草稿",     time: "昨天" },
+    ]},
+    { name: "脚本", initial: "脚", color: "#e7af36", sessions: [
+      { title: "工具脚本整理", time: "12 分钟", running: true },
+    ]},
+  ]
+
+  const svgChev = '<svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg>'
+
+  for (const list of document.querySelectorAll("[data-list]")) {
+    for (const p of DATA) {
+      const grp = document.createElement("div")
+      grp.className = "grp"
+      grp.dataset.open = "1"
+      grp.dataset.light = list.dataset.light ?? "0"
+
+      const head = document.createElement("div")
+      head.className = "grphead"
+      head.dataset.active = p.active ? "1" : "0"
+      head.innerHTML = '<button class="gtoggle" type="button">' + svgChev
+        + '<span class="pav" style="--c:' + p.color + '">' + p.initial + '</span>'
+        + '<span class="gname">' + p.name + '</span></button>'
+
+      const rows = document.createElement("div")
+      rows.className = "rows"
+      for (const s of p.sessions) {
+        const row = document.createElement("button")
+        row.type = "button"
+        row.className = "sess" + (s.active ? " active" : "")
+        row.innerHTML = '<span class="stitle">' + s.title + '</span>'
+          + (s.running ? '<span class="spin"></span>' : '<span class="stime">' + s.time + '</span>')
+        rows.append(row)
+      }
+
+      grp.append(head, rows)
+      list.append(grp)
+    }
+  }
+
+  // 浅色面板：给列表行补一套浅色覆盖（保持结构一致，只是配色）
+  for (const list of document.querySelectorAll('[data-light="1"]')) {
+    list.style.color = "#5c5c5c"
+    for (const row of list.querySelectorAll(".sess")) {
+      row.style.color = "#5c5c5c"
+      if (row.classList.contains("active")) { row.style.background = "rgba(0,0,0,.078)"; row.style.color = "#161616" }
+      const bar = row.querySelector(".stime")
+      if (bar) bar.style.color = "#808080"
+    }
+    for (const head of list.querySelectorAll(".grphead")) {
+      head.querySelector(".gtoggle").style.color = head.dataset.active === "1" ? "#161616" : "#5c5c5c"
+    }
+  }
+
+  for (const toggle of document.querySelectorAll(".gtoggle")) {
+    toggle.addEventListener("click", () => {
+      const grp = toggle.closest(".grp")
+      const open = grp.dataset.open !== "1"
+      grp.dataset.open = open ? "1" : "0"
+    })
+  }
+
+  for (const row of document.querySelectorAll(".sess")) {
+    row.addEventListener("click", () => {
+      const list = row.closest("[data-list]")
+      for (const other of list.querySelectorAll(".sess")) other.classList.remove("active")
+      row.classList.add("active")
+    })
+  }
+
+  for (const button of document.querySelectorAll("[data-scheme]")) {
+    button.addEventListener("click", () => {
+      for (const other of document.querySelectorAll("[data-scheme]")) other.setAttribute("aria-pressed", String(other === button))
+      document.documentElement.dataset.colorScheme = button.dataset.scheme
+    })
+  }
+</script>
+</body>
+</html>

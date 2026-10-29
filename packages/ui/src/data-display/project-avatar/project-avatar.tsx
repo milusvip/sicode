@@ -23,6 +23,11 @@ export const PROJECT_AVATAR_VARIANTS = [
   "pink",
   "blue",
   "purple",
+  // SiCode: four extra hues filling the gaps the original nine left on the colour wheel.
+  "olive",
+  "teal",
+  "sky",
+  "fuchsia",
   "gray",
 ] as const
 
@@ -57,11 +62,50 @@ export function getProjectAvatarVariant(key?: string): ProjectAvatarVariant {
     key === "pink" ||
     key === "blue" ||
     key === "purple" ||
+    key === "olive" ||
+    key === "teal" ||
+    key === "sky" ||
+    key === "fuchsia" ||
     key === "gray"
   )
     return key
 
   return "gray"
+}
+
+// Projects are created by the server on first resolve, and nothing assigns them a colour, so an
+// untouched project has no `icon.color` at all. Falling straight through to "gray" made every
+// project in the sidebar look colourless, so an unset colour is derived from the project instead:
+// stable across reloads and machines, and still distinguishable from a colour the user actually
+// picked (that one is stored, and wins).
+const DERIVED_VARIANTS = PROJECT_AVATAR_VARIANTS.filter((variant) => variant !== "gray")
+
+/** FNV-1a over UTF-16 code points; only the low bits are used, so a stable cheap spread is enough. */
+function hash(value: string) {
+  return (
+    Array.from(value).reduce((state, char) => Math.imul(state ^ (char.codePointAt(0) ?? 0), 16777619), 2166136261) >>>
+    0
+  )
+}
+
+/**
+ * The directory is the primary key on purpose: it is present the moment a project is added, while
+ * `id` only arrives once the bootstrap metadata table refreshes. Keying on `id` alone left every
+ * freshly added project grey — the exact case this exists for. `id` stays as the fallback for a
+ * caller that has no directory, so a project keeps one colour for its lifetime.
+ */
+export function resolveProjectAvatarVariant(project?: {
+  id?: string
+  worktree?: string
+  icon?: { color?: string }
+}): ProjectAvatarVariant {
+  if (project?.icon?.color) return getProjectAvatarVariant(project.icon.color)
+
+  const key = project?.worktree ?? project?.id
+
+  if (!key) return "gray"
+
+  return DERIVED_VARIANTS[hash(key) % DERIVED_VARIANTS.length] ?? "gray"
 }
 
 export const displayName = (project: { name?: string; worktree: string }) => {

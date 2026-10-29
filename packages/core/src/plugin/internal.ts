@@ -80,6 +80,8 @@ import { PatchTool } from "../tool/plugin/patch.js"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
 import { GrepTool } from "../tool/plugin/grep.js"
+// SiCode: precise symbol navigation via configured language servers (see tool/plugin/lsp.ts).
+import { LspTool } from "../tool/plugin/lsp.js"
 import { McpResourceTools } from "../tool/plugin/mcp-resource.js"
 import { OpenCodeTools } from "../tool/plugin/opencode.js"
 import { QuestionTool } from "../tool/plugin/question.js"
@@ -112,6 +114,8 @@ import { WebSearchPlugins } from "./websearch/index.js"
 import { SkillPlugin } from "./skill.js"
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
+// SiCode: returns syntax errors with the tool result that wrote the file (see plugin/syntax-check.ts).
+import { SyntaxCheckPlugin } from "./syntax-check.js"
 import { OptimizePlugin } from "./optimize.js"
 import { VcsGitPlugin } from "./vcs/git.js"
 import { VerbosityPlugin } from "./verbosity.js"
@@ -255,6 +259,8 @@ const pre = [
   EditTool.Plugin,
   GlobTool.Plugin,
   GrepTool.Plugin,
+  // SiCode: after grep, so the model sees both lookup paths registered together.
+  LspTool.Plugin,
   // SiCode: after every tool that can produce content, so an archived read composes with them.
   HistoryTool.Plugin,
   OpenCodeTools.Plugin,
@@ -269,6 +275,8 @@ const pre = [
   WebFetchTool.Plugin,
   WebSearchTool.Plugin,
   WriteTool.Plugin,
+  // SiCode: last, so it sees the final content every writer produced.
+  SyntaxCheckPlugin.Plugin,
   WarmingPlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 

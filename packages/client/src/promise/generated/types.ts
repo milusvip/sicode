@@ -190,6 +190,8 @@ export type IntegrationID = string
 
 export type ProviderModelProbe = { models: Array<{ id: string; name?: string | undefined }> }
 
+export type ProviderProbeResult = { mode: "chat" | "models" }
+
 export type IntegrationMethodID = string
 
 export type IntegrationEnvMethod = { type: "env"; names: Array<string> }
@@ -5072,6 +5074,35 @@ export type ProviderModelsInput = {
 }
 
 export type ProviderModelsOutput = ProviderModelProbe
+
+export type ProviderTestInput = {
+  readonly baseURL: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+    readonly model?: string | undefined
+  }["baseURL"]
+  readonly apiKey?: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+    readonly model?: string | undefined
+  }["apiKey"]
+  readonly headers?: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+    readonly model?: string | undefined
+  }["headers"]
+  readonly model?: {
+    readonly baseURL: string
+    readonly apiKey?: string | undefined
+    readonly headers?: { readonly [x: string]: string } | undefined
+    readonly model?: string | undefined
+  }["model"]
+}
+
+export type ProviderTestOutput = ProviderProbeResult
 
 export type IntegrationListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]

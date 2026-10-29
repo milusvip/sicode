@@ -7,7 +7,7 @@ import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
 import { Project } from "@opencode/core/project"
 import { Provider } from "@opencode/core/provider"
-import { probeModels } from "@opencode/core/provider-probe"
+import { probeChat, probeModels } from "@opencode/core/provider-probe"
 import { AbsolutePath } from "@opencode/core/schema"
 import { WebSearch } from "@opencode/core/websearch"
 import { Effect, Stream } from "effect"
@@ -50,6 +50,7 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       list: () => Effect.die("unused provider.list"),
       get: () => Effect.die("unused provider.get"),
       models: () => Effect.die("unused provider.models"),
+      test: () => Effect.die("unused provider.test"),
       transform: () => Effect.die("unused provider.transform"),
       reload: () => Effect.die("unused provider.reload"),
     },
@@ -246,6 +247,13 @@ export function providerHost(providers: Provider.Interface): Plugin.Context["pro
         ),
       ),
     models: (input) => Effect.map(probeModels(input), (models) => ({ models })),
+    test: (input) =>
+      input.model?.trim()
+        ? Effect.map(
+            probeChat({ baseURL: input.baseURL, apiKey: input.apiKey, headers: input.headers, model: input.model }),
+            () => ({ mode: "chat" as const }),
+          )
+        : Effect.map(probeModels(input), () => ({ mode: "models" as const })),
     reload: providers.reload,
     transform: (callback) =>
       providers.transform((editor) =>
@@ -271,6 +279,7 @@ export const noProviders: Plugin.Context["provider"] = {
   list: () => Effect.succeed(located([])),
   get: () => Effect.die("unused provider.get"),
   models: () => Effect.die("unused provider.models"),
+  test: () => Effect.die("unused provider.test"),
   transform: () => Effect.die("unused provider.transform"),
   reload: () => Effect.die("unused provider.reload"),
 }

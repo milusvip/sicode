@@ -32,7 +32,7 @@ import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { NARRATE_EVERY_STEPS } from "./narrate.js"
 import { EXPLORE_HARD_STEPS, EXPLORE_SOFT_STEPS, readOnlySteps } from "./explore-budget.js"
-import { detectLoop } from "./loop-detection.js"
+import { detectLoop, detectRepeatedProbe } from "./loop-detection.js"
 import {
   detectFailureStreak,
   FAILURE_STREAK_EVERY,
@@ -40,6 +40,7 @@ import {
 } from "./failure-streak.js"
 import { selectSteer } from "./steer.js"
 import { completionFingerprint, completionGatePrompt, detectPendingTodos } from "./completion-gate.js"
+import { FINAL_ANSWER_PROMPT, unansweredPrompt } from "./final-answer-gate.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -91,9 +92,15 @@ const layer = Layer.effect(
       // SiCode: loop fingerprints already nudged this turn. A second sighting means the nudge did
       // not help, so the turn stops rather than being told the same thing again.
       const loopNudged = new Set<string>()
+      // SiCode: files already reported as re-probed this turn. One nudge per file; the detector
+      // keeps firing as the count grows, so without this the same file would be named every step.
+      const probeNudged = new Set<string>()
       // SiCode: todo fingerprints already gated this turn. The completion gate fires once per open
       // todo set, so a model that insists the todos are stale is not reminded a second time.
       const completionNudged = new Set<string>()
+      // SiCode: prompts already asked to say something. A turn that ends silently is nudged once per
+      // prompt; asking again after that would only add an empty round trip.
+      const answerNudged = new Set<string>()
       // SiCode: whole-turn failed tool calls at the time the research nudge last fired. The trigger
       // is the trailing-window density (objective, variant-proof), this paces the re-nudges.
       const failureNudged = { at: 0 }
@@ -225,7 +232,15 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step, loopNudged, completionNudged, failureNudged)
+        continuing = yield* runStep(
+          next.context,
+          step,
+          loopNudged,
+          probeNudged,
+          completionNudged,
+          answerNudged,
+          failureNudged,
+        )
         step++
         force = false
         entering = false
@@ -246,7 +261,9 @@ const layer = Layer.effect(
       first: SessionContext.Loaded,
       step: number,
       loopNudged: Set<string>,
+      probeNudged: Set<string>,
       completionNudged: Set<string>,
+      answerNudged: Set<string>,
       failureNudged: { at: number },
     ) {
       const sessionID = first.session.id
@@ -282,6 +299,12 @@ const layer = Layer.effect(
         const loopStop = loop !== null && loopNudged.has(loop.fingerprint)
         const loopNudge = loop !== null && !loopStop
         if (loopNudge) loopNudged.add(loop.fingerprint)
+        // SiCode: one file probed over and over with a new pattern or command each time. The loop
+        // detector needs identical calls, so this shape slips past it; nudged once per file and
+        // never fatal, because a re-read can still be legitimate.
+        const probe = loop === null && !stepLimitReached ? detectRepeatedProbe(loaded.messages) : null
+        const probeNudge = probe !== null && !probeNudged.has(probe.fingerprint) ? probe : null
+        if (probeNudge) probeNudged.add(probeNudge.fingerprint)
         // SiCode: the framework counts tool failures the model would rather rebrand as variants.
         // Window density is the trigger; the monotonic whole-turn count only paces the re-nudges.
         const failures = stepLimitReached ? null : detectFailureStreak(loaded.messages)
@@ -291,7 +314,16 @@ const layer = Layer.effect(
           failures.total - failureNudged.at >= FAILURE_STREAK_EVERY
         if (failureNudge) failureNudged.at = failures.total
         // One steering message replaces the tail, most specific first.
-        const steer = selectSteer({ stepLimitReached, loopStopped: loopStop, exploreHard, loopNudged: loopNudge, failureNudged: failureNudge, narrate, exploreSoft })
+        const steer = selectSteer({
+          stepLimitReached,
+          loopStopped: loopStop,
+          exploreHard,
+          loopNudged: loopNudge,
+          probeNudged: probeNudge?.path,
+          failureNudged: failureNudge,
+          narrate,
+          exploreSoft,
+        })
         const transcript = SessionModelRequest.baseTranscript({
           agent: loaded.agent.info,
           model: loaded.model,
@@ -360,11 +392,14 @@ const layer = Layer.effect(
             yield* retry.succeed()
             // The Session is about to go idle, which leaves the background summary time to finish.
             if (!outcome.needsContinuation) {
+              // Both gates below judge what the user will actually see, so they read the stored
+              // transcript instead of the snapshot this step was planned from.
+              const messages = yield* store.context(sessionID)
               // SiCode: completion gate. The turn is about to end because the model stopped calling
               // tools. If its latest todo list still has open items, remind it once and force one
               // more step instead of letting it declare victory mid-task. Fires once per fingerprint
               // so a model that considers the todos stale is not nagged twice.
-              const pending = detectPendingTodos(loaded.messages)
+              const pending = detectPendingTodos(messages)
               if (pending.length > 0) {
                 const fingerprint = completionFingerprint(pending)
                 if (!completionNudged.has(fingerprint)) {
@@ -376,9 +411,16 @@ const layer = Layer.effect(
                   return true
                 }
               }
-              yield* compaction.precompute(
-                store.context(sessionID).pipe(Effect.map((messages) => ({ ...loaded, messages }))),
-              )
+              // SiCode: final answer gate. A turn that stops after nothing but tool calls leaves the
+              // user an activity log and no answer. One nudge per prompt, and never when the step
+              // limit already decided the turn is over.
+              const unanswered = stepLimitReached ? undefined : unansweredPrompt(messages)
+              if (unanswered && !answerNudged.has(unanswered)) {
+                answerNudged.add(unanswered)
+                yield* bus.publish(SessionEvent.Synthetic, { sessionID, text: FINAL_ANSWER_PROMPT })
+                return true
+              }
+              yield* compaction.precompute(Effect.succeed({ ...loaded, messages }))
             }
             return outcome.needsContinuation
           }),

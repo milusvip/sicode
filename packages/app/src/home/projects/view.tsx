@@ -10,8 +10,8 @@ import { ScrollView } from "@opencode/ui/scroll-view"
 import {
   displayName,
   getProjectAvatarSource,
-  getProjectAvatarVariant,
   ProjectAvatar,
+  resolveProjectAvatarVariant,
 } from "@opencode/ui/project-avatar"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
@@ -123,7 +123,11 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
           <Popover.Content
             aria-label={props.language.t("home.projects")}
             dir={props.language.direction()}
-            class="z-50 max-h-[min(70dvh,var(--kb-popper-content-available-height))] overflow-hidden rounded-[10px] bg-v2-background-bg-base p-1.5 shadow-[var(--v2-elevation-floating)] outline-none data-[expanded]:animate-in data-[expanded]:fade-in data-[expanded]:slide-in-from-top-2 duration-150 ease-out motion-reduce:animate-none"
+            // SiCode: same surface as the app-wide context menu — layer-01 with a hairline inset
+            // border. It used to be bg-base, which in dark theme is near-black and read as a black
+            // hole next to every other popover. Row hover colors are re-scoped in view.css.
+            data-component="home-projects-dropdown-panel"
+            class="z-50 max-h-[min(70dvh,var(--kb-popper-content-available-height))] overflow-hidden rounded-[10px] bg-v2-background-bg-layer-01 p-1.5 shadow-[var(--v2-elevation-floating),inset_0_0_0_0.5px_var(--v2-border-border-base)] outline-none data-[expanded]:animate-in data-[expanded]:fade-in data-[expanded]:slide-in-from-top-2 duration-150 ease-out motion-reduce:animate-none"
           >
             <HomeProjectsPanel
               {...props}
@@ -837,7 +841,7 @@ function HomeProjectAvatar(props: { project: LocalProject; outline?: boolean }) 
     <ProjectAvatar
       fallback={name()}
       src={props.outline ? undefined : getProjectAvatarSource(props.project.id, props.project.icon)}
-      variant={props.outline ? "outline" : getProjectAvatarVariant(props.project.icon?.color)}
+      variant={props.outline ? "outline" : resolveProjectAvatarVariant(props.project)}
     />
   )
 }

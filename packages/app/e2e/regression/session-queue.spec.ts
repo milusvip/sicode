@@ -531,11 +531,10 @@ test("Undo cancels only the selected queued prompt and focuses the restored inpu
   const view = await openQueue(page, mock)
   await expect(view.rows).toHaveCount(7)
 
-  // A long prompt in a long queue on a narrow screen keeps its icon-only Undo usable.
+  // The row's actions are labelled, so a long prompt in a long queue on a narrow screen keeps
+  // its Undo readable instead of leaning on a tooltip to explain an icon.
   const undo = view.rows.filter({ hasText: text }).getByRole("button", { name: "Undo" })
-  await expect(undo).toHaveText("")
-  await undo.hover()
-  await expect(page.getByRole("tooltip")).toHaveText("Undo")
+  await expect(undo).toHaveText("Undo")
   await undo.click()
   await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText(rest)
   await expect(view.input).toHaveText(text)

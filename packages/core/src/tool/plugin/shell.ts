@@ -41,6 +41,53 @@ export const resolveTimeout = (input: { background?: boolean | undefined; timeou
     ? (input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS)
     : (input.timeout ?? DEFAULT_TIMEOUT_MS)
 
+// SiCode: a foreground command moved to the background mid-flight used to have its timeout cleared
+// outright, which contradicted the 24 hour background cap above: it then ran forever. Apply the
+// background policy instead, keeping a timeout the caller explicitly asked for.
+export const backgroundedTimeout = (input: { timeout?: number | undefined }) =>
+  input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS
+
+// SiCode: the model cannot feel how long a command blocked the session, so it re-runs the same slow
+// probe instead of changing approach. Once a foreground call is slow enough to matter, say what it
+// cost next to the output; "blocked 78s and returned 2 characters" is the signal that a probe is
+// flailing, and the model has never been able to see it. Mutable so tests can shorten it.
+export const slowTimings = { thresholdMs: 30_000 }
+
+export const slowNotice = (elapsedMs: number, returned: number) => {
+  if (elapsedMs < slowTimings.thresholdMs) return undefined
+  const seconds = Math.max(1, Math.round(elapsedMs / 1000))
+  return `This command blocked the session for ${seconds}s and returned ${returned} character${returned === 1 ? "" : "s"}. If a command is expected to be slow and you do not need its output to continue, pass background: true instead of waiting for it.`
+}
+
+// SiCode: `background: true` already says not to poll, and BACKGROUND_INSTRUCTION spells out that
+// repeatedly sleeping and then reading the output file is polling. Neither stops it. In three days of
+// recorded local sessions, 17 calls shaped exactly like `Start-Sleep -Seconds 120; Get-Content <shell
+// output file>` blocked the session for 14.6 minutes total. Words cannot fix a habit whose cost the
+// model cannot feel, so block the shape at the boundary instead. Two guards keep it from eating real
+// work: a short sleep before the next step is normal and stays allowed, and a command that only waits
+// (or checks a port, or sleeps before running a command) never reads a file, so it does not match.
+export const pollTimings = { minSeconds: 20 }
+const SLEEP_SECONDS = /(?:Start-Sleep\s+(?:-Seconds\s+|-s\s+)?(\d+))|(?<![\w-])sleep\s+(\d+)/gi
+const OUTPUT_READ = /Get-Content|Get-ChildItem|Test-Path|Get-Item|(?<![\w-])(?:cat|tail|head|less|more)\s+\S/i
+
+export const pollingWaitNotice = (seconds: number) =>
+  `This command sleeps for ${seconds}s and then reads a file, which blocks the session for the whole wait. Start the long-running part with background: true instead — it returns a shell ID immediately and you are notified with the output when it finishes — then read the output after that notification. If you only need a short pause before the next step, sleep for less than ${pollTimings.minSeconds}s.`
+
+export const detectPollingWait = (input: { command?: string | undefined; background?: boolean | undefined }) => {
+  // A backgrounded command never blocks this call, so its own sleeping loop is none of our business.
+  if (input.background === true) return undefined
+  const command = input.command
+  if (!command) return undefined
+  let longest = 0
+  for (const match of command.matchAll(SLEEP_SECONDS)) {
+    const seconds = Number(match[1] ?? match[2])
+    if (Number.isFinite(seconds)) longest = Math.max(longest, seconds)
+  }
+  if (longest < pollTimings.minSeconds) return undefined
+  if (!OUTPUT_READ.test(command)) return undefined
+  return pollingWaitNotice(longest)
+}
+
 const BACKGROUND_INSTRUCTION =
   "You will be notified automatically when the command finishes. The notification will include the command's output. Unless the user explicitly asks otherwise, DO NOT poll for completion, even if you need the final result to continue. Repeatedly sleeping and reading or searching the output file is polling, not useful work. You may read the current output if it lets you do useful work now, but do not repeatedly check it while waiting for the command to finish. Keep working on anything that does not depend on the result. If you have nothing else to do, end your response; you will be resumed automatically when the command finishes."
 const OS =
@@ -55,6 +102,15 @@ const description = (shell?: string) =>
   [
     "Execute a shell command and return its output.",
     ...(shell ? [`Commands run on ${OS} using ${shell}.`] : []),
+    // SiCode: on Windows the session shell is PowerShell, where a bash here-string (`<<`) and an
+    // input redirect (`<`) are not valid syntax. The portable scanner rejects those commands before
+    // they run, and without this line the model has nothing to tell it which dialect to write.
+    ...(shell && ShellSelect.ps(shell)
+      ? [
+          `Write PowerShell syntax, not bash: here-strings (\`<<\`) and input redirects (\`<\`) are invalid in ${shell}.`,
+          "To pass a multi-line script or file on stdin, write it to a file first and pipe it, for example `Get-Content -Raw script.txt | <command>`.",
+        ]
+      : []),
     "Quote file paths containing spaces or special characters.",
     "Prefer dedicated tools over shell commands when possible.",
     "When output is large, the full result is saved to a file and a truncated preview is returned.",
@@ -102,15 +158,15 @@ const Output = Schema.Struct({
 
 type Output = typeof Output.Type
 
-const resultMessages = (output: Output) => {
+const resultMessages = (output: Output, extra?: string | undefined) => {
   const notice = output.status === "running" ? BACKGROUND_INSTRUCTION : ShellResult.notice(output)
-  return [...(output.output ? [output.output] : []), ...(notice ? [notice] : [])]
+  return [...(output.output ? [output.output] : []), ...(notice ? [notice] : []), ...(extra ? [extra] : [])]
 }
 
-const toolResult = (output: Output) => {
+const toolResult = (output: Output, extra?: string | undefined) => {
   return {
     output,
-    content: resultMessages(output).map((text) => ({ type: "text" as const, text })),
+    content: resultMessages(output, extra).map((text) => ({ type: "text" as const, text })),
     metadata: {
       status: output.status,
       ...ShellResult.metadata(output),
@@ -137,6 +193,9 @@ export const Plugin = {
     const shell = yield* Shell.Service
     const shellSelect = yield* ShellSelect.Service
     const compatibleShell = shellSelect.resolve({ priority: "compat" })
+    // SiCode: name the dialect this session runs so the tool description can warn about bash-only
+    // syntax. Resolved once here because registration is synchronous; a shell change applies on restart.
+    const sessionShell = ShellSelect.name(yield* shellSelect.resolve({ priority: "config" }))
     const permission = yield* Permission.Service
     const config = yield* Config.Service
 
@@ -311,11 +370,14 @@ export const Plugin = {
         editor.add({
           name,
           options: { codemode: false },
-          description: description(),
+          description: description(sessionShell),
           input: Input,
           output: Output,
-          execute: (input, context) =>
-            Effect.gen(function* () {
+          execute: (input, context) => {
+            // Set when the tool starts blocked-waiting, so the reported cost is the wait itself and
+            // not time spent in a permission prompt. Stays 0 for the paths that never block.
+            let waitedFrom = 0
+            return Effect.gen(function* () {
               // SiCode: stop a background command instead of starting a new one. Removal kills a
               // running process through its scope-bound handle, so this is more reliable than
               // shelling out to kill the pid.
@@ -331,6 +393,10 @@ export const Plugin = {
                 }
               }
               if (input.command === undefined) return yield* Effect.fail(new Error("A command is required."))
+              // SiCode: reject the polling shape before it starts, so the wait never happens. See
+              // detectPollingWait for why a notice is not enough.
+              const polling = detectPollingWait(input)
+              if (polling) return yield* Effect.fail(new Error(polling))
               // SiCode: default a model-invoked background command to a 24h lifetime instead of no
               // timeout, so an unreaped server or watcher cannot run forever.
               const timeout = resolveTimeout(input)
@@ -394,11 +460,12 @@ export const Plugin = {
                 return backgroundResult(info.id, info.file, peers)
               }
 
+              waitedFrom = Date.now()
               const result = yield* jobs
                 .block({ id: job.id, sessionID: context.sessionID })
                 .pipe(Effect.onInterrupt(() => jobs.cancel(job.id).pipe(Effect.ignore)))
               if (result?.type === "backgrounded") {
-                yield* shell.timeout(info.id, 0)
+                yield* shell.timeout(info.id, backgroundedTimeout(input))
                 const peers = yield* peerNotice(info.id, context.sessionID, input.command)
                 yield* notifyWhenDone(context.sessionID, job.id, info.id, info.command, settled)
                 yield* watchForStall(context.sessionID, info.id, info.command)
@@ -410,11 +477,14 @@ export const Plugin = {
 
               return yield* Deferred.await(settled)
             }).pipe(
-              Effect.map(toolResult),
+              Effect.map((output) =>
+                toolResult(output, slowNotice(waitedFrom === 0 ? 0 : Date.now() - waitedFrom, output.output.length)),
+              ),
               Effect.mapError(
                 (error) => new ToolFailure({ message: `Unable to execute command: ${input.command}`, error }),
               ),
-            ),
+            )
+          },
         }),
       )
       .pipe(Effect.orDie)

@@ -332,32 +332,18 @@ export const ProjectSettingsExtensions: Component<{
         <ProjectFolderMissing />
         <Tabs
           variant="pill"
-          value={props.subtab ?? "mcps"}
+          value={props.subtab ?? "plugins"}
           onChange={(value) => {
             if (value === "mcps" || value === "plugins" || value === "skills" || value === "lsps") props.onSubtab(value)
           }}
           class="project-settings-extension-tabs settings-subtabs"
         >
           <Tabs.List>
-            <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
             <Tabs.Trigger value="plugins">{language.t("settings.extensions.tab.plugins")}</Tabs.Trigger>
             <Tabs.Trigger value="skills">{language.t("settings.extensions.tab.skills")}</Tabs.Trigger>
+            <Tabs.Trigger value="mcps">{language.t("settings.extensions.tab.mcps")}</Tabs.Trigger>
             <Tabs.Trigger value="lsps">{language.t("project.settings.extensions.tab.lsps")}</Tabs.Trigger>
           </Tabs.List>
-
-          <Tabs.Content value="mcps">
-            <div class="project-settings-extension-section">
-              <ProjectSectionHeader
-                kind="mcps"
-                empty={projectMcpNames().length === 0}
-                action={<span>{language.t("settings.extensions.manageConfig")}</span>}
-              />
-              <Show when={projectMcpNames().length > 0}>
-                <ExtensionCard>{mcpRows(projectMcpNames())}</ExtensionCard>
-              </Show>
-              <SharedSection count={globalMcpNames().length}>{mcpRows(globalMcpNames())}</SharedSection>
-            </div>
-          </Tabs.Content>
 
           <Tabs.Content value="plugins">
             <div class="project-settings-extension-section">
@@ -388,6 +374,20 @@ export const ProjectSettingsExtensions: Component<{
                 <ExtensionCard>{skillRows(projectSkills())}</ExtensionCard>
               </Show>
               <SharedSection count={serverSkills().length}>{skillRows(serverSkills())}</SharedSection>
+            </div>
+          </Tabs.Content>
+
+          <Tabs.Content value="mcps">
+            <div class="project-settings-extension-section">
+              <ProjectSectionHeader
+                kind="mcps"
+                empty={projectMcpNames().length === 0}
+                action={<span>{language.t("settings.extensions.manageConfig")}</span>}
+              />
+              <Show when={projectMcpNames().length > 0}>
+                <ExtensionCard>{mcpRows(projectMcpNames())}</ExtensionCard>
+              </Show>
+              <SharedSection count={globalMcpNames().length}>{mcpRows(globalMcpNames())}</SharedSection>
             </div>
           </Tabs.Content>
           <Tabs.Content value="lsps">

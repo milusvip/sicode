@@ -1,8 +1,8 @@
 /**
  * SiCode: ask an OpenAI-compatible endpoint what it serves, so the custom-provider form can offer
- * its model list instead of making the user type ids from memory. Runs wherever the caller lives
- * (the server answers the UI; the plugin host exposes it to plugins) — never in a renderer, where
- * CORS would hide the answer for most providers.
+ * its model list instead of making the user type ids from memory, and can verify that a configured
+ * key and model actually answer. Runs wherever the caller lives (the server answers the UI; the
+ * plugin host exposes it to plugins) — never in a renderer, where CORS would hide the answer.
  */
 import { Effect } from "effect"
 
@@ -14,6 +14,51 @@ export type ProbeInput = {
   baseURL: string
   apiKey?: string
   headers?: Readonly<Record<string, string>>
+}
+
+export type ChatProbeInput = ProbeInput & { model: string }
+
+const ENV_KEY = /^\{env:([^}]+)\}$/
+
+/**
+ * The form's `{env:NAME}` syntax names an environment variable instead of a literal key, the same
+ * way a saved provider reads it. Resolving it here (the probe already runs server-side) is what
+ * keeps a variable-based provider's buttons working at all: sending the literal `{env:NAME}` as a
+ * bearer token fails every time.
+ */
+function resolveApiKey(apiKey: string | undefined) {
+  if (!apiKey) return undefined
+  const name = apiKey.match(ENV_KEY)?.[1]?.trim()
+
+  if (!name) return apiKey
+  const value = process.env[name]?.trim()
+
+  if (!value) throw new Error(`Environment variable ${name} is not set on the server`)
+
+  return value
+}
+
+function prepare(input: ProbeInput) {
+  const base = input.baseURL.trim().replace(/\/+$/, "")
+
+  if (!/^https?:\/\//i.test(base)) throw new Error("Base URL must start with http:// or https://")
+
+  const headers: Record<string, string> = { Accept: "application/json", ...input.headers }
+  const apiKey = resolveApiKey(input.apiKey)
+
+  if (apiKey && !Object.keys(headers).some((key) => key.toLowerCase() === "authorization"))
+    headers.Authorization = `Bearer ${apiKey}`
+
+  return { base, headers }
+}
+
+/**
+ * OpenAI-compatible servers answer under `/v1`, so a bare host tries that first; a base URL
+ * already ending in `/v1` only adds the suffix, and a host that serves the suffix at its root is
+ * the second candidate.
+ */
+function candidates(base: string, suffix: string) {
+  return base.endsWith("/v1") ? [`${base}/${suffix}`] : [`${base}/v1/${suffix}`, `${base}/${suffix}`]
 }
 
 /**
@@ -67,36 +112,69 @@ async function reason(response: Response) {
   }
 }
 
+// Every attempt is reported: the first candidate failing on a gateway that only serves the other
+// one is normal, and keeping only the last error hid which address actually answered what.
+const describe = (base: string, url: string) => (url.startsWith(base) ? url.slice(base.length) : url)
+
 async function requestModels(input: ProbeInput): Promise<ProbeModel[]> {
-  const base = input.baseURL.trim().replace(/\/+$/, "")
+  const { base, headers } = prepare(input)
+  const attempts: string[] = []
 
-  if (!/^https?:\/\//i.test(base)) throw new Error("Base URL must start with http:// or https://")
+  for (const url of candidates(base, "models")) {
+    const path = describe(base, url)
 
-  const headers: Record<string, string> = { Accept: "application/json", ...input.headers }
-  const hasAuthorization = Object.keys(headers).some((key) => key.toLowerCase() === "authorization")
-  if (input.apiKey && !hasAuthorization) headers.Authorization = `Bearer ${input.apiKey}`
-
-  const urls = base.endsWith("/v1") ? [`${base}/models`] : [`${base}/models`, `${base}/v1/models`]
-  let failure: Error | undefined
-
-  for (const url of urls) {
     try {
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
       if (!response.ok) {
-        failure = new Error(`${response.status} ${response.statusText} — ${await reason(response)}`)
+        attempts.push(`${path} → ${response.status} ${response.statusText} — ${await reason(response)}`)
         continue
       }
       return modelEntries(await response.json())
     } catch (error) {
-      failure = error instanceof Error ? error : new Error(String(error))
+      attempts.push(`${path} → ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
-  throw failure ?? new Error("Unable to reach the provider")
+  throw new Error(attempts.join("; ") || "Unable to reach the provider")
 }
 
+/** One one-token turn: the cheapest request that proves the key, the model, and the route all work. */
+async function requestChat(input: ChatProbeInput): Promise<void> {
+  const { base, headers } = prepare(input)
+  const attempts: string[] = []
+
+  for (const url of candidates(base, "chat/completions")) {
+    const path = describe(base, url)
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: input.model,
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 1,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      })
+      if (!response.ok) {
+        attempts.push(`${path} → ${response.status} ${response.statusText} — ${await reason(response)}`)
+        continue
+      }
+      return
+    } catch (error) {
+      attempts.push(`${path} → ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  throw new Error(attempts.join("; ") || "Unable to reach the provider")
+}
+
+const failure = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
+
 export const probeModels = (input: ProbeInput) =>
-  Effect.tryPromise({
-    try: () => requestModels(input),
-    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  })
+  Effect.tryPromise({ try: () => requestModels(input), catch: failure })
+
+export const probeChat = (input: ChatProbeInput) =>
+  Effect.tryPromise({ try: () => requestChat(input), catch: failure })

@@ -7,6 +7,16 @@ import type { ServerReadyData } from "../shared/ipc-contract"
 
 type Progress = Extract<MigrationV1StatusOutput, { status: "running" }>["progress"]
 
+// SiCode: this mounts as soon as the renderer is up, which is routinely before the sidecar is
+// answering — a restart race is common on Windows. A transport failure only means "not reachable
+// yet", not that the migration failed, so keep polling through it instead of alarming the user.
+// Only a server-reported status of "error" means the migration itself broke.
+const TRANSPORT_GRACE_MS = 30_000
+
+function isTransportError(error: unknown) {
+  return error instanceof Error && error.name === "ClientError" && error.message.startsWith("Transport:")
+}
+
 export function MigrationStatus(props: { server: ServerReadyData }) {
   const language = useLanguage()
   const [progress, setProgress] = createSignal<Progress>()
@@ -86,16 +96,25 @@ export function MigrationStatus(props: { server: ServerReadyData }) {
     const client = OpenCode.make({ baseUrl: props.server.url })
 
     void (async () => {
+      const deadline = Date.now() + TRANSPORT_GRACE_MS
       while (true) {
-        const status = await client.migration.v1.status({ signal: abort.signal })
-        setProgress(status.status === "running" ? status.progress : undefined)
+        try {
+          const status = await client.migration.v1.status({ signal: abort.signal })
+          setProgress(status.status === "running" ? status.progress : undefined)
 
-        if (status.status === "running") show()
-        else hide()
+          if (status.status === "running") show()
+          else hide()
 
-        if (status.status === "completed") return
+          if (status.status === "completed") return
 
-        if (status.status === "error") throw new Error(status.error)
+          if (status.status === "error") throw new Error(status.error)
+        } catch (error) {
+          if (abort.signal.aborted) return
+          if (!isTransportError(error) || Date.now() >= deadline) throw error
+          // Sidecar not answering yet: hold the toast and try again.
+          await wait(1_000, abort.signal)
+          continue
+        }
         await wait(1_000, abort.signal)
       }
     })().catch((error) => {

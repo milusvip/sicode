@@ -64,6 +64,29 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
       }),
     ),
   )
+  .add(
+    // SiCode: verify a configured endpoint before saving it — with a model, one one-token turn; without
+    // one, the model listing is all that can be checked. Nothing here reads the Location either.
+    HttpApiEndpoint.post("provider.test", "/api/provider/test", {
+      payload: Schema.Struct({
+        baseURL: Schema.String,
+        apiKey: Schema.optional(Schema.String),
+        headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+        model: Schema.optional(Schema.String),
+      }),
+      success: Schema.Struct({
+        mode: Schema.Literals(["chat", "models"]),
+      }).annotate({ identifier: "ProviderProbeResult" }),
+      error: [InvalidRequestError, ServiceUnavailableError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "provider.test",
+        summary: "Test a provider endpoint",
+        description:
+          "Check that an OpenAI-compatible endpoint accepts the configured credentials. With a model id it sends one minimal turn; without one it only verifies the model listing.",
+      }),
+    ),
+  )
   .annotateMerge(
     OpenApi.annotations({
       title: "provider",

@@ -19,6 +19,24 @@
   --home-row-surface: var(--v2-background-bg-layer-03);
 }
 
+/* SiCode: inside the dropdown popover the panel itself is layer-01 (matching the app-wide context
+   menu), so the page-scoped colors above disappear — the row default would paint bg-base on top of
+   it and the hover would be invisible. One step lighter for each state keeps them readable. */
+[data-component="home-projects-dropdown-panel"] [data-home-row] {
+  --home-row-surface: var(--v2-background-bg-layer-01);
+}
+
+[data-component="home-projects-dropdown-panel"] [data-home-row]:is(:hover, :focus-within, [data-dragging="true"], :has([data-menu="true"])) {
+  --home-row-surface: var(--v2-background-bg-layer-02);
+}
+
+/* The nav buttons ("主页", "设置", hover layer-01) sit on the same layer-01 panel; give their hover
+   the same one-step treatment. Unlayered rules beat Tailwind utilities regardless of specificity. */
+[data-component="home-projects-dropdown-panel"] .hover\:bg-v2-background-bg-layer-01:hover {
+  background-color: var(--v2-background-bg-layer-02);
+}
+
+
 [data-home-row][data-dimmed="true"] {
   --home-row-opacity: 60%;
 }

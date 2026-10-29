@@ -91,6 +91,32 @@ const GLYPHS: Record<ContextMenuActionID, () => JSX.Element> = {
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
       </>,
     ),
+  // SiCode: the picture with a folded corner of the copy glyph behind it, so copy-image reads as
+  // the same family as edit.copy.
+  "image.copy": () =>
+    glyph(
+      <>
+        <rect x="9" y="9" width="12" height="12" rx="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        <circle cx="13.5" cy="13.5" r="0.5" />
+        <path d="m21 17-3.5-3.5L11 20" />
+      </>,
+    ),
+  "image.copyAddress": () =>
+    glyph(
+      <>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21" />
+      </>,
+    ),
+  "message.copy": () =>
+    glyph(
+      <>
+        <rect x="8" y="8" width="13" height="13" rx="2" />
+        <path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
+      </>,
+    ),
   "view.inspectElement": () =>
     glyph(
       <>

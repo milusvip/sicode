@@ -3,7 +3,7 @@
 [data-component="markdown"] {
   --markdown-inline-code-path-color: var(--v2-text-text-code-path);
   --markdown-inline-code-color: var(--v2-text-text-code-accent);
-  --markdown-inline-code-bg-mix: 8%;
+  --markdown-inline-code-bg-mix: 14%;
   --markdown-shell-code-background: var(--v2-background-bg-layer-02);
   --markdown-shell-code-border: var(--v2-border-border-muted);
   --markdown-shell-code-color: var(--v2-text-text-base);
@@ -50,7 +50,7 @@
 
   /* Headings: Sized by level, distinguished by color and spacing */
   h1 {
-    font-size: 17px;
+    font-size: var(--font-size-x-large);
     color: var(--v2-text-text-base);
     font-weight: 600;
     margin-top: 28px;
@@ -59,7 +59,7 @@
   }
 
   h2 {
-    font-size: 15px;
+    font-size: var(--font-size-large);
     color: var(--v2-text-text-base);
     font-weight: 600;
     margin-top: 24px;
@@ -197,11 +197,23 @@
   /* Lists */
   ul,
   ol {
-    margin-top: 8px;
-    margin-bottom: 12px;
+    /* SiCode: a list is one grouped block of content, so it now reads as a block — a soft rounded
+       surface, the same vocabulary the quote block uses. The 36px start padding is 16px of
+       breathing room plus a 20px slot for the marker, so nothing hangs outside the surface
+       (demo: artifacts/markdown-polish-demo.html §⑦). */
+    margin: 14px 0;
     margin-inline-start: 0;
-    padding-inline-start: 32px;
+    padding: 10px 16px 10px 36px;
     list-style-position: outside;
+    background: color-mix(in oklch, var(--v2-text-text-base) 5%, transparent);
+    border-radius: 8px;
+  }
+
+  /* SiCode: markers used to be the same colour as the text, so in a list full of inline code
+     every bullet/number fought the content for attention. Quiet markers give the rows a spine
+     without adding weight (demo: artifacts/markdown-polish-demo.html §⑦). */
+  li::marker {
+    color: var(--v2-text-text-faint);
   }
 
   ul {
@@ -210,11 +222,20 @@
 
   ol {
     list-style-type: decimal;
-    padding-inline-start: 2.25rem;
   }
 
   li {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+  }
+
+  /* Nested lists hang off their parent row instead of floating at the outer margin's rhythm — and
+     they are sub-rows, not blocks, so they drop the container and keep only the indent. */
+  li > ul,
+  li > ol {
+    margin: 6px 0 0;
+    padding: 0 0 0 20px;
+    background: none;
+    border-radius: 0;
   }
 
   li > p:first-child {
@@ -234,6 +255,8 @@
     top: 4px;
     inset-inline-start: -20px;
     margin: 0;
+    /* SiCode: the native control follows the OS accent; tie it to the interactive token. */
+    accent-color: var(--text-interactive-base);
   }
 
   li > p + p {
@@ -259,23 +282,52 @@
 
   /* Blockquotes */
   blockquote {
-    border-inline-start: 0.5px solid var(--v2-border-border-base);
-    margin: 1rem 0;
-    padding-inline-start: 0.5rem;
+    /* SiCode: a hairline + grey text read as ordinary prose; a quote is a semantic block. The
+       first attempt — flat accent bar glued to a half-rounded card — looked cheap: the bar hugged
+       a sharp corner while the other side was rounded, and the 5% wash was invisible. Now it is a
+       rounded card with an inset accent pill (demo: artifacts/markdown-polish-demo.html §②). */
+    position: relative;
+    background: color-mix(in oklch, var(--v2-text-text-accent) 6%, transparent);
+    border-radius: 8px;
+    margin: 14px 0;
+    padding: 10px 16px;
     color: var(--v2-text-text-muted);
     font-style: normal;
   }
 
-  /* Horizontal Rule - Invisible spacing only */
+  blockquote::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 5px;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--v2-text-text-accent) 65%, transparent);
+  }
+
+  blockquote > :first-child {
+    margin-top: 0;
+  }
+  blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  /* Horizontal Rule */
   hr {
+    /* SiCode: was invisible spacing only; draw a muted line so the author's --- reads as a rhythm break. */
     border: none;
+    border-top: 1px solid var(--v2-border-border-muted);
     height: 0;
-    margin: 32px 0;
+    margin: 28px 0;
   }
 
   .highlights {
-    background: var(--color-background-stronger);
-    color: var(--text-base);
+    /* SiCode: the old --color-background-stronger/--text-base pair only follows the OS preference,
+       not the app's data-color-scheme — a light app on a dark OS got a black code card. Use the
+       v2 tokens (demo: artifacts/markdown-polish-demo.html §⑥). */
+    background: var(--v2-background-bg-layer-02);
+    color: var(--v2-text-text-base);
     /* Markdown root is sans; pin the block so it does not inherit the UI face for Latin. */
     font-family: var(--font-family-mono);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
@@ -376,11 +428,25 @@
   pre {
     margin-top: 12px;
     margin-bottom: 24px;
+    /* SiCode: a 200-line answer block used to stretch the whole transcript; cap it and keep the
+       scrollbars visible so overflow is discoverable (demo: artifacts/markdown-polish-demo.html §④). */
+    max-height: 400px;
     overflow: auto;
-
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--v2-text-text-base) 22%, transparent) transparent;
     &::-webkit-scrollbar {
-      display: none;
+      display: block;
+      height: 8px;
+      width: 8px;
+    }
+    &::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--v2-text-text-base) 22%, transparent);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    &::-webkit-scrollbar-track {
+      background: transparent;
     }
   }
 
@@ -419,8 +485,10 @@
     width: 100%;
     border-collapse: collapse;
     margin: 16px 0;
-    font-size: 12.5px;
-    line-height: 1.55;
+    /* SiCode: table text follows the theme scale instead of a hardcoded 12.5px. Body copy is 15px,
+       so the old size read as a second, much smaller document. */
+    font-size: var(--font-size-small);
+    line-height: 1.6;
     display: block;
     overflow-x: auto;
   }
@@ -446,8 +514,10 @@
     top: 0;
     z-index: 1;
     color: var(--v2-text-text-muted);
-    font-weight: 550;
-    font-size: 11.5px;
+    font-weight: var(--font-weight-medium);
+    /* SiCode: header cells used to sit another 1px below the cells (11.5px); one step down from
+       body copy is enough, so the header keeps only weight and colour as its cue. */
+    font-size: inherit;
     white-space: nowrap;
     background: var(--v2-background-bg-layer-01);
     border-bottom: 1px solid var(--v2-border-border-base);
@@ -713,8 +783,9 @@
   top: 0;
   z-index: 1;
   color: var(--v2-text-text-muted);
-  font-weight: 550;
-  font-size: 11.5px;
+  font-weight: var(--font-weight-medium);
+  /* SiCode: keep the zoom header on the same size step as the inline table header. */
+  font-size: inherit;
   white-space: nowrap;
   background: var(--v2-background-bg-layer-01);
   border-bottom: 1px solid var(--v2-border-border-base);

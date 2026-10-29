@@ -1,4 +1,7 @@
 import { Component, createMemo } from "solid-js"
+import { Button } from "@opencode/ui/button"
+import { useDialog } from "@opencode/ui/context/dialog"
+import { Icon } from "@opencode/ui/icon"
 import { Select } from "@opencode/ui/select"
 import { TextInput } from "@opencode/ui/text-input"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -104,6 +107,11 @@ const FontSetting: Component<{
 export const SettingsAppearance: Component = () => {
   const language = useLanguage()
   const appearance = createAppearanceSettingsController()
+  const dialog = useDialog()
+
+  // The theme picker is reachable only from this row, so it loads on first open.
+  const openThemeDialog = () =>
+    void import("./theme-dialog").then((mod) => dialog.show(() => <mod.DialogThemeSelect />))
 
   return (
     <>
@@ -151,16 +159,16 @@ export const SettingsAppearance: Component = () => {
                 </>
               }
             >
-              <Select
+              <Button
                 data-action="settings-theme"
-                options={appearance.theme.options()}
-                current={appearance.theme.current()}
-                placement="bottom-end"
-                gutter={6}
-                value={(option) => option.id}
-                label={(option) => option.name}
-                onSelect={appearance.theme.select}
-              />
+                variant="ghost"
+                size="small"
+                aria-haspopup="dialog"
+                onClick={openThemeDialog}
+              >
+                {appearance.theme.current()?.name}
+                <Icon name="chevron-down" class="text-v2-icon-icon-muted" />
+              </Button>
             </SettingsRow>
 
             <SessionWidthSetting />

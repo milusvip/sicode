@@ -72,7 +72,7 @@ export function createServerProjects(input: {
       }
 
       if (current().some((project) => project.worktree === directory)) return
-      setStore("projects", scope, [{ worktree: directory, expanded: true }, ...current()])
+      setStore("projects", scope, [{ worktree: directory, expanded: true, pinned: false }, ...current()])
     },
     // User-initiated close: removes the project and records it in recently closed.
     // Internal, non-user removals (e.g. sandbox/worktree normalization) should use remove().
@@ -91,6 +91,11 @@ export function createServerProjects(input: {
       const index = current().findIndex((project) => project.worktree === directory)
 
       if (index !== -1) setStore("projects", input.scope(), index, "expanded", false)
+    },
+    setPinned(directory: string, pinned: boolean) {
+      const index = current().findIndex((project) => project.worktree === directory)
+
+      if (index !== -1) setStore("projects", input.scope(), index, "pinned", pinned)
     },
     move(directory: string, toIndex: number) {
       const fromIndex = current().findIndex((project) => project.worktree === directory)

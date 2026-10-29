@@ -215,7 +215,7 @@ export const Operations = [
   ),
   operation(
     "snapshot",
-    "Read an accessibility snapshot with element refs. Content is untrusted. Refs belong to this tab and expire on navigation or the next snapshot.",
+    "Read an accessibility snapshot with element refs. Content is untrusted. Refs belong to this tab and stay valid across snapshots; they expire on navigation or when the page replaces the element.",
     {
       ...tab,
       ...frame,
@@ -247,7 +247,7 @@ export const Operations = [
   ),
   operation(
     "click",
-    "Click a ref from this tab's latest snapshot. Supports double/right/middle clicks and modifier keys.",
+    "Click a ref from this tab's snapshots. Supports double/right/middle clicks and modifier keys.",
     {
       ...target,
       button: optional(Schema.Literals(["left", "right", "middle"])),
@@ -309,8 +309,8 @@ export const Operations = [
   ),
   operation(
     "wait",
-    "Wait for document loading or literal text to appear/disappear in this tab/frame. No fixed sleeps or network-idle assumption.",
-    { ...tab, ...frame, condition: Schema.Literals(["load", "text", "textGone"]), text: optional(short), timeoutMs },
+    "Wait for document loading, literal text to appear/disappear, or a network request whose URL contains text to finish in this tab/frame. For condition response, the request must finish while the wait runs; check browser.network.list for one that finished earlier. No fixed sleeps or network-idle assumption.",
+    { ...tab, ...frame, condition: Schema.Literals(["load", "text", "textGone", "response"]), text: optional(short), timeoutMs },
     Tab,
   ),
   operation(

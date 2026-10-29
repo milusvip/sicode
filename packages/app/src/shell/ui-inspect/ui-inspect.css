@@ -6,7 +6,13 @@
 }
 
 [data-component="ui-inspect"][data-phase="comment"] {
+  /* SiCode: while composing a comment the page below must stay hoverable, otherwise every
+     element reports the overlay's cursor and hides its own — a "…" trigger with
+     cursor-pointer read as a plain arrow. The editor card takes pointer events back, and the
+     overlay still swallows stray clicks from a document listener so the app cannot react to
+     them. */
   cursor: default;
+  pointer-events: none;
 }
 
 [data-slot="ui-inspect-spotlight"] {
@@ -37,6 +43,7 @@
 [data-slot="ui-inspect-editor"] {
   position: absolute;
   overflow: auto;
+  pointer-events: auto;
   border-radius: 6px;
   box-shadow: var(--v2-elevation-raised);
   background: var(--v2-background-bg-base);

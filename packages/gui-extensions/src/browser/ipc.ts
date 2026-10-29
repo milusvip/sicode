@@ -93,10 +93,18 @@ export const BrowserPane = Ipc.define({
     // Deletes the cookies the page's address can read and its origin's stored data, then reloads the page.
     clearSite: { input: Schema.Struct({ binding, tabID: Browser.TabID }) },
     // Writes pasted login cookies for the page's own site, then reloads it so the site sees them. Resolves with the
-    // number of cookies written; a paste for another site, or one Chromium rejects, fails with the reason.
+    // number of cookies written and the best-effort login-state read; a paste for another site, or one Chromium
+    // rejects, fails with the reason.
     setCookies: {
       input: Schema.Struct({ binding, tabID: Browser.TabID, text: text(MAX_COOKIE_TEXT) }),
-      output: Schema.Struct({ cookies: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) }),
+      output: Schema.Struct({
+        cookies: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+        login: Schema.Struct({
+          state: Schema.Literals(["likely", "unclear", "unlikely"]),
+          kept: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+          pasted: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+        }),
+      }),
     },
     close: { input: Schema.Struct({ binding }) },
   },

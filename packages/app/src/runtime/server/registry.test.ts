@@ -89,7 +89,7 @@ test("project actions update schema-derived state and follow dynamic server scop
   projects.open("/remote")
   projects.collapse("/remote")
   projects.touch("/remote")
-  expect(projects.list()).toEqual([{ worktree: "/remote", expanded: false }])
+  expect(projects.list()).toEqual([{ worktree: "/remote", expanded: false, pinned: false }])
   expect(projects.last()).toBe("/remote")
   props.canonicalLocalServer = props.server
   expect(projects.list()).toEqual([])
@@ -98,6 +98,6 @@ test("project actions update schema-derived state and follow dynamic server scop
   expect(projects.recentlyClosed()).toEqual(["/local"])
   projects.open("/local")
   expect(projects.recentlyClosed()).toEqual([])
-  expect(store.projects.local).toEqual([{ worktree: "/local", expanded: true }])
-  expect(store.projects[props.server]).toEqual([{ worktree: "/remote", expanded: false }])
+  expect(store.projects.local).toEqual([{ worktree: "/local", expanded: true, pinned: false }])
+  expect(store.projects[props.server]).toEqual([{ worktree: "/remote", expanded: false, pinned: false }])
 })

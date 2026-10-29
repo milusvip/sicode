@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiCode × Cursor 差距有多大</title>
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:#f6f6f4;--surface:#fff;--surface-2:#f1f1ef;
+  --text:#17171a;--text-2:#54545c;--text-3:#8a8a93;
+  --line:#dedede;--line-2:#ececec;
+  --done:#1f8a54;--done-bg:#e3f5ea;
+  --skip:#7c4ef0;--skip-bg:#efe9ff;
+  --open:#b8790a;--open-bg:#fdf0d4;
+  --na:#6b7280;--na-bg:#ececef;
+  --mono:ui-monospace,"Cascadia Mono","JetBrains Mono",Consolas,monospace;
+  --sans:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#0f0f11;--surface:#17171a;--surface-2:#1e1e22;
+    --text:#ececee;--text-2:#a4a4ae;--text-3:#6f6f7a;
+    --line:#2b2b31;--line-2:#222228;
+    --done:#4ec78a;--done-bg:#16301f;
+    --skip:#a98cf8;--skip-bg:#241c3a;
+    --open:#e5b14a;--open-bg:#33260f;
+    --na:#9096a1;--na-bg:#232327;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;padding:28px 16px 64px;
+  background:var(--bg);color:var(--text);
+  font:14px/1.6 var(--sans);
+}
+.wrap{max-width:900px;margin:0 auto}
+
+/* header */
+header{margin-bottom:26px}
+.kicker{font:11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--text-3)}
+h1{margin:10px 0 10px;font-size:clamp(20px,5.2vw,27px);font-weight:640;letter-spacing:-.015em;line-height:1.25}
+.lede{margin:0;color:var(--text-2);max-width:60ch}
+.meta{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px 14px;font:11.5px/1.5 var(--mono);color:var(--text-3)}
+
+/* gauge */
+.gauge{
+  margin:0 0 24px;padding:16px 17px 14px;
+  background:var(--surface);border:1px solid var(--line);border-radius:11px;
+}
+.gauge-head{display:flex;align-items:baseline;gap:9px;margin:0 0 12px;flex-wrap:wrap}
+.gauge-head h2{margin:0;font-size:14px;font-weight:640}
+.gauge-head .sub{font-size:12px;color:var(--text-3)}
+.gauge-bar{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.gauge-bar span{
+  display:grid;place-items:center;
+  font:600 11px/1 var(--mono);color:#fff;
+  min-width:0;overflow:hidden;
+}
+.gauge-bar .s-done{background:var(--done)}
+.gauge-bar .s-open{background:var(--open)}
+.gauge-bar .s-skip{background:var(--skip)}
+.gauge-bar .s-na{background:var(--na)}
+.gauge-key{margin-top:11px;display:flex;flex-wrap:wrap;gap:8px 16px}
+.gauge-key div{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2)}
+.gauge-key i{width:9px;height:9px;border-radius:2.5px;display:block}
+.gauge-key b{color:var(--text);font-weight:640;font:600 12px/1 var(--mono)}
+.verdict-line{
+  margin:13px 0 0;padding-top:12px;border-top:1px solid var(--line-2);
+  font-size:13.5px;color:var(--text-2);
+}
+.verdict-line b{color:var(--text);font-weight:640}
+
+/* proof */
+.proof{
+  margin:0 0 26px;padding:15px 17px 14px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:11px;
+}
+.proof h2{margin:0 0 3px;font-size:14px;font-weight:640}
+.proof .hint{margin:0 0 13px;font-size:12.5px;color:var(--text-3)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:9px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 11px}
+.stat .n{font:640 19px/1.15 var(--mono);letter-spacing:-.02em;color:var(--text)}
+.stat .l{margin-top:4px;font-size:11.5px;line-height:1.4;color:var(--text-3)}
+.proof-note{margin:13px 0 0;font-size:12.5px;color:var(--text-2)}
+.proof-note code{font:11.5px/1.5 var(--mono);background:var(--surface);border:1px solid var(--line);border-radius:3px;padding:1px 4px}
+
+/* legend */
+.legend{margin:0 0 22px;display:flex;flex-direction:column;gap:6px}
+.legend-row{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--text-2)}
+.tier{
+  flex:0 0 auto;width:19px;height:19px;border-radius:5px;
+  display:grid;place-items:center;
+  font:600 10.5px/1 var(--mono);
+  background:var(--surface-2);color:var(--text-2);border:1px solid var(--line)
+}
+.tier.a{color:var(--done);border-color:var(--done)}
+.tier.b{color:var(--open);border-color:var(--open)}
+.tier.c{color:var(--skip);border-color:var(--skip)}
+.legend-row b{color:var(--text);font-weight:600}
+
+/* filters */
+.bar{
+  position:sticky;top:0;z-index:5;
+  margin:0 -16px 20px;padding:10px 16px;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line-2);
+  display:flex;gap:7px;flex-wrap:wrap;
+}
+.bar button{
+  font:12.5px/1 var(--sans);color:var(--text-2);
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:7px 12px;cursor:pointer;
+  transition:color .12s,border-color .12s,background .12s;
+}
+.bar button:hover{color:var(--text);border-color:var(--text-3)}
+.bar button[aria-pressed=true]{color:var(--text);border-color:var(--text);background:var(--surface-2)}
+.bar .n{font:10.5px/1 var(--mono);color:var(--text-3);margin-left:5px}
+
+/* layers */
+.layer{margin:0 0 30px}
+.layer-head{display:flex;align-items:baseline;gap:9px;margin:0 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.layer-head h2{margin:0;font-size:15px;font-weight:640;letter-spacing:.01em}
+.layer-head .sub{font-size:12px;color:var(--text-3)}
+.layer-head .cnt{margin-left:auto;font:11px/1 var(--mono);color:var(--text-3)}
+
+/* cards */
+.cards{display:flex;flex-direction:column;gap:9px}
+.card{
+  position:relative;background:var(--surface);
+  border:1px solid var(--line);border-radius:9px;
+  padding:13px 14px 12px 15px;
+  border-left-width:3px;
+}
+.card[data-verdict=done]{border-left-color:var(--done)}
+.card[data-verdict=skip]{border-left-color:var(--skip)}
+.card[data-verdict=open]{border-left-color:var(--open)}
+.card[data-verdict=na]{border-left-color:var(--na)}
+.card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card h3{margin:0;font-size:14px;font-weight:620;letter-spacing:-.005em}
+.v{
+  font:600 10.5px/1 var(--sans);letter-spacing:.03em;
+  padding:3px 7px;border-radius:4px;white-space:nowrap;
+}
+[data-verdict=done] .v{color:var(--done);background:var(--done-bg)}
+[data-verdict=skip] .v{color:var(--skip);background:var(--skip-bg)}
+[data-verdict=open] .v{color:var(--open);background:var(--open-bg)}
+[data-verdict=na] .v{color:var(--na);background:var(--na-bg)}
+.card .tag{
+  margin-left:auto;font:10.5px/1 var(--mono);color:var(--text-3);
+  border:1px solid var(--line);border-radius:4px;padding:3px 6px;white-space:nowrap;
+  overflow-wrap:anywhere;
+}
+.rows{margin-top:9px;display:flex;flex-direction:column;gap:5px}
+.row{display:flex;gap:9px;font-size:13px}
+.row .k{
+  flex:0 0 52px;padding-top:1px;white-space:nowrap;
+  font:10.5px/1.7 var(--mono);letter-spacing:.02em;color:var(--text-3);
+}
+.row .v2{flex:1 1 auto;min-width:0;color:var(--text-2)}
+.row .v2 b{color:var(--text);font-weight:600}
+.row code{
+  font:11.5px/1.5 var(--mono);color:var(--text);
+  background:var(--surface-2);border-radius:3px;padding:1px 4px;
+  overflow-wrap:anywhere;
+}
+.tierchip{
+  display:inline-block;vertical-align:1px;
+  font:600 9.5px/1 var(--mono);padding:2px 4px;border-radius:3px;margin-right:4px;
+  border:1px solid currentColor;
+}
+.tierchip.t-a{color:var(--done)}
+.tierchip.t-b{color:var(--open)}
+.tierchip.t-c{color:var(--skip)}
+.tierchip.t-d{color:var(--na)}
+.tierchip.t-x{color:var(--text-3)}
+
+/* ui layer note */
+aside{
+  margin:34px 0 0;padding:15px 16px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:9px;
+}
+aside h2{margin:0 0 4px;font-size:14px;font-weight:640}
+aside .hint{margin:0 0 12px;font-size:12.5px;color:var(--text-3)}
+.ui-list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.ui-list li{display:flex;gap:10px;font-size:13px;color:var(--text-2);flex-wrap:wrap}
+.ui-list .src{
+  flex:0 0 auto;font:600 10.5px/1.6 var(--mono);
+  color:var(--text);background:var(--surface);border:1px solid var(--line);
+  border-radius:4px;padding:1px 6px;
+}
+.ui-list .what{flex:1 1 200px;min-width:0}
+
+footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--text-3)}
+footer p{margin:0 0 6px}
+.hidden{display:none!important}
+@media (max-width:430px){
+  .row .k{flex-basis:44px}
+  .card .tag{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">SiCode × Cursor · 差距实测</div>
+  <h1>差距到底有多大</h1>
+  <p class="lede">拿 Cursor 那份逆向稿给出的标尺（可复刻的结构闸门）逐条量，再看真实会话数据。结论分三层：结构层差距很小，部署层差距无法消除，真正让人觉得慢的是模型能力。</p>
+  <div class="meta">
+    <span>标尺 逆向稿 §3 十条 + §4.2 七条</span>
+    <span>样本 Cursor 3.24.18（未解包）</span>
+    <span>SiCode 侧 全部经本机内核核对</span>
+  </div>
+</header>
+
+<section class="gauge">
+  <div class="gauge-head">
+    <h2>结构闸门对齐度</h2>
+    <span class="sub">只统计「能用代码实现」的那部分</span>
+  </div>
+  <div class="gauge-bar" id="gbar"></div>
+  <div class="gauge-key" id="gkey"></div>
+  <p class="verdict-line" id="gline"></p>
+</section>
+
+<section class="proof">
+  <h2>真实会话实测（不是估计）</h2>
+  <p class="hint">本机会话库 25 个会话全量统计，外加一个 87 步会话的逐步回放。</p>
+  <div class="stats">
+    <div class="stat"><div class="n">2.9%</div><div class="l">3384 次工具调用<br>失败率</div></div>
+    <div class="stat"><div class="n">11.4s</div><div class="l">单轮中位延迟<br>模型推理为主</div></div>
+    <div class="stat"><div class="n">87 步</div><div class="l">一个「改个图标」<br>实际走的步数</div></div>
+    <div class="stat"><div class="n">13%</div><div class="l">其中原地打转<br>占的墙钟时间</div></div>
+  </div>
+  <p class="proof-note">
+    99 次失败里约 23 次是环境问题（<code>Transport error</code> 14 次走代理注入已修、<code>shell scanner</code> 9 次走方言提示已修），约 40 次是模型能力（输出超限、参数写坏、edit 失配）。<b>剩下让你觉得慢的，harness 拦不住。</b>
+  </p>
+</section>
+
+<div class="legend">
+  <div class="legend-row"><span class="tier a">A</span><span><b>厂商博客自述</b> — cursor.com/research 三篇，措辞可核对，但不是二进制证据</span></div>
+  <div class="legend-row"><span class="tier b">B</span><span><b>社区重建协议面</b> — <code>agent.v1</code> proto 与 provider 实现，字段级可信</span></div>
+  <div class="legend-row"><span class="tier c">C</span><span><b>外泄 prompt</b> — 内容可信，来源与版本不可核</span></div>
+  <div class="legend-row"><span class="tier">D</span><span><b>未证实</b> — 只有间接信号或社区推断，只用于说明「不确定」</span></div>
+  <div class="legend-row"><span class="tier">–</span><span><b>无档位</b> — 本地判断或部署形态差异，没有可核的 Cursor 侧对照</span></div>
+</div>
+
+<nav class="bar" id="bar"></nav>
+
+<div id="app"></div>
+
+<aside>
+  <h2>标尺量不到的那部分，才是体感差距</h2>
+  <p class="hint">下面这些不在上面的统计里，但它们才是「Cursor 感觉更聪明」的来源，且都不是 fork 能补的。</p>
+  <ul class="ui-list">
+    <li><span class="src">服务端</span><span class="what">分模型 system prompt 在服务端注入，客户端只拿到成品描述符。B 档 <code>ModelDetails</code> 证实了注入点，内容看不到</span></li>
+    <li><span class="src">训练侧</span><span class="what">RL 目标（工具选择偏好、并行倾向）。D 档，稿子明令不推测</span></li>
+    <li><span class="src">编辑器</span><span class="what">Cmd-K fast-apply 小模型（~1000 tok/s）。是编辑器交互，桌面端没有对应入口</span></li>
+    <li><span class="src">部署</span><span class="what">云端沙箱预热、单 RPC connect-proto 长连。本地进程模型没有可预热的对象</span></li>
+    <li><span class="src">模型</span><span class="what">同样 87 步的任务，强模型 4 步走完。这一步差 5 倍，比上面所有 harness 项加起来都大</span></li>
+  </ul>
+</aside>
+
+<footer>
+  <p>一句话结论：按可复刻的结构闸门算，SiCode 和 Cursor 的差距只剩个位数条目，且多数是重活（索引类）而非缺失。真正拉开体验的是部署形态和模型能力——前者是架构选择不是落后，后者换模型就能补。</p>
+  <p>证据归档：<code>D:\软件丨工具\cursor逆向专区</code>；SiCode 侧每条都标了文件与行号，可逐条核对。</p>
+</footer>
+
+</div>
+<script>
+const D = []
+
+D.push(
+  {
+    l: "speed", v: "done",
+    t: "grep 长输出落盘，上下文里只留路径",
+    c: "工具输出转成文件引用，模型需要时再读，而不是一次性灌满窗口",
+    ct: "a",
+    s: "Rendered.spill 写入临时文件，回填路径 + 摘要行，模型按需再读。逆向稿判定「收益最大」的一条",
+    w: "packages/core/src/tool/plugin/grep.ts",
+  },
+  {
+    l: "speed", v: "done",
+    t: "检索结果按文件相关性排序，而不是平铺",
+    c: "同属 dynamic context discovery：结果做重排，测试与噪声文件沉底",
+    ct: "a",
+    s: "Files by relevance 排序，测试文件降权，文件名命中的优先于内容命中",
+    w: "packages/core/src/tool/plugin/grep.ts",
+  },
+  {
+    l: "speed", v: "done",
+    t: "全模型统一一套编辑语义",
+    c: "客户端只保证一套 apply 语义；但另有 Cmd-K 小模型走 fast-apply，两套并存",
+    ct: "d",
+    s: "usePatch 直接 no-op，不再按模型挑编辑器格式。逆向稿 §4.2 第 1 条明确要求改这个，已改",
+    w: "packages/core/src/tool/plugin/patch.ts:321",
+  },
+  {
+    l: "speed", v: "done",
+    t: "retry-after 上限从 15 分钟压到 1 分钟",
+    c: "无对照。这条没有可核证据，是本地判断",
+    ct: "x",
+    s: "服务端给的 retry-after 超过 60s 就按 60s 走，一次 429 不该挂死一整轮",
+    w: "packages/core/src/session/runner/retry.ts",
+  },
+  {
+    l: "anti", v: "done",
+    t: "完成闸门做成提醒，不做成硬闸门",
+    c: "有完成判定；判定未达成时结构性再走一轮，模型没有收尾的余地",
+    ct: "b",
+    s: "completion gate 只注入一条 nudge，模型可以判定「已经做完了」而直接收尾。逆向稿建议做成结构闸门，这里刻意留了口子",
+    w: "packages/core/src/session/runner/completion-gate.ts",
+  },
+  {
+    l: "anti", v: "done",
+    t: "压缩前把 transcript 落盘，压缩后仍可回读",
+    c: "压缩后原文不丢，模型能按需把被压掉的段落取回来",
+    ct: "a",
+    s: "压缩前写盘，注入侧给 <full-transcript> 引用；摘要不完整时还有原文兜底",
+    w: "packages/core/src/session/compaction.ts",
+  },
+  {
+    l: "anti", v: "done",
+    t: "后台摘要做出来了，但开关默认关",
+    c: "后台持续摘要，默认开：成本记在厂商自己的账上，激进是合理的",
+    ct: "a",
+    s: "机制同形，默认关。这里的 token 记在用户自己的 key 上，省不能省在别人账上",
+    w: "packages/core/src/session/compaction.ts",
+  },
+  {
+    l: "anti", v: "done",
+    t: "重复调用去重闸门（两种粒度）",
+    c: "「同一调用反复出现」只见于提示文本，闸门本身未证实，稿子建议自建",
+    ct: "d",
+    s: "同参数同结果由 loop-detection 覆盖（先 nudge、再见就 stop）；同文件不同参数由 detectRepeatedProbe 覆盖——87 步回放实测拦下 14 步，且「改完再读确认」不误伤",
+    w: "packages/core/src/session/runner/loop-detection.ts:257",
+  },
+  {
+    l: "anti", v: "open",
+    t: "显式并行栅栏（wait_for_previous）",
+    c: "协议面有显式依赖字段，能表达「这一批必须等上一批」",
+    ct: "b",
+    s: "并行本身早就有了（forkScoped 每个调用一个 fiber，awaitAll 收口），缺的是显式依赖表达——现在靠模型自觉排序。这是结构层唯一的真缺口",
+    w: "packages/core/src/session/runner/step.ts:125",
+  },
+  {
+    l: "anti", v: "done",
+    t: "shell 方言写成工具行为定义",
+    c: "提示从 DO NOT 清单改为「定义工具行为」，跨模型族收敛",
+    ct: "a",
+    s: "只有 PowerShell 会话才追加两句：here-string 与输入重定向非法、多行 stdin 先写文件再管道。顺带修了一个 bug——那句 shell 名提示原本是空参调用，从来没渲染过",
+    w: "packages/core/src/tool/plugin/shell.ts:76",
+  },
+  {
+    l: "anti", v: "done",
+    t: "系统代理注入 sidecar",
+    c: "无对照。Cursor 的联网检索在自家云端跑，不存在本地直连被墙的问题",
+    ct: "x",
+    s: "whenReady 后用 session.resolveProxy 读 OS 代理写进 env，sidecar 的 fetch 才认。实测消灭了 14 次 Transport error。NO_PROXY 含 loopback，本地请求不受影响",
+    w: "packages/desktop/src/main/service/system-proxy.ts",
+  },
+  {
+    l: "anti", v: "done",
+    t: "retry 三段遥测",
+    c: "retry_attempt / retry_success / max_retries_exhausted 三个事件，且完全不进 UI",
+    ct: "a",
+    s: "一个 counter 用 event 维度区分三段，另配 RetryScheduled 事件给用户看「在重试」",
+    w: "packages/core/src/session/runner/retry.ts:17",
+  },
+  {
+    l: "anti", v: "done",
+    t: "prompt 前缀重建计数",
+    c: "agent.prompt_prefix.rebuilt —— 前缀一漂就说明缓存全 miss，付的是全价输入",
+    ct: "a",
+    s: "opencode_session_prompt_prefix_rebuilt_total，按 session 记真实重建次数；前缀漂移不再表现为「今天怎么有点慢」",
+    w: "packages/core/src/session/prompt-prefix.ts:7",
+  },
+)
+
+D.push(
+  {
+    l: "acc", v: "skip",
+    t: "不引入 embedding 语义索引",
+    c: "Merkle 树 + tree-sitter 分块 + Turbopuffer 向量，per-codebase namespace，按 commit 增量重建",
+    ct: "a",
+    s: "刻意不抄。实测零命中 13%，其中 59% 下一轮自愈、真正能靠语义救回的约 5%；而 33% 洪水、24% 截断、48% 重复读，没有一个是向量能解决的",
+    w: "notes · 语义索引",
+  },
+  {
+    l: "acc", v: "skip",
+    t: "不把检索结果自动注入上下文",
+    c: "检索是模型主动调的，harness 不会每轮替它把文件塞进去",
+    ct: "a",
+    s: "同样不注入。这里的 repo map 注入反而比 Cursor 更激进，属于明知不同而为之",
+    w: "packages/core/src/instructions/builtins.ts",
+  },
+  {
+    l: "acc", v: "done",
+    t: "MCP 工具按需加载",
+    c: "MCP 描述按 server 分文件夹同步到磁盘，静态上下文只留工具名，用时再查",
+    ct: "a",
+    s: "形态不同、效果更强：目录只显示一部分，超出的模型用 search() 现查，且只有查中的工具才渲染参数结构，还不用落盘。稿子原本判为「未做」，实测核对后翻案",
+    w: "packages/codemode/src/tool-runtime.ts:305",
+  },
+  {
+    l: "acc", v: "open",
+    t: "索引失效按 commit 分目录",
+    c: "按 git commit 打点，未变更的目录不重算 embedding",
+    ct: "a",
+    s: "未做。四层里判定为「确实该抄」的一条，收益直接、改动明确",
+    w: "—",
+  },
+  {
+    l: "speed", v: "done",
+    t: "缓存友好布局",
+    c: "[tools][system][setup][breakpoint][conversation][breakpoint][volatile]，易变内容下沉到末尾",
+    ct: "a",
+    s: "结构同形已实现：epoch 基线冻结在 system 前缀，date / git-status 变更作为对话内事件追加（「Today's date is now: …」），回滚的注释明写 keeping its baseline keeps the prompt cache；特殊 provider（databricks / snowflake）另有显式 cache_control。判定依据是代码结构，未做请求级命中率验证",
+    w: "packages/core/src/session/instruction-state.ts:172",
+  },
+  {
+    l: "acc", v: "open",
+    t: "接入 fff 的内容检索",
+    c: "内容检索走专门的索引服务，不走逐文件扫描",
+    ct: "b",
+    s: "未做。收益明确但要引入新的索引依赖与失效逻辑，成本最重",
+    w: "—",
+  },
+  {
+    l: "sane", v: "skip",
+    t: "不写大段 DO NOT 禁令清单",
+    c: "prompt 里有成段禁令，逐条列举不许做什么，靠措辞压住越界行为",
+    ct: "c",
+    s: "不抄。约束放进工具 schema 和权限闸门：能拦住的就不靠嘴拦，拦不住的写多少条也拦不住。稿子 §3 第 10 条也是这个结论",
+    w: "packages/core/src/session/runner/prompt/system.txt",
+  },
+  {
+    l: "sane", v: "na",
+    t: "分模型 system prompt 服务端注入",
+    c: "按模型在服务端下发不同的 system prompt，客户端拿到的已经是成品",
+    ct: "a",
+    s: "客户端侧不可复刻，只能做本地模板；照抄会变成「本地这套对某个模型特别不利」",
+    w: "—",
+  },
+  {
+    l: "sane", v: "na",
+    t: "Cmd-K fast-apply 小模型",
+    c: "独立小模型做行内改写，追求的是延迟不是推理质量",
+    ct: "a",
+    s: "编辑器功能，桌面端没有对应的交互面，硬搬只会多一条无人走的分支",
+    w: "—",
+  },
+  {
+    l: "sane", v: "na",
+    t: "云 Agent 环境预热",
+    c: "云端沙箱提前拉起，第一个 tool call 就能直接执行",
+    ct: "a",
+    s: "本地进程模型，没有可预热的对象；这条差异来自部署形态，不是取舍",
+    w: "—",
+  },
+)
+</script>
+
+<script>
+const LAYERS = [
+  { id: "speed", name: "快", sub: "同样的活，少付一次全价输入" },
+  { id: "anti", name: "防空转", sub: "别把一步的失败放大成一整轮的浪费" },
+  { id: "acc", name: "准", sub: "找到对的文件，而不是找到更多文件" },
+  { id: "sane", name: "不降智", sub: "别用 prompt 补丁把模型按在地上" },
+]
+const VERDICT = { done: "已对齐", skip: "刻意不抄", open: "待做", na: "不适用" }
+const ORDER = ["done", "open", "skip", "na"]
+const COLOR = { done: "var(--done)", open: "var(--open)", skip: "var(--skip)", na: "var(--na)" }
+const FILTERS = [
+  { id: "all", name: "全部" },
+  { id: "done", name: "已对齐" },
+  { id: "open", name: "待做" },
+  { id: "skip", name: "刻意不抄" },
+  { id: "na", name: "不适用" },
+]
+
+const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch])
+
+function card(d) {
+  const tier = d.ct === "x" ? "" : `<span class="tierchip t-${d.ct}">${d.ct.toUpperCase()}</span>`
+  return `<article class="card" data-verdict="${d.v}" data-layer="${d.l}">
+    <div class="card-top">
+      <h3>${esc(d.t)}</h3>
+      <span class="v">${VERDICT[d.v]}</span>
+      <span class="tag">${esc(d.w)}</span>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="k">Cursor</span><span class="v2">${tier}${esc(d.c)}</span></div>
+      <div class="row"><span class="k">SiCode</span><span class="v2">${esc(d.s)}</span></div>
+    </div>
+  </article>`
+}
+
+const app = document.getElementById("app")
+app.innerHTML = LAYERS.map((layer) => {
+  const items = D.filter((d) => d.l === layer.id)
+  return `<section class="layer" data-layer="${layer.id}">
+    <div class="layer-head">
+      <h2>${layer.name}</h2>
+      <span class="sub">${esc(layer.sub)}</span>
+      <span class="cnt">${items.length}</span>
+    </div>
+    <div class="cards">${items.map(card).join("")}</div>
+  </section>`
+}).join("")
+
+const bar = document.getElementById("bar")
+bar.innerHTML = FILTERS.map((f) => {
+  const n = f.id === "all" ? D.length : D.filter((d) => d.v === f.id).length
+  return `<button type="button" data-filter="${f.id}" aria-pressed="${f.id === "all"}">${f.name}<span class="n">${n}</span></button>`
+}).join("")
+
+bar.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-filter]")
+  if (!btn) return
+  const want = btn.dataset.filter
+  bar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)))
+  document.querySelectorAll(".card").forEach((c) => {
+    c.classList.toggle("hidden", want !== "all" && c.dataset.verdict !== want)
+  })
+  document.querySelectorAll(".layer").forEach((s) => {
+    s.classList.toggle("hidden", !s.querySelector(".card:not(.hidden)"))
+  })
+})
+
+// gauge
+const counts = {}
+ORDER.forEach((k) => (counts[k] = D.filter((d) => d.v === k).length))
+const total = D.length
+const recheckable = total - counts.na
+
+document.getElementById("gbar").innerHTML = ORDER.map((k) => {
+  const pct = (counts[k] / total) * 100
+  return `<span class="s-${k}" style="width:${pct}%" title="${VERDICT[k]} ${counts[k]}">${counts[k] || ""}</span>`
+}).join("")
+
+document.getElementById("gkey").innerHTML = ORDER.map(
+  (k) =>
+    `<div><i style="background:${COLOR[k]}"></i>${VERDICT[k]} <b>${counts[k]}</b></div>`,
+).join("") + `<div style="color:var(--text-3)">共 ${total} 条，其中 ${counts.na} 条属部署形态差异、不参与对齐判定</div>`
+
+document.getElementById("gline").innerHTML =
+  `可判定的 <b>${recheckable}</b> 条里，已对齐 <b>${counts.done}</b> 条、待做 <b>${counts.open}</b> 条。` +
+  `待做的 ${counts.open} 条中，索引类重活 ${D.filter((d) => d.v === "open" && d.l === "acc").length} 条，` +
+  `结构层真缺口 <b>${D.filter((d) => d.v === "open" && d.l !== "acc").length}</b> 条（并行栅栏 / 缓存布局）。`
+</script>
+</body>
+</html>

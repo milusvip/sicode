@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="zh-CN" data-color-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>左侧栏项目/会话列表 · 布局优化</title>
+<style>
+  /* ── 数值全部抄自 packages/ui/src/styles/tokens/（dark 与 light 两套）── */
+  :root {
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, "SF Mono", Menlo, monospace;
+  }
+  [data-color-scheme="dark"] {
+    --bg-base: #161616;   --bg-deep: #080808;
+    --layer-01: #242424;  --layer-02: #2e2e2e;  --layer-03: #3a3a3a;
+    --text-base: #fafafa; --text-muted: #aeaeae; --text-faint: #808080;
+    --icon-muted: #808080; --icon-faint: #5c5c5c;
+    --border-muted: rgba(255,255,255,.078);  /* alpha-light-8  */
+    --border-base: rgba(255,255,255,.102);   /* alpha-light-10 */
+    --hover: rgba(255,255,255,.059);          /* overlay-hover  */
+    --pressed: rgba(255,255,255,.102);        /* overlay-pressed */
+    --accent: #8aa9fd; --ok: #49c970;
+  }
+  [data-color-scheme="light"] {
+    --bg-base: #fafafa;   --bg-deep: #fafafa;
+    --layer-01: #fafafa;  --layer-02: #f2f2f2;  --layer-03: #eeeeee;
+    --text-base: #161616; --text-muted: #5c5c5c; --text-faint: #808080;
+    --icon-muted: #808080; --icon-faint: #aeaeae;
+    --border-muted: rgba(0,0,0,.078);         /* alpha-dark-8  */
+    --border-base: rgba(0,0,0,.102);          /* alpha-dark-10 */
+    --hover: rgba(0,0,0,.039);                /* alpha-dark-4  */
+    --pressed: rgba(0,0,0,.078);              /* alpha-dark-8  */
+    --accent: #3b62d9; --ok: #2f9e52;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg-base); color: var(--text-base);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
+  }
+  .page { max-width: 1040px; margin: 0 auto; padding: 36px 20px 80px; }
+
+  h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 6px; }
+  .sub { color: var(--text-muted); margin: 0 0 20px; max-width: 76ch; }
+  .sub code { font-family: var(--mono); font-size: 12px; background: var(--layer-02); padding: 1px 5px; border-radius: 4px; color: var(--text-base); }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 20px; }
+  .seg { display: inline-flex; background: var(--layer-01); border-radius: 8px; padding: 2px; gap: 2px; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; height: 26px; padding: 0 11px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--layer-03); color: var(--text-base); }
+  .tip { font-size: 12px; color: var(--text-faint); margin-inline-start: auto; }
+
+  .stage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px; align-items: start; }
+  @media (max-width: 880px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+  .col > .title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .col > .title h2 { font-size: 13px; font-weight: 700; margin: 0; letter-spacing: .02em; }
+  .col > .title .tag { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--layer-02); color: var(--text-muted); }
+  .col > .title .tag.good { background: rgba(73,201,112,.14); color: var(--ok); }
+  .frame { position: relative; padding-right: 30px; }
+
+  /* ── 侧栏外壳 ── */
+  .side {
+    width: 224px; max-width: 100%; height: 404px;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg-deep); border: 1px solid var(--border-muted); border-radius: 10px;
+  }
+
+  /* 头部：长条「新建会话」+ 搜索 / 收起 */
+  .head { display: flex; align-items: center; gap: 4px; padding: 6px 6px 0; }
+  .new {
+    display: flex; height: 28px; flex: 1 1 auto; min-width: 0;
+    align-items: center; justify-content: center; gap: 6px;
+    border: 0; border-radius: 7px; background: var(--layer-02);
+    color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .new:hover { background: var(--layer-03); color: var(--text-base); }
+  .new span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .ico {
+    display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+    border: 0; border-radius: 6px; background: transparent; color: var(--icon-muted); cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .ico:hover { background: var(--hover); color: var(--text-base); }
+  .ico[aria-expanded="true"] { background: var(--pressed); color: var(--text-base); }
+  .rule { height: 1px; margin: 5px 5px 0; background: var(--border-base); flex: none; }
+
+  /* 搜索框：提案里按需展开 */
+  .field {
+    display: none; align-items: center; gap: 6px; flex: none;
+    height: 28px; margin: 8px 2px; padding: 0 8px;
+    border-radius: 7px; background: var(--layer-02); font-size: 12px;
+  }
+  .side[data-search="1"] .field { display: flex; }
+  .side.before .field { display: flex; height: 26px; margin: 8px 2px 10px; }
+  .field input { min-width: 0; flex: 1 1 auto; border: 0; background: transparent; color: var(--text-base); font: inherit; outline: none; }
+  .field input::placeholder { color: var(--text-faint); }
+  .field svg { flex: none; color: var(--text-faint); }
+
+  /* 列表 */
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 6px 10px; }
+  .grp { display: flex; flex-direction: column; margin-bottom: 14px; }
+  .ghead { position: relative; display: flex; height: 28px; align-items: center; border-radius: 5px; transition: background-color .12s ease; }
+  .side.before .ghead { height: 26px; }
+  .ghead:hover { background: var(--hover); }
+  .gtoggle {
+    display: flex; height: 100%; min-width: 0; flex: 1 1 auto; align-items: center; gap: 6px;
+    padding: 0 24px 0 4px; border: 0; border-radius: 5px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer;
+  }
+  .ghead[data-active="1"] .gtoggle { color: var(--text-base); }
+  .chev { flex: none; color: var(--icon-faint); transition: transform .13s ease; }
+  .grp[data-open="0"] .chev { transform: rotate(-90deg); }
+  .pav { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--c); color: #fff; font-size: 9px; font-weight: 700; }
+  .gname { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+  .gplus {
+    position: absolute; inset-inline-end: 2px; top: 50%; transform: translateY(-50%);
+    display: grid; place-items: center; width: 16px; height: 16px;
+    border: 0; border-radius: 4px; background: transparent; color: var(--text-faint);
+    opacity: 0; cursor: pointer; transition: opacity .12s ease, color .12s ease;
+  }
+  .ghead:hover .gplus { opacity: 1; }
+  .gplus:hover { color: var(--text-base); }
+  .grp[data-open="0"] .gsess { display: none; }
+
+  .sess {
+    position: relative; display: flex; width: 100%; height: 28px; align-items: center; gap: 8px;
+    padding: 0 8px 0 42px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer;
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .sess:hover { background: var(--hover); color: var(--text-base); }
+  .sess.active { color: var(--text-base); }
+  .side.after  .sess.active { background: var(--pressed); }
+  /* 硬编码的白色底：浅色主题下等于看不见 —— 这就是要换掉的那行 */
+  .side.before .sess.active { background: rgba(255,255,255,.08); }
+  .sess.active::before { content: ""; position: absolute; left: 30px; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--text-base); }
+  .stitle { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .stime { flex: none; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--border-base); border-top-color: var(--text-muted); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .sess[hidden], .grp[hidden] { display: none; }
+
+  .empty { margin: 0; padding: 8px 4px; font-size: 12px; color: var(--text-faint); }
+  .side.before .empty { display: none; }
+
+  .arc { display: flex; width: 100%; height: 28px; align-items: center; gap: 4px; margin-top: 2px; padding: 0 4px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; text-align: start; cursor: pointer; }
+  .arc:hover { background: var(--hover); color: var(--text-base); }
+  .arc .lb { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .arc .count { flex: none; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+  /* 底部 dock */
+  .dockfoot { border-top: 1px solid var(--border-muted); padding: 8px; flex: none; }
+  .pill { display: flex; width: 100%; align-items: center; gap: 8px; padding: 5px; border: 0; border-radius: 7px; background: transparent; color: var(--text-base); font: inherit; cursor: pointer; text-align: start; transition: background-color .12s ease; }
+  .pill:hover { background: var(--hover); }
+  .pill .nm { min-width: 0; flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+  .slot { flex: none; display: grid; place-items: center; width: 22px; height: 22px; color: var(--icon-muted); }
+  .slot.circle { border-radius: 50%; background: var(--layer-01); }
+  .slot.app { border-radius: 6px; background: var(--layer-03); }
+  .side.before .slot.app, .side.after .slot.circle { display: none; }
+
+  /* ── 标注 ── */
+  .mark {
+    position: absolute; z-index: 3; display: grid; place-items: center;
+    width: 17px; height: 17px; border-radius: 999px;
+    background: rgba(110,150,255,.16); color: var(--accent);
+    border: .5px solid rgba(110,150,255,.42);
+    font: 700 10px/1 var(--mono); pointer-events: none;
+  }
+  .mark.right { right: 2px; }
+  body.no-mark .mark { display: none; }
+
+  /* ── 说明 ── */
+  h3.sec { font-size: 13px; font-weight: 700; margin: 44px 0 12px; letter-spacing: .02em; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: start; padding: 9px 12px 9px 0; vertical-align: top; border-bottom: 1px solid var(--border-muted); }
+  th { font-size: 11px; font-weight: 500; color: var(--text-faint); letter-spacing: .03em; }
+  td:first-child { width: 30px; color: var(--accent); font-family: var(--mono); font-size: 11px; padding-inline-end: 0; }
+  td.was { color: var(--text-muted); }
+  td.why { color: var(--text-faint); }
+  td.why code, td.was code, td.now code { font-family: var(--mono); font-size: 11px; color: var(--text-base); background: var(--layer-02); padding: 0 4px; border-radius: 3px; }
+  .strike { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+  .todo { margin: 0; padding: 0 0 0 18px; font-size: 12.5px; color: var(--text-muted); }
+  .todo li { margin-bottom: 7px; }
+  .todo b { color: var(--text-base); font-weight: 500; }
+  .foot { margin-top: 36px; font-size: 12px; color: var(--text-faint); border-top: 1px solid var(--border-muted); padding-top: 14px; }
+  .foot b { color: var(--text-muted); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1>左侧栏项目 / 会话列表 · 布局优化</h1>
+    <p class="sub">
+      左右两栏是同一份数据、同一套结构，只有 CSS 不同。所有颜色、圆角、行高取自
+      <code>packages/ui/src/styles/tokens/</code>。可点：开合项目组、点会话选中、点放大镜开搜索、输入过滤（试试乱打几个字）。
+    </p>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="主题">
+      <button type="button" aria-pressed="true" data-scheme="dark">暗色</button>
+      <button type="button" aria-pressed="false" data-scheme="light">浅色</button>
+    </div>
+    <div class="seg" role="group" aria-label="标注">
+      <button type="button" aria-pressed="true" data-mark="on">标注开</button>
+      <button type="button" aria-pressed="false" data-mark="off">标注关</button>
+    </div>
+    <span class="tip">切到浅色看选中态那一条的差别</span>
+  </div>
+
+  <div class="stage">
+
+    <section class="col">
+      <div class="title"><h2>改动前</h2><span class="tag">现状</span></div>
+      <div class="frame">
+        <aside class="side before" data-side="before" data-search="1">
+          <div class="head">
+            <button class="new" type="button">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg>
+              <span>新建会话</span>
+            </button>
+            <button class="ico icoSearch" type="button" aria-label="搜索会话">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg>
+            </button>
+            <button class="ico" type="button" aria-label="收起侧栏">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8 3.8"/></svg>
+            </button>
+          </div>
+          <div class="rule"></div>
+          <label class="field">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg>
+            <input type="text" data-q placeholder="搜索会话">
+          </label>
+          <div class="list" data-list>
+            <p class="empty" data-empty></p>
+            <div class="arc" type="button">
+              <svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg>
+              <span class="lb">已归档</span><span class="count">2</span>
+            </div>
+          </div>
+          <div class="dockfoot">
+            <button class="pill" type="button">
+              <span class="slot circle">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5.6" r="2.5"/><path d="M3.2 13.2c0-2.3 2.1-3.9 4.8-3.9s4.8 1.6 4.8 3.9"/></svg>
+              </span>
+              <span class="slot app">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4.6 5.2 2.6 2.8-2.6 2.8"/><path d="M8.8 11.4h2.8"/></svg>
+              </span>
+              <span class="nm">本地工作区</span>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;color:var(--icon-faint)"><path d="M4.2 9.8 8 6l3.8 3.8"/></svg>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="col">
+      <div class="title"><h2>提案</h2><span class="tag good">已落地</span></div>
+      <div class="frame" data-frame="after">
+        <aside class="side after" data-side="after" data-search="0">
+          <div class="head">
+            <button class="new" type="button">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg>
+              <span>新建会话</span>
+            </button>
+            <button class="ico icoSearch" type="button" aria-label="搜索会话" aria-expanded="false">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg>
+            </button>
+            <button class="ico" type="button" aria-label="收起侧栏">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.8 4.2 6 8l3.8 3.8"/></svg>
+            </button>
+          </div>
+          <div class="rule"></div>
+          <label class="field">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="7.2" r="4.4"/><path d="m10.6 10.6 3 3"/></svg>
+            <input type="text" data-q placeholder="搜索会话">
+          </label>
+          <div class="list" data-list>
+            <p class="empty" data-empty></p>
+            <div class="arc" type="button">
+              <svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg>
+              <span class="lb">已归档</span><span class="count">2</span>
+            </div>
+          </div>
+          <div class="dockfoot">
+            <button class="pill" type="button">
+              <span class="slot circle">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5.6" r="2.5"/><path d="M3.2 13.2c0-2.3 2.1-3.9 4.8-3.9s4.8 1.6 4.8 3.9"/></svg>
+              </span>
+              <span class="slot app">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m4.6 5.2 2.6 2.8-2.6 2.8"/><path d="M8.8 11.4h2.8"/></svg>
+              </span>
+              <span class="nm">本地工作区</span>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;color:var(--icon-faint)"><path d="M4.2 9.8 8 6l3.8 3.8"/></svg>
+            </button>
+          </div>
+        </aside>
+
+        <span class="mark right" data-mk="1">1</span>
+        <span class="mark right" data-mk="2">2</span>
+        <span class="mark right" data-mk="3">3</span>
+        <span class="mark right" data-mk="4">4</span>
+        <span class="mark right" data-mk="5">5</span>
+      </div>
+    </section>
+  </div>
+
+  <h3 class="sec">逐条对照</h3>
+  <table>
+    <thead>
+      <tr><th></th><th>改动前</th><th>提案</th><th>依据</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td class="was">搜索框常驻，占掉一整行（26px + 间距）</td>
+        <td>搜索图标即开关：点开才渲染输入框，Escape 收起并清空，图标用 pressed 底表示展开</td>
+        <td class="why">搜索是低频动作，却按高频占位。收起后列表上移约 46px，首屏多出两行会话</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td class="was">过滤没结果 → 整列<span class="strike">空白</span></td>
+        <td>明说「无匹配会话」；没搜索时给「还没有项目」</td>
+        <td class="why">空白与加载中、与出错无法区分，只能靠用户猜</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td class="was">分组头 26px，会话行 28px，同一列两套行高</td>
+        <td>统一 28px（<code>h-7</code>）</td>
+        <td class="why">相邻行高差 2px 不会让人觉得「有层次」，只会让左边缘看着不齐</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td class="was">选中底色写死 <code>rgba(255,255,255,.08)</code></td>
+        <td>换 token <code>--v2-overlay-simple-overlay-pressed</code></td>
+        <td class="why">浅色主题下白底压白底 ≈ 不可见，选中的是哪一行只能靠左侧 2px 竖条去猜</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td class="was">底部圆形占位 + 通用「工作区」字形</td>
+        <td>软件自己的图标（<code>Mark</code>），PNG 自带圆角，去掉外圈底</td>
+        <td class="why">这是「哪一个程序」的身份位，不是「哪一类空间」；用户认的是图标</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td class="was">分组名字重 <code>font-[500]</code> 字面量</td>
+        <td><code>text-12-medium</code></td>
+        <td class="why">值相同，但它现在是同一套字体阶梯的一格，改阶梯时不会漏掉这一处</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sec">还能再往前走（未落地）</h3>
+  <ul class="todo">
+    <li><b>运行中的会话置顶或独立成一节</b>：现在「正在跑」只体现为一行里的小 spinner，滚动到列表下方就看不见了。</li>
+    <li><b>分组头 sticky</b>：项目多、往上滚之后，「我现在在哪个项目下面」会失去参照。</li>
+    <li><b>把常驻的相对时间收进 hover</b>：免打扰时它是噪音；但先要确认没有「靠它找最近会话」的真实用法，否则别动。</li>
+  </ul>
+
+  <p class="foot">
+    <b>落点：</b><code>packages/app/src/shell/left-sidebar.tsx</code>（结构与 class）、<code>packages/app/src/runtime/i18n/en.ts</code>（新增 <code>dock.search.empty</code>）。<br>
+    <b>范围：</b>只改视觉与信息层级，不动会话排序、分组规则、右键菜单与跳转目标。
+  </p>
+</div>
+
+<script>
+  // 两个面板共用同一份数据，结构由脚本生成 —— 差异只在 CSS（.side.before / .side.after）
+  const DATA = [
+    { name: "SiCode",     initial: "S", color: "#4c6ef5", active: true, open: true, sessions: [
+        { title: "左侧栏布局优化", time: "刚刚", active: true },
+        { title: "主题卡片调整",   time: "2 小时" },
+    ]},
+    { name: "Cursor",     initial: "C", color: "#2f9e8f", open: true, sessions: [
+        { title: "自动恢复停止排查", time: "9 小时" },
+        { title: "会话恢复草稿",     time: "昨天" },
+    ]},
+    { name: "脚本",       initial: "脚", color: "#b07a2b", open: true, sessions: [
+        { title: "工具脚本整理", time: "12 分钟", running: true },
+    ]},
+    { name: "FZ-Mortuus", initial: "F", color: "#8b5cf6", open: true, sessions: [
+        { title: "打包发布流程", time: "3 小时" },
+    ]},
+    { name: "默认项目",   initial: "默", color: "#6b7280", open: true, sessions: [
+        { title: "初始配置", time: "3 天" },
+    ]},
+  ]
+
+  const svgChev = '<svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4.2 6.4 8 10.2l3.8-3.8"/></svg>'
+  const svgPlus = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3.6v8.8M3.6 8h8.8"/></svg>'
+
+  function render(list) {
+    const empty = list.querySelector("[data-empty]")
+    for (const project of DATA) {
+      const grp = document.createElement("div")
+      grp.className = "grp"
+      grp.dataset.open = project.open ? "1" : "0"
+
+      const head = document.createElement("div")
+      head.className = "ghead"
+      head.dataset.active = project.active ? "1" : "0"
+
+      const toggle = document.createElement("button")
+      toggle.type = "button"
+      toggle.className = "gtoggle"
+      toggle.setAttribute("aria-expanded", project.open ? "true" : "false")
+      toggle.innerHTML = svgChev
+        + '<span class="pav" style="--c:' + project.color + '">' + project.initial + "</span>"
+        + '<span class="gname">' + project.name + "</span>"
+
+      const plus = document.createElement("button")
+      plus.type = "button"
+      plus.className = "gplus"
+      plus.setAttribute("aria-label", "新建会话")
+      plus.innerHTML = svgPlus
+
+      head.append(toggle, plus)
+
+      const box = document.createElement("div")
+      box.className = "gsess"
+      for (const session of project.sessions) {
+        const row = document.createElement("button")
+        row.type = "button"
+        row.className = "sess" + (session.active ? " active" : "")
+        row.dataset.title = session.title.toLowerCase()
+        row.innerHTML = '<span class="stitle">' + session.title + "</span>"
+          + (session.running ? '<span class="spin" role="status" aria-label="正在运行"></span>' : "")
+          + '<span class="stime">' + session.time + "</span>"
+        box.append(row)
+      }
+
+      grp.append(head, box)
+      list.insertBefore(grp, empty)
+    }
+  }
+
+  const sides = [...document.querySelectorAll("[data-side]")]
+  for (const side of sides) render(side.querySelector("[data-list]"))
+
+  // 开合项目组
+  for (const head of document.querySelectorAll(".gtoggle")) {
+    head.addEventListener("click", () => {
+      const grp = head.closest(".grp")
+      const open = grp.dataset.open !== "1"
+      grp.dataset.open = open ? "1" : "0"
+      head.setAttribute("aria-expanded", String(open))
+      placeMarks()
+    })
+  }
+
+  // 选中会话
+  for (const row of document.querySelectorAll(".sess")) {
+    row.addEventListener("click", () => {
+      for (const other of row.closest("[data-side]").querySelectorAll(".sess")) other.classList.remove("active")
+      row.classList.add("active")
+      placeMarks()
+    })
+  }
+
+  // 搜索：提案面板里由图标开合
+  for (const button of document.querySelectorAll(".icoSearch")) {
+    const side = button.closest("[data-side]")
+    button.addEventListener("click", () => {
+      const open = side.dataset.search !== "1"
+      side.dataset.search = open ? "1" : "0"
+      button.setAttribute("aria-expanded", String(open))
+      const input = side.querySelector("[data-q]")
+      if (open) queueMicrotask(() => input.focus())
+      else { input.value = ""; filter(side) }
+      placeMarks()
+    })
+  }
+
+  // 过滤：两边各过滤各的；.before 面板没有空态元素（CSS 里隐藏），复现「一片空白」
+  function filter(side) {
+    const needle = side.querySelector("[data-q]").value.trim().toLowerCase()
+    let shown = 0
+    for (const grp of side.querySelectorAll(".grp")) {
+      let hit = 0
+      for (const row of grp.querySelectorAll(".sess")) {
+        const match = !needle || row.dataset.title.includes(needle)
+        row.hidden = !match
+        if (match) hit++
+      }
+      grp.hidden = hit === 0
+      shown += hit
+    }
+    const empty = side.querySelector("[data-empty]")
+    empty.textContent = needle ? "无匹配会话" : "还没有项目"
+    empty.hidden = shown > 0
+    placeMarks()
+  }
+
+  for (const input of document.querySelectorAll("[data-q]")) {
+    const side = input.closest("[data-side]")
+    input.addEventListener("input", () => filter(side))
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || side.dataset.side !== "after") return
+      side.dataset.search = "0"
+      side.querySelector(".icoSearch").setAttribute("aria-expanded", "false")
+      input.value = ""
+      input.blur()
+      filter(side)
+      placeMarks()
+    })
+  }
+
+  // 主题
+  for (const button of document.querySelectorAll("[data-scheme]")) {
+    button.addEventListener("click", () => {
+      for (const other of document.querySelectorAll("[data-scheme]")) other.setAttribute("aria-pressed", String(other === button))
+      document.documentElement.dataset.colorScheme = button.dataset.scheme
+    })
+  }
+
+  // 标注开关
+  for (const button of document.querySelectorAll("[data-mark]")) {
+    button.addEventListener("click", () => {
+      for (const other of document.querySelectorAll("[data-mark]")) other.setAttribute("aria-pressed", String(other === button))
+      document.body.classList.toggle("no-mark", button.dataset.mark === "off")
+    })
+  }
+
+  // 标注跟随真实元素，开合搜索 / 折叠分组后也不会指错
+  function placeMarks() {
+    const frame = document.querySelector("[data-frame]")
+    if (!frame) return
+    const targets = [
+      frame.querySelector(".side.after .icoSearch"),
+      frame.querySelector(".side.after [data-list]"),
+      frame.querySelector(".side.after .grp .ghead"),
+      frame.querySelector(".side.after .sess.active"),
+      frame.querySelector(".side.after .dockfoot"),
+    ]
+    const marks = frame.querySelectorAll(".mark")
+    targets.forEach((target, index) => {
+      const mark = marks[index]
+      if (!target || !mark) return
+      mark.style.top = Math.round(target.offsetTop + target.offsetHeight / 2 - 8.5) + "px"
+    })
+  }
+
+  placeMarks()
+  addEventListener("resize", placeMarks)
+</script>
+</body>
+</html>

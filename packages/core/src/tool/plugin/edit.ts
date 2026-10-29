@@ -18,6 +18,7 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
+import { BatchEncoding } from "./batch-encoding.js"
 
 export const name = "edit"
 
@@ -224,6 +225,9 @@ export const Plugin = {
           input: Input,
           output: Output,
           execute: (input, context) => {
+            // SiCode: the batch-file warning needs the resulting text, which only exists inside the
+            // generator; this per-invocation closure carries it to the content mapper below.
+            let batchWarning = ""
             return Effect.gen(function* () {
               const permissionSource = {
                 type: "tool" as const,
@@ -299,6 +303,7 @@ export const Plugin = {
                 })
               }
               const replacementBom = replaced.startsWith("\uFEFF")
+              batchWarning = BatchEncoding.warning(target.absolute, replaced)
               const result = yield* fileMutation.write({
                 target,
                 content: Bom.join(replaced, original.bom || replacementBom),
@@ -315,7 +320,11 @@ export const Plugin = {
               fileMutation.withLock([FileAccess.resolvePath(location.directory, input.path)]),
               Effect.map((output) => ({
                 output,
-                content: `Edited ${output.files[0]?.file} (${output.replacements} replacement${output.replacements === 1 ? "" : "s"})`,
+                // SiCode: same as write — an edit that introduces non-ASCII into a .bat/.cmd breaks
+                // the script at run time; warn so the model rewrites it ASCII-only.
+                content:
+                  `Edited ${output.files[0]?.file} (${output.replacements} replacement${output.replacements === 1 ? "" : "s"})` +
+                  batchWarning,
                 metadata: { files: output.files },
               })),
               Effect.mapError((error) =>

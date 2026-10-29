@@ -54,7 +54,7 @@ SiCode = opencode 的桌面端二开。内核（`ai` / `core` / `server` / `cli`
 | 路径 | 放什么 |
 | --- | --- |
 | `notes.md` / `structure.md` | 工具链管理（本文件与笔记），固定路径，脚本依赖，勿动 |
-| `demos/` | 写给人看的 HTML demo / 可视化对比页（会话侧边浏览器会打开的那种） |
+| `demos/` | 写给人看的 HTML demo / 可视化对比页（会话侧边浏览器会打开的那种）。**自包含单文件**：CSS/JS 内联进 .html，不拆 .css/.js |
 | `shots/` | CDP / 无头浏览器截图（`*.png` / `*.jpg`） |
 | `scratch/` | 一次性测量与验证脚本（`*.mjs` / `*.sh`）及其输出（`*.json`） |
 

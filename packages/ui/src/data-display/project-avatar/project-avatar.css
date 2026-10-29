@@ -76,6 +76,26 @@
   --project-avatar-border: var(--v2-avatar-border-purple);
 }
 
+[data-slot="project-avatar-surface"][data-variant="olive"] {
+  --project-avatar-bg: var(--v2-avatar-bg-olive);
+  --project-avatar-border: var(--v2-avatar-border-olive);
+}
+
+[data-slot="project-avatar-surface"][data-variant="teal"] {
+  --project-avatar-bg: var(--v2-avatar-bg-teal);
+  --project-avatar-border: var(--v2-avatar-border-teal);
+}
+
+[data-slot="project-avatar-surface"][data-variant="sky"] {
+  --project-avatar-bg: var(--v2-avatar-bg-sky);
+  --project-avatar-border: var(--v2-avatar-border-sky);
+}
+
+[data-slot="project-avatar-surface"][data-variant="fuchsia"] {
+  --project-avatar-bg: var(--v2-avatar-bg-fuchsia);
+  --project-avatar-border: var(--v2-avatar-border-fuchsia);
+}
+
 [data-slot="project-avatar-surface"][data-variant="gray"] {
   --project-avatar-bg: var(--v2-avatar-bg-gray);
   --project-avatar-border: var(--v2-avatar-border-gray);

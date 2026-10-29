@@ -1,0 +1,18 @@
+// SiCode: local-only overrides for this machine. `.sicode` is loaded after `.opencode`, so an
+// entry here replaces the same alias from the shared project config.
+//
+// The `effect` reference points at the RepositoryCache checkout instead of the GitHub remote.
+// As a git source it re-materialized on boot (clone once, then a daily fetch), and that network
+// work sat in the way of the Location's first request — /api/model measured 13–14 s on the days
+// it ran, against ~2 s for a cold instance that had nothing to fetch.  The checkout is therefore
+// frozen at whatever it holds now; refresh it by hand when Effect v4 details start to look stale:
+//   git -C ~/.local/share/opencode/repos/github.com/Effect-TS/effect-smol \
+//     fetch --depth 100 origin && git -C "$_" reset --hard origin/HEAD
+{
+  "references": {
+    "effect": {
+      "path": "~/.local/share/opencode/repos/github.com/Effect-TS/effect-smol",
+      "description": "Use for Effect v4 and effect-smol implementation details",
+    },
+  },
+}

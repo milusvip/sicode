@@ -84,8 +84,36 @@ export function UiInspectOverlay() {
     }
   }
 
+  // The comment phase lets the page keep its own pointer events (see ui-inspect.css), so the
+  // overlay cannot see the click that means "dismiss". Listen on the document instead, and stop
+  // the press there: the card is the only surface this phase owns, so a click beside it must not
+  // reach the app and press a button on the way to closing the comment. A draft that would be lost
+  // keeps the card open.
+  const onPointerDownOutside = (event: PointerEvent) => {
+    if (phase() !== "comment") return
+    const target = event.target as Element | null
+
+    if (target?.closest('[data-slot="ui-inspect-editor"]')) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (!uiInspectDraft().trim()) cancelUiInspect()
+  }
+
+  // pointerdown alone is not enough: browsers differ on whether cancelling it also cancels the
+  // click that would follow, so the same press is stopped again at its click stage.
+  const onClickOutside = (event: MouseEvent) => {
+    if (phase() !== "comment") return
+    const target = event.target as Element | null
+
+    if (target?.closest('[data-slot="ui-inspect-editor"]')) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
   onMount(() => {
     makeEventListener(window, "keydown", onKey, true)
+    makeEventListener(document, "pointerdown", onPointerDownOutside, true)
+    makeEventListener(document, "click", onClickOutside, true)
   })
 
   onCleanup(() => {
@@ -107,11 +135,6 @@ export function UiInspectOverlay() {
           if (phase() === "picking") {
             event.preventDefault()
             event.stopPropagation()
-          }
-
-          // A click beside the editor dismisses it unless it would discard a draft.
-          if (phase() === "comment" && event.target === event.currentTarget && !uiInspectDraft().trim()) {
-            cancelUiInspect()
           }
         }}
         onClick={onClick}

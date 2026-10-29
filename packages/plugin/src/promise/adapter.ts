@@ -356,6 +356,7 @@ export function fromPromise(plugin: Plugin) {
             list: adaptApiMethod(ProviderEndpoints["provider.list"], host.provider.list),
             get: adaptApiMethod(ProviderEndpoints["provider.get"], host.provider.get),
             models: adaptApiMethod(ProviderEndpoints["provider.models"], host.provider.models),
+            test: adaptApiMethod(ProviderEndpoints["provider.test"], host.provider.test),
             transform: transform(host.provider),
             reload: () => run(host.provider.reload()),
           },

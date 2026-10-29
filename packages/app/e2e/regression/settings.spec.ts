@@ -94,6 +94,31 @@ test("a settings page survives refresh", async ({ page }) => {
   await expect(page).toHaveURL("/settings?tab=appearance")
 })
 
+test("the Appearance theme row applies a theme from its preview cards and keeps it", async ({ page }) => {
+  const { settings } = await open(page)
+  await settings.getByRole("tab", { name: "Appearance", exact: true }).click()
+  const trigger = settings.locator('[data-action="settings-theme"]')
+  await expect(trigger).toContainText("OpenCode")
+
+  await trigger.click()
+  const picker = page.getByRole("dialog", { name: "Select theme", exact: true })
+  await expect(picker.getByRole("radio", { name: "OpenCode", exact: true })).toHaveAttribute("aria-checked", "true")
+  // Only the current theme carries the check mark.
+  await expect(
+    picker.getByRole("radio", { name: "OpenCode", exact: true }).locator('[data-slot="theme-card-check"]'),
+  ).toHaveCSS("opacity", "1")
+  await expect(
+    picker.getByRole("radio", { name: "Dracula", exact: true }).locator('[data-slot="theme-card-check"]'),
+  ).toHaveCSS("opacity", "0")
+
+  await picker.getByRole("radio", { name: "Dracula", exact: true }).click()
+  await expect(picker).toBeHidden()
+  await expect(trigger).toContainText("Dracula")
+
+  await page.reload()
+  await expect(trigger).toContainText("Dracula")
+})
+
 test("another server's settings page survives refresh", async ({ page }) => {
   await mockRemoteServer(page, { directory: "/remote/settings-demo" })
   const { settings } = await open(page)

@@ -10,7 +10,7 @@ import { Effect, Schema, Stream } from "effect"
 import { Agent } from "../agent.js"
 import { AISDK } from "../aisdk.js"
 import { Command } from "../command.js"
-import { probeModels } from "../provider-probe.js"
+import { probeChat, probeModels } from "../provider-probe.js"
 import { Credential } from "../credential.js"
 import { Bus } from "../bus.js"
 import { Integration } from "../integration.js"
@@ -200,6 +200,13 @@ export const make = Effect.fn("PluginHost.make")(function* (
             ),
           ),
       models: (input) => Effect.map(probeModels(input), (models) => ({ models })),
+      test: (input) =>
+        input.model?.trim()
+          ? Effect.map(
+              probeChat({ baseURL: input.baseURL, apiKey: input.apiKey, headers: input.headers, model: input.model }),
+              () => ({ mode: "chat" as const }),
+            )
+          : Effect.map(probeModels(input), () => ({ mode: "models" as const })),
       reload: providers.reload,
       transform: (callback) =>
         providers.transform((editor) => {

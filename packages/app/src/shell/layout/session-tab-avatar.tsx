@@ -4,8 +4,8 @@ import { useSessionTabAvatarState } from "@/shell/layout/project-avatar-state"
 import {
   displayName,
   getProjectAvatarSource,
-  getProjectAvatarVariant,
   ProjectAvatar,
+  resolveProjectAvatarVariant,
 } from "@opencode/ui/project-avatar"
 import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-progress-indicator-v2"
 import { Show } from "solid-js"
@@ -45,7 +45,11 @@ export function SessionTabAvatarView(props: {
         <ProjectAvatar
           fallback={displayName(props.project ?? { worktree: props.directory })}
           src={getProjectAvatarSource(props.project?.id, props.project?.icon)}
-          variant={getProjectAvatarVariant(props.project?.icon?.color)}
+          variant={resolveProjectAvatarVariant({
+            id: props.project?.id,
+            worktree: props.project?.worktree ?? props.directory,
+            icon: props.project?.icon,
+          })}
           unread={props.unread}
         />
       }

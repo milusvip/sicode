@@ -1,6 +1,6 @@
 import { Button } from "@opencode/ui/button"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@opencode/ui/dialog"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, DialogTitleGroup } from "@opencode/ui/dialog"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { ScrollView } from "@opencode/ui/scroll-view"
@@ -18,7 +18,9 @@ import {
   headerRow,
   isCustomProviderPackage,
   modelRow,
+  providerIDFromName,
   type FormState,
+  type ModelConfigEntry,
   validateCustomProvider,
 } from "./form"
 import { CustomManagedProviderIcon } from "@/providers/models/provider-group"
@@ -30,8 +32,18 @@ export type CustomProviderInitial = {
     env?: readonly string[]
     settings?: { baseURL?: string }
     headers?: Record<string, string>
-    models?: Record<string, { name?: string }>
+    models?: Record<string, { name?: string } & Omit<ModelConfigEntry, "name">>
   }
+}
+
+// WorkBuddy-style presets: a click fills the field, typing stays possible for anything else.
+const CONTEXT_PRESETS = [32, 64, 128, 256]
+const OUTPUT_PRESETS = [8, 16, 32, 64]
+
+// SiCode: the probe response carries no timing, so the row measures its own round trip — that is
+// also the latency the user actually waits for. Under a second, ms reads better than "1.0 s".
+function formatLatency(ms: number) {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`
 }
 
 export function CustomProviderForm(
@@ -115,6 +127,19 @@ export function CustomProviderForm(
     })
   }
 
+  const setModelFlag = (index: number, key: "tools" | "image" | "reasoning", value: boolean) => {
+    setForm("models", index, key, value)
+  }
+
+  const setModelLimit = (index: number, key: "context" | "output", value: string) => {
+    batch(() => {
+      setForm("models", index, key, value)
+      setForm("models", index, "err", key, undefined)
+    })
+  }
+
+  const toggleModelAdvanced = (index: number) => setForm("models", index, "advanced", !form.models[index].advanced)
+
   const setHeader = (index: number, key: "key" | "value", value: string) => {
     batch(() => {
       setForm("headers", index, key, value)
@@ -146,6 +171,9 @@ export function CustomProviderForm(
   const [advancedOpen, setAdvancedOpen] = createSignal(
     !!props.initial?.config.headers && Object.keys(props.initial.config.headers).length > 0,
   )
+  // The id is derived from the name until the user edits the id themselves, so a new provider does
+  // not stop at "think of a slug".
+  const [idTouched, setIdTouched] = createSignal(!!props.initial?.providerID)
   const [probe, setProbe] = createStore<{
     open: boolean
     query: string
@@ -153,11 +181,14 @@ export function CustomProviderForm(
     selected: string[]
   }>({ open: false, query: "", models: [], selected: [] })
 
+  const probeHeaders = () =>
+    Object.fromEntries(
+      form.headers.map((h) => [h.key.trim(), h.value.trim()]).filter(([key, value]) => key && value),
+    )
+
   const probeMutation = useMutation(() => ({
     mutationFn: async () => {
-      const headers = Object.fromEntries(
-        form.headers.map((h) => [h.key.trim(), h.value.trim()]).filter(([key, value]) => key && value),
-      )
+      const headers = probeHeaders()
       return serverSdk.api.provider.models({
         baseURL: form.baseURL.trim(),
         apiKey: form.apiKey.trim() || undefined,
@@ -178,6 +209,36 @@ export function CustomProviderForm(
     },
   }))
 
+  // SiCode: verify before saving — one minimal turn with the first model id when there is one, the
+  // model listing otherwise.
+  const testMutation = useMutation(() => ({
+    mutationFn: () => {
+      const headers = probeHeaders()
+      const model = form.models.map((m) => m.id.trim()).find(Boolean)
+
+      return serverSdk.api.provider.test({
+        baseURL: form.baseURL.trim(),
+        apiKey: form.apiKey.trim() || undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        model,
+      })
+    },
+    onSuccess: (result) => {
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("provider.custom.test.ok"),
+        description: language.t(
+          result.mode === "chat" ? "provider.custom.test.okChat" : "provider.custom.test.okModels",
+        ),
+      })
+    },
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast({ title: language.t("provider.custom.test.failed"), description: message })
+    },
+  }))
+
   const probeMatches = createMemo(() => {
     const query = probe.query.trim().toLowerCase()
     const existing = new Set(form.models.map((m) => m.id.trim()).filter(Boolean))
@@ -192,6 +253,10 @@ export function CustomProviderForm(
   const toggleProbeModel = (id: string) => {
     setProbe("selected", (list) => (list.includes(id) ? list.filter((value) => value !== id) : [...list, id]))
   }
+
+  // Acts on what the search currently shows, so "select all" after filtering is the useful one.
+  const selectAllProbe = () => setProbe("selected", probeMatches().filter((model) => !model.added).map((model) => model.id))
+  const clearProbeSelection = () => setProbe("selected", [])
 
   const applyProbeModels = () => {
     if (probe.selected.length === 0) return
@@ -239,10 +304,27 @@ export function CustomProviderForm(
       })
 
       if (result.key) {
-        await serverSdk.api.integration.connect.key({
-          integrationID: result.providerID,
-          key: result.key,
-        })
+        // SiCode: a custom provider id is usually not a registered integration, so its key method
+        // does not exist and connect.key would fail with "Integration not found". Store the key as
+        // a plain credential keyed by the provider id instead — exactly what the model resolver
+        // reads for providers without an integration (model-resolver falls back to the raw id).
+        const known = await serverSdk.api.integration
+          .get({ integrationID: result.providerID })
+          .then(
+            () => true,
+            () => false,
+          )
+        if (known)
+          await serverSdk.api.integration.connect.key({
+            integrationID: result.providerID,
+            key: result.key,
+          })
+        else
+          await serverSdk.api.credential.create({
+            integrationID: result.providerID,
+            value: { type: "key", key: result.key },
+            activate: true,
+          })
 
         if (renamed) {
           const stale = (await serverSdk.api.credential.list()).filter(
@@ -324,7 +406,13 @@ export function CustomProviderForm(
                 label={language.t("provider.custom.field.name.label")}
                 placeholder={language.t("provider.custom.field.name.placeholder")}
                 value={form.name}
-                onChange={(v) => setField("name", v)}
+                onChange={(v) => {
+                  setField("name", v)
+                  // Keep the id in step with the name until the user edits the id themselves.
+                  if (idTouched()) return
+                  const slug = providerIDFromName(v)
+                  if (slug) setField("providerID", slug)
+                }}
                 validationState={form.err.name ? "invalid" : undefined}
                 error={form.err.name}
               />
@@ -333,7 +421,10 @@ export function CustomProviderForm(
                 placeholder={language.t("provider.custom.field.providerID.placeholder")}
                 description={language.t("provider.custom.field.providerID.description")}
                 value={form.providerID}
-                onChange={(v) => setField("providerID", v)}
+                onChange={(v) => {
+                  setIdTouched(true)
+                  setField("providerID", v)
+                }}
                 validationState={form.err.providerID ? "invalid" : undefined}
                 error={form.err.providerID}
               />
@@ -346,17 +437,32 @@ export function CustomProviderForm(
               validationState={form.err.baseURL ? "invalid" : undefined}
               error={form.err.baseURL}
             />
-            <TextField
-              label={language.t("provider.custom.field.apiKey.label")}
-              placeholder={language.t("provider.custom.field.apiKey.placeholder")}
-              description={
-                editing()
-                  ? language.t("provider.custom.field.apiKey.editDescription")
-                  : language.t("provider.custom.field.apiKey.description")
-              }
-              value={form.apiKey}
-              onChange={(v) => setField("apiKey", v)}
-            />
+            <div class="flex items-end gap-2">
+              <div class="min-w-0 flex-1">
+                <TextField
+                  label={language.t("provider.custom.field.apiKey.label")}
+                  placeholder={language.t("provider.custom.field.apiKey.placeholder")}
+                  description={
+                    editing()
+                      ? language.t("provider.custom.field.apiKey.editDescription")
+                      : language.t("provider.custom.field.apiKey.description")
+                  }
+                  value={form.apiKey}
+                  onChange={(v) => setField("apiKey", v)}
+                />
+              </div>
+              <Button
+                type="button"
+                size="small"
+                variant="outline"
+                disabled={!form.baseURL.trim() || testMutation.isPending}
+                onClick={() => testMutation.mutate()}
+              >
+                {testMutation.isPending
+                  ? language.t("provider.custom.test.testing")
+                  : language.t("provider.custom.test.action")}
+              </Button>
+            </div>
           </section>
 
           <section class="flex flex-col gap-3 border-t border-border-weak-base pt-5">
@@ -378,36 +484,133 @@ export function CustomProviderForm(
 
             <For each={form.models}>
               {(m, i) => (
-                <div class="flex gap-2 items-start" data-row={m.row}>
-                  <div class="flex-[2]">
-                    <TextField
-                      label={language.t("provider.custom.models.id.label")}
-                      hideLabel
-                      placeholder={language.t("provider.custom.models.id.placeholder")}
-                      value={m.id}
-                      onChange={(v) => setModel(i(), "id", v)}
-                      validationState={m.err.id ? "invalid" : undefined}
-                      error={m.err.id}
+                <div class="flex flex-col gap-2" data-row={m.row}>
+                  <div class="flex gap-2 items-start">
+                    <div class="flex-[2]">
+                      <TextField
+                        label={language.t("provider.custom.models.id.label")}
+                        hideLabel
+                        placeholder={language.t("provider.custom.models.id.placeholder")}
+                        value={m.id}
+                        onChange={(v) => setModel(i(), "id", v)}
+                        validationState={m.err.id ? "invalid" : undefined}
+                        error={m.err.id}
+                      />
+                    </div>
+                    <div class="flex-1">
+                      <TextField
+                        label={language.t("provider.custom.models.name.label")}
+                        hideLabel
+                        placeholder={language.t("provider.custom.models.name.placeholder")}
+                        value={m.name}
+                        onChange={(v) => setModel(i(), "name", v)}
+                      />
+                    </div>
+                    {/* SiCode: capabilities and window size per model — a custom model otherwise
+                        inherits the 200k/32k, tools-on defaults, which misleads compaction and tool
+                        calls for smaller or text-only endpoints. */}
+                    <IconButton
+                      type="button"
+                      icon={
+                        <Icon
+                          name="chevron-down"
+                          class={`transition-transform${m.advanced ? "" : " -rotate-90"}`}
+                        />
+                      }
+                      variant="ghost"
+                      class="mt-1.5"
+                      onClick={() => toggleModelAdvanced(i())}
+                      aria-label={language.t("provider.custom.models.advanced")}
+                      aria-expanded={m.advanced}
+                    />
+                    <IconButton
+                      type="button"
+                      icon={<Icon name="trash" />}
+                      variant="ghost"
+                      class="mt-1.5"
+                      onClick={() => removeModel(i())}
+                      disabled={form.models.length <= 1}
+                      aria-label={language.t("provider.custom.models.remove")}
                     />
                   </div>
-                  <div class="flex-1">
-                    <TextField
-                      label={language.t("provider.custom.models.name.label")}
-                      hideLabel
-                      placeholder={language.t("provider.custom.models.name.placeholder")}
-                      value={m.name}
-                      onChange={(v) => setModel(i(), "name", v)}
-                    />
-                  </div>
-                  <IconButton
-                    type="button"
-                    icon={<Icon name="trash" />}
-                    variant="ghost"
-                    class="mt-1.5"
-                    onClick={() => removeModel(i())}
-                    disabled={form.models.length <= 1}
-                    aria-label={language.t("provider.custom.models.remove")}
-                  />
+
+                  <Show when={m.advanced}>
+                    <div class="ms-1 flex flex-col gap-3 rounded-[8px] border border-border-weak-base p-2.5">
+                      <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-13-regular text-text-base">
+                        <For
+                          each={
+                            [
+                              ["tools", "provider.custom.models.tools", m.tools],
+                              ["image", "provider.custom.models.image", m.image],
+                              ["reasoning", "provider.custom.models.reasoning", m.reasoning],
+                            ] as const
+                          }
+                        >
+                          {([key, label, checked]) => (
+                            <label class="flex cursor-pointer items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                class="size-3.5 accent-current"
+                                checked={checked}
+                                onChange={(e) => setModelFlag(i(), key, e.currentTarget.checked)}
+                              />
+                              {language.t(label)}
+                            </label>
+                          )}
+                        </For>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="flex flex-col gap-2">
+                          <TextField
+                            label={language.t("provider.custom.models.context.label")}
+                            hideLabel
+                            placeholder={language.t("provider.custom.models.default")}
+                            value={m.context}
+                            onChange={(v) => setModelLimit(i(), "context", v)}
+                            validationState={m.err.context ? "invalid" : undefined}
+                            error={m.err.context}
+                          />
+                          <div class="flex flex-wrap gap-1">
+                            <For each={CONTEXT_PRESETS}>
+                              {(size) => (
+                                <button
+                                  type="button"
+                                  class="rounded-[5px] px-1.5 py-0.5 text-12-regular text-text-weak hover:bg-v2-background-bg-layer-02 hover:text-text-base"
+                                  onClick={() => setModelLimit(i(), "context", String(size * 1024))}
+                                >
+                                  {size}K
+                                </button>
+                              )}
+                            </For>
+                          </div>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                          <TextField
+                            label={language.t("provider.custom.models.output.label")}
+                            hideLabel
+                            placeholder={language.t("provider.custom.models.default")}
+                            value={m.output}
+                            onChange={(v) => setModelLimit(i(), "output", v)}
+                            validationState={m.err.output ? "invalid" : undefined}
+                            error={m.err.output}
+                          />
+                          <div class="flex flex-wrap gap-1">
+                            <For each={OUTPUT_PRESETS}>
+                              {(size) => (
+                                <button
+                                  type="button"
+                                  class="rounded-[5px] px-1.5 py-0.5 text-12-regular text-text-weak hover:bg-v2-background-bg-layer-02 hover:text-text-base"
+                                  onClick={() => setModelLimit(i(), "output", String(size * 1024))}
+                                >
+                                  {size}K
+                                </button>
+                              )}
+                            </For>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Show>
                 </div>
               )}
             </For>
@@ -422,6 +625,19 @@ export function CustomProviderForm(
                     placeholder={language.t("provider.custom.models.search")}
                     value={probe.query}
                     onInput={(e) => setProbe("query", e.currentTarget.value)}
+                    // The field sits inside the save form: Enter would submit it and close the
+                    // dialog mid-search. Escape folds the fetched list away instead.
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+
+                        return
+                      }
+
+                      if (e.key !== "Escape") return
+                      e.preventDefault()
+                      setProbe("open", false)
+                    }}
                   />
                   <Button
                     type="button"
@@ -432,6 +648,27 @@ export function CustomProviderForm(
                   >
                     {language.t("provider.custom.models.apply", { count: probe.selected.length })}
                   </Button>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-12-regular text-text-weak">
+                    {language.t("provider.custom.models.found", { count: probeMatches().length })}
+                  </span>
+                  <div class="flex gap-1">
+                    <button
+                      type="button"
+                      class="rounded-[5px] px-1.5 py-0.5 text-12-regular text-text-weak hover:bg-v2-background-bg-layer-02 hover:text-text-base"
+                      onClick={selectAllProbe}
+                    >
+                      {language.t("provider.custom.models.selectAll")}
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-[5px] px-1.5 py-0.5 text-12-regular text-text-weak hover:bg-v2-background-bg-layer-02 hover:text-text-base"
+                      onClick={clearProbeSelection}
+                    >
+                      {language.t("provider.custom.models.clear")}
+                    </button>
+                  </div>
                 </div>
                 <ScrollView class="max-h-48">
                   <For each={probeMatches()}>
@@ -459,9 +696,13 @@ export function CustomProviderForm(
                       </label>
                     )}
                   </For>
-                  <Show when={probeMatches.length === 0}>
+                  <Show when={probeMatches().length === 0}>
+                    {/* An endpoint with no models at all and a search with no hits are different
+                        problems; saying "the endpoint returned none" for both hid that. */}
                     <div class="px-2 py-3 text-center text-14-regular text-text-weak">
-                      {language.t("provider.custom.models.none")}
+                      {language.t(
+                        probe.models.length === 0 ? "provider.custom.models.none" : "provider.custom.models.noMatch",
+                      )}
                     </div>
                   </Show>
                 </ScrollView>
@@ -570,8 +811,16 @@ export async function listCustomProviders(sdk: ReturnType<typeof useServerSDK>) 
         env: provider.env,
         settings: settings?.baseURL ? { baseURL: settings.baseURL } : undefined,
         headers: provider.headers,
+        // Capabilities and limits round-trip: the editor shows what the model was configured with.
         models: Object.fromEntries(
-          Object.entries(provider.models ?? {}).map(([modelID, model]) => [modelID, { name: model.name }]),
+          Object.entries(provider.models ?? {}).map(([modelID, model]) => [
+            modelID,
+            {
+              name: model.name,
+              ...(model.capabilities ? { capabilities: model.capabilities } : {}),
+              ...(model.limit ? { limit: model.limit } : {}),
+            },
+          ]),
         ),
       })
     }
@@ -634,10 +883,75 @@ export function CustomProviderActions(props: { providerID: string; name: string;
     })
   }
 
+  // SiCode: test a saved custom provider without opening its editor first — the whole point of the
+  // custom form is a gateway the user cannot otherwise verify. The key lives in the credential store
+  // (or in an env var the server resolves, named by the config), so read both from the same places
+  // the save flow writes them, then let the server do the probing.
+  const testMutation = useMutation(() => ({
+    mutationFn: async () => {
+      const config = (await listCustomProviders(serverSdk)).get(props.providerID)
+      const stored = (await serverSdk.api.credential.list()).find(
+        (item) => item.integrationID === props.providerID && item.value.type === "key",
+      )
+      const env = config?.env?.[0]
+      const started = performance.now()
+
+      try {
+        const result = await serverSdk.api.provider.test({
+          baseURL: config?.settings?.baseURL ?? "",
+          apiKey: stored && stored.value.type === "key" ? stored.value.key : env ? `{env:${env}}` : undefined,
+          headers: config?.headers,
+          model: Object.keys(config?.models ?? {})[0],
+        })
+
+        return { ok: true as const, mode: result.mode, latency: performance.now() - started }
+      } catch (err) {
+        return { ok: false as const, message: err instanceof Error ? err.message : String(err), latency: performance.now() - started }
+      }
+    },
+    onSuccess: (result) => {
+      if (!result.ok) {
+        showToast({
+          title: language.t("provider.custom.test.failed"),
+          description: language.t("provider.custom.test.failed.time", {
+            message: result.message,
+            time: formatLatency(result.latency),
+          }),
+        })
+
+        return
+      }
+
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("provider.custom.test.ok"),
+        description: language.t(
+          result.mode === "chat" ? "provider.custom.test.okChat.time" : "provider.custom.test.okModels.time",
+          { time: formatLatency(result.latency) },
+        ),
+      })
+    },
+  }))
+
   const remove = async () => {
     try {
-      const integration = await serverSdk.api.integration.get({ integrationID: props.providerID })
-      const credentials = integration.data?.connections.filter((item) => item.type === "credential") ?? []
+      // SiCode: a custom provider id is usually not a registered integration, so integration.get
+      // 404s for it — fall back to the credential store, which keys custom provider keys by the
+      // raw provider id (the same place the save flow puts them).
+      const credentials = await serverSdk.api.integration
+        .get({ integrationID: props.providerID })
+        .then(
+          (integration) =>
+            integration.data?.connections.filter((item) => item.type === "credential").map((item) => ({ id: item.id })) ??
+            [],
+        )
+        .catch(async () => {
+          const listed = await serverSdk.api.credential.list()
+          return listed
+            .filter((item) => item.integrationID === props.providerID)
+            .map((item) => ({ id: item.id }))
+        })
       await Promise.all(credentials.map((item) => serverSdk.api.credential.remove({ credentialID: item.id })))
       await serverSdk.api.config.update({ providers: { [props.providerID]: null } })
       data.location.integration.invalidate()
@@ -657,12 +971,50 @@ export function CustomProviderActions(props: { providerID: string; name: string;
     }
   }
 
+  // SiCode: deleting removes the config entry and its stored keys, and nothing restores them — ask
+  // first, the way every other destructive action in the app does.
+  const confirmRemove = () => {
+    void dialog.show(() => (
+      <Dialog fit>
+        <DialogHeader hideClose>
+          <DialogTitleGroup
+            title={language.t("provider.custom.delete.title")}
+            description={language.t("provider.custom.delete.confirm", { provider: props.name })}
+          />
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              dialog.close()
+              void remove()
+            }}
+          >
+            {language.t("common.delete")}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    ))
+  }
+
   return (
-    <div class="flex items-center gap-1">
-      <Button size="normal" variant="ghost-muted" onClick={() => void edit()}>
+    <div class="flex shrink-0 items-center gap-1">
+      <Button
+        size="normal"
+        variant="neutral"
+        icon="flask"
+        disabled={testMutation.isPending}
+        onClick={() => testMutation.mutate()}
+      >
+        {testMutation.isPending ? language.t("provider.custom.test.testing") : language.t("provider.custom.test.short")}
+      </Button>
+      <Button size="normal" variant="neutral" onClick={() => void edit()}>
         {language.t("common.edit")}
       </Button>
-      <Button size="normal" variant="ghost-muted" onClick={() => void remove()}>
+      <Button size="normal" variant="danger" onClick={confirmRemove}>
         {language.t("common.delete")}
       </Button>
     </div>

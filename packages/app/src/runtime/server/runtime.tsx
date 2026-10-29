@@ -218,7 +218,7 @@ function createServerController(
   createPermissionAutoApprover({ sdk, data })
   const notification = createServerNotificationState({ sdk, data, key: connKey, coordinator: notificationCoordinator })
 
-  function enrich(project: { worktree: string; expanded: boolean }) {
+  function enrich(project: { worktree: string; expanded: boolean; pinned?: boolean }) {
     const [childStore] = sync.child(project.worktree, { bootstrap: false })
     const projectID = childStore.project
 

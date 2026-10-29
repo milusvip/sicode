@@ -1006,7 +1006,11 @@
      cards whose edge is the item's left edge, so it disappeared under a card and came back in the
      gutter below it. Rows align on the icon column now. */
   --chain-rail: color-mix(in srgb, var(--v2-text-text-faint, rgba(255, 255, 255, 0.45)) 75%, transparent);
-  --chain-row-hover: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.045)) 100%, transparent);
+  /* SiCode: hover sits *inside* the shell's measured hierarchy — panel fill is layer-01 45%, the
+     head bar is layer-01 100% — so a row lights up without outshining the head. It used to be
+     layer-02 at 100%, the brightest surface in the whole panel (46 vs head 36 in dark), and a
+     hovered chain row read as a selection band. */
+  --chain-row-hover: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 70%, transparent);
   position: relative;
   padding: 0;
   display: flex;
@@ -1990,9 +1994,10 @@
     [data-slot="accordion-item"]
     [data-slot="accordion-header"]
     [data-slot="accordion-trigger"]:hover {
+    /* SiCode: same hierarchy-safe hover as the chain list — layer-01 70%, under the head's 100%. */
     background: var(
         --chain-row-hover,
-        color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(255, 255, 255, 0.045)) 100%, transparent)
+        color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 70%, transparent)
       )
       !important;
   }
@@ -2124,10 +2129,10 @@
     padding-block: 2px;
   }
 
-  /* The sidebar action the card header carried. A chain row has no room for a permanent button, so
-     it fades in on hover/focus and keeps its slot reserved (`opacity`, not `display`) — otherwise
-     the stat column would jump 20px every time the pointer entered the row. When the host exposes
-     no `openFile`, `FileRowOpenFile` renders nothing and the empty slot collapses. */
+  /* SiCode: the sidebar action is always visible. It used to fade in on hover to keep a column of
+     file rows quiet, but the action is the reason to look at the row at all — hiding it behind a
+     hover made it discoverable only by accident. The slot stays reserved (`:empty` collapses when
+     the host exposes no `openFile`), so nothing shifts. */
   [data-slot="chain-file-open"] {
     flex: 0 0 auto;
     display: inline-flex;
@@ -2136,18 +2141,10 @@
     width: 20px;
     height: 20px;
     margin-inline-start: 2px;
-    opacity: 0;
-    transition: opacity 0.15s ease;
 
     &:empty {
       display: none;
     }
-  }
-
-  [data-slot="accordion-trigger"]:hover [data-slot="chain-file-open"],
-  [data-slot="accordion-trigger"]:focus-visible [data-slot="chain-file-open"],
-  [data-slot="accordion-trigger"] [data-slot="chain-file-open"]:focus-within {
-    opacity: 1;
   }
 
   /* Matches the read row's chevron: a chevron-right that rests right, turns down when open, and only
@@ -2319,6 +2316,12 @@
     font-family: var(--font-family-sans);
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
+    /* SiCode: narrow windows squeezed this verb below its content width, and CJK breaks between
+       any two characters, so 更新 stacked vertically. The path owns the squeeze (it ellipsizes);
+       the verb stays one unbreakable, unshrinkable word. The chain-scoped rule carried
+       `flex-shrink: 0` already — the end-of-turn list did not. */
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   [data-slot="apply-patch-change"][data-type="added"] {

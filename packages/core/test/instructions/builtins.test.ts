@@ -44,6 +44,12 @@ describe("InstructionBuiltIns", () => {
         [
           InstructionBuiltIns.AUTHORIZATION,
           "",
+          InstructionBuiltIns.CRAFT,
+          "",
+          InstructionBuiltIns.PRIOR_ART,
+          "",
+          InstructionBuiltIns.SCRIPT_ENCODING,
+          "",
           `Today's date: ${localDate(timestamp)}`,
           "",
           "Here is some useful information about the environment you are running in:",

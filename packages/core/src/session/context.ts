@@ -16,6 +16,7 @@ import { McpTool } from "../tool/mcp.js"
 import { ReferenceInstructions } from "../reference/instructions.js"
 import { SkillInstructions } from "../skill/instructions.js"
 import { Tool } from "../tool.js"
+import { SessionContextHints } from "./context-hints.js"
 import { AgentNotFoundError } from "./error.js"
 import { SessionHistory } from "./history.js"
 import { InstructionEntry } from "./instruction-entry.js"
@@ -75,6 +76,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const agents = yield* Agent.Service
     const builtins = yield* InstructionBuiltIns.Service
+    const contextHints = yield* SessionContextHints.Service
     const model = yield* Model.Service
     const db = (yield* Database.Service).db
     const discovery = yield* InstructionDiscovery.Service
@@ -173,12 +175,19 @@ const layer = Layer.effect(
         selection.instructions,
         model.ref,
       )
+      // SiCode: the likely files of a new request go in front of the model, so it stops guessing
+      // which names to search for. This rides the request only — nothing is written to the session,
+      // and the system prompt (the cacheable prefix) is untouched.
+      const messages = yield* contextHints.inject({
+        sessionID: selection.session.id,
+        messages: history.entries.map((entry) => entry.message),
+      })
       return {
         session: selection.session,
         agent: selection.agent,
         model,
         initial: history.initial,
-        messages: history.entries.map((entry) => entry.message),
+        messages,
         tools: selection.tools,
       }
     })
@@ -216,6 +225,7 @@ export const node = makeLocationNode({
     McpInstructions.node,
     McpTool.node,
     ReferenceInstructions.node,
+    SessionContextHints.node,
     SessionRunnerModel.node,
     SessionModelRequest.node,
     SessionStore.node,

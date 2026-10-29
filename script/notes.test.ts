@@ -50,6 +50,14 @@ test("a check runs on repo files only, so commands and package names never cry w
   expect(fileOf(".workbuddy/memory/YYYY-MM-DD.md")).toBeUndefined()
   expect(fileOf("notes/browser.md")).toBeUndefined()
   expect(fileOf("https://example.com/a")).toBeUndefined()
+  // Neither routes nor elisions are repo files: reading the leading slash as a segment reported every
+  // one of them as `packages//init`, `packages//json`, and so on.
+  expect(fileOf("/init")).toBeUndefined()
+  expect(fileOf("/api/provider/models")).toBeUndefined()
+  expect(fileOf("packages/{client,protocol,core}")).toBeUndefined()
+  expect(fileOf("app/.../virtualizer.tsx")).toBeUndefined()
+  // A trailing slash is still the directory beside it.
+  expect(fileOf("packages/gui-extensions/")).toBe("packages/gui-extensions")
 })
 
 test("writers that save at the same time keep every paragraph", async () => {

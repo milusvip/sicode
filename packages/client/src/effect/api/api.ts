@@ -1472,10 +1472,20 @@ export type ProviderModelsOutput = {
 }
 export type ProviderModelsOperation<E = never> = (input: ProviderModelsInput) => Effect.Effect<ProviderModelsOutput, E>
 
+export type ProviderTestInput = {
+  readonly baseURL: string
+  readonly apiKey?: string | undefined
+  readonly headers?: { readonly [x: string]: string } | undefined
+  readonly model?: string | undefined
+}
+export type ProviderTestOutput = { readonly mode: "chat" | "models" }
+export type ProviderTestOperation<E = never> = (input: ProviderTestInput) => Effect.Effect<ProviderTestOutput, E>
+
 export interface ProviderApi<E = never> {
   readonly list: ProviderListOperation<E>
   readonly get: ProviderGetOperation<E>
   readonly models: ProviderModelsOperation<E>
+  readonly test: ProviderTestOperation<E>
 }
 
 export type IntegrationListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }

@@ -350,7 +350,7 @@ export function mountBrowserPane(input: PaneHost) {
         setStore({ cookies, generation: store.generation + 1 })
         report()
 
-        return { cookies }
+        return { cookies, login: { state: "likely", kept: cookies, pasted: cookies } }
       },
       close: async () => undefined,
       state: () => undefined,
@@ -833,7 +833,7 @@ export function mountBrowserRegion(input: RegionHost) {
       zoom: async () => undefined,
       site: async () => ({ cookies: 0 }),
       clearSite: async () => undefined,
-      setCookies: async () => ({ cookies: 0 }),
+      setCookies: async () => ({ cookies: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
       close: async () => undefined,
       state: () => undefined,
       on: (_name, listener) => {

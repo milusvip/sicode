@@ -14,8 +14,8 @@ import { Icon } from "@opencode/ui/icon"
 import {
   displayName,
   getProjectAvatarSource,
-  getProjectAvatarVariant,
   ProjectAvatar,
+  resolveProjectAvatarVariant,
 } from "@opencode/ui/project-avatar"
 import { useLanguage } from "@/runtime/i18n/language"
 import { pathKey } from "@/workspaces/path-key"
@@ -543,7 +543,7 @@ function ProjectTrigger(props: ComponentProps<"button"> & { controller: PromptPr
           <ProjectAvatar
             fallback={displayName(item())}
             src={getProjectAvatarSource(item().id, item().icon)}
-            variant={getProjectAvatarVariant(item().icon?.color)}
+            variant={resolveProjectAvatarVariant(item())}
           />
         )}
       </Show>
@@ -579,7 +579,7 @@ function ProjectItem(props: {
       <ProjectAvatar
         fallback={displayName(props.project)}
         src={getProjectAvatarSource(props.project.id, props.project.icon)}
-        variant={getProjectAvatarVariant(props.project.icon?.color)}
+        variant={resolveProjectAvatarVariant(props.project)}
       />
       <span class="min-w-0 truncate leading-5">{displayName(props.project)}</span>
     </Menu.RadioItem>

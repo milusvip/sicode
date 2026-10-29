@@ -34,6 +34,7 @@ import { createTimelineSearchController } from "./timeline/search-controller"
 import { TimelineSearchBar } from "./timeline/search-bar"
 import { ActiveSessionComposerRegion, createActiveSessionRegion } from "./composer/region"
 import { SessionIdentityHeader } from "./session-identity-header"
+import { SessionLoadingState } from "./session-loading"
 import { SessionReviewToggle } from "./header/session-header-actions"
 import { SessionRunningMenu } from "./header/session-running-menu"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
@@ -360,6 +361,13 @@ function SessionScreenContent(props: {
               </SessionIdentityHeader>
             </Show>
             <Show when={messagesReady() && session.identity.params.id}>{timelineView()}</Show>
+            {/* Overlays the empty area instead of joining the flow: the timeline measures its own
+                full height there, so a sibling would shift it. */}
+            <Show when={!messagesReady()}>
+              <div class="absolute inset-0 flex">
+                <SessionLoadingState />
+              </div>
+            </Show>
           </Match>
         </Switch>
       </div>

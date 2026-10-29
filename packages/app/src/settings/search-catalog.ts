@@ -174,14 +174,14 @@ export const serverSettings: Entry<SettingsServerTab>[] = [
   { tab: "providers", label: "settings.providers.title", keywords: "connect api key credentials" },
   { tab: "models", label: "settings.models.title", keywords: "model picker visibility" },
   { tab: "extensions", label: "settings.tab.extensions" },
+  { tab: "extensions", subtab: "plugins", label: "settings.extensions.tab.plugins" },
+  { tab: "extensions", subtab: "skills", label: "settings.extensions.tab.skills" },
   {
     tab: "extensions",
     subtab: "mcps",
     label: "settings.extensions.tab.mcps",
     keywords: "model context protocol tools",
   },
-  { tab: "extensions", subtab: "plugins", label: "settings.extensions.tab.plugins" },
-  { tab: "extensions", subtab: "skills", label: "settings.extensions.tab.skills" },
   {
     tab: "general",
     label: "settings.general.row.shell.title",
@@ -210,13 +210,13 @@ export const projectSettings: Entry<SettingsProjectTab>[] = [
   },
   { tab: "workspaces", label: "settings.tab.workspaces", keywords: "workspaces disk usage cleanup delete" },
   { tab: "extensions", label: "settings.tab.extensions" },
+  { tab: "extensions", subtab: "plugins", label: "settings.extensions.tab.plugins" },
+  { tab: "extensions", subtab: "skills", label: "settings.extensions.tab.skills" },
   {
     tab: "extensions",
     subtab: "mcps",
     label: "settings.extensions.tab.mcps",
     keywords: "model context protocol tools",
   },
-  { tab: "extensions", subtab: "plugins", label: "settings.extensions.tab.plugins" },
-  { tab: "extensions", subtab: "skills", label: "settings.extensions.tab.skills" },
   { tab: "extensions", subtab: "lsps", label: "project.settings.extensions.tab.lsps", keywords: "language servers" },
 ]

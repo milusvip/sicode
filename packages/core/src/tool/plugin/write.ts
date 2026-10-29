@@ -18,6 +18,7 @@ import { FileAccess } from "../../file-access.js"
 import { Location } from "../../location.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
+import { BatchEncoding } from "./batch-encoding.js"
 
 export const name = "write"
 
@@ -69,11 +70,15 @@ export const Plugin = {
           // near-duplicate of something the repo already has; in a tree this large the model only
           // ever sees a slice of it, and "prefer editing" alone does not make it look.
           description:
-            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, check that nothing already covers the same job: search with `grep` or `glob`, and extend what you find. A near-duplicate file is the most expensive mistake this tool makes possible.\n\nSiCode: an HTML page written for a human to view (demo, visualization, mock-up) is shown to the user automatically in a side preview panel next to the conversation. Such pages must be responsive: fluid layout, relative units, no fixed widths wider than ~600px, content centered and legible at that size.",
+            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, check that nothing already covers the same job: search with `grep` or `glob`, and extend what you find. A near-duplicate file is the most expensive mistake this tool makes possible.\n\nSiCode: an HTML page written for a human to view (demo, visualization, mock-up) is shown to the user automatically in a side preview panel next to the conversation. Keep such pages self-contained: inline the CSS and JavaScript in the one .html file so the panel renders it complete the moment it opens — separate .css/.js files load half-dressed until their writes land. Only split into separate files when the user explicitly asks for a real multi-file project. Such pages must be responsive: fluid layout, relative units, no fixed widths wider than ~600px, content centered and legible at that size.",
           input: Input,
           output: Output,
-          execute: (input, context) =>
-            Effect.gen(function* () {
+          execute: (input, context) => {
+            // SiCode: the batch-file warning needs the target extension and the final text, which
+            // only exist inside the generator; this per-invocation closure carries it to the
+            // content mapper below. execute runs once per tool call, so nothing leaks between calls.
+            let batchWarning = ""
+            return Effect.gen(function* () {
               const source = {
                 type: "tool" as const,
                 messageID: context.messageID,
@@ -85,6 +90,7 @@ export const Plugin = {
                 Effect.catchTag("Environment.NotFound", () => Effect.undefined),
               )
               const next = Bom.split(input.content)
+              batchWarning = BatchEncoding.warning(target.absolute, next.text)
               const preview = fileDiff(target.resource, current?.text ?? "", next.text, current ? "modified" : "added")
               yield* permission.assert({
                 action: "edit",
@@ -114,11 +120,14 @@ export const Plugin = {
               fileMutation.withLock([FileAccess.resolvePath(location.directory, input.path)]),
               Effect.map((output) => ({
                 output,
-                content: toModelContent(output),
+                // SiCode: a batch file the model wrote with Chinese comments fails at run time, not
+                // here — warn in the result so the model rewrites it ASCII-only immediately.
+                content: toModelContent(output) + batchWarning,
                 metadata: { files: output.files },
               })),
               Effect.mapError((error) => new ToolFailure({ message: `Unable to write ${input.path}`, error })),
-            ),
+            )
+          },
         }),
       )
       .pipe(Effect.orDie)

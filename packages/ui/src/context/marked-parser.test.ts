@@ -87,7 +87,7 @@ test("lexes dollar-heavy paragraphs in near-linear time", () => {
 test("highlights fenced code with the app theme variables", async () => {
   const html = await parser.parse("```ts\nconst value = 1\n```\n")
 
-  expect(html).toStartWith('<pre class="highlights" style="background-color:var(--color-background-stronger)')
+  expect(html).toStartWith('<pre class="highlights" style="background-color:var(--v2-background-bg-layer-02)')
   expect(html).toContain('<code class="language-ts">')
   expect(html).toContain('<span style="color:var(--syntax-keyword)">const </span>')
 })

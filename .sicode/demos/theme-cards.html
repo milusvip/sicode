@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>主题选择：卡片式方案 demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --page-bg: #131313;
+        --panel: #1c1c1c;
+        --panel-2: #232323;
+        --line: #2f2f2f;
+        --text: #ececec;
+        --muted: #9a9a9a;
+        --faint: #6f6f6f;
+        --accent: #fab283;
+        --radius: 10px;
+        --font: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 28px 20px 48px;
+        background: var(--page-bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 13px;
+        line-height: 20px;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 28px;
+        font-weight: 600;
+      }
+
+      .sub {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .note {
+        margin: 0;
+        color: var(--faint);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      .row-label {
+        color: var(--muted);
+        font-size: 12px;
+        margin-inline-end: 2px;
+      }
+
+      .seg {
+        display: inline-flex;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 2px;
+        gap: 2px;
+      }
+
+      .seg button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .seg button[aria-pressed="true"] {
+        background: #3a3a3a;
+        color: var(--text);
+      }
+
+      input[type="search"] {
+        flex: 1 1 160px;
+        min-width: 120px;
+        appearance: none;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        padding: 6px 10px;
+      }
+
+      input[type="search"]::placeholder {
+        color: var(--faint);
+      }
+
+      .count {
+        color: var(--faint);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+        gap: 12px;
+      }
+
+      /* ---- 预览卡：迷你窗口 ---- */
+      .card {
+        position: relative;
+        appearance: none;
+        text-align: start;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        transition:
+          border-color 0.12s ease,
+          background 0.12s ease;
+      }
+
+      .card:hover {
+        border-color: #4a4a4a;
+      }
+
+      .card[aria-pressed="true"] {
+        border-color: var(--accent);
+        background: color-mix(in oklab, var(--accent) 8%, var(--panel));
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .card-name {
+        font-size: 12.5px;
+        font-weight: 530;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .check {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        opacity: 0;
+      }
+
+      .card[aria-pressed="true"] .check {
+        opacity: 1;
+      }
+
+      .mini {
+        border-radius: 7px;
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.35);
+        font-size: 0;
+        line-height: 0;
+      }
+
+      .mini-bar {
+        height: 14px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 6px;
+      }
+
+      .mini-bar i {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        display: block;
+      }
+
+      .mini-body {
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .mini-line {
+        height: 4px;
+        border-radius: 2px;
+      }
+
+      .mini-split {
+        display: flex;
+        gap: 4px;
+      }
+
+      .mini-side {
+        width: 26%;
+        border-radius: 4px;
+        flex: none;
+      }
+
+      .mini-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      /* ---- 色板卡 ---- */
+      .swatches {
+        display: flex;
+        height: 26px;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .swatches span {
+        flex: 1;
+      }
+
+      .swatch-labels {
+        display: flex;
+        gap: 6px;
+        color: var(--faint);
+        font-size: 10px;
+        line-height: 12px;
+      }
+
+      .empty {
+        padding: 28px;
+        text-align: center;
+        color: var(--faint);
+        border: 1px dashed var(--line);
+        border-radius: var(--radius);
+      }
+
+      /* ---- 当前实现对照 ---- */
+      .compare {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .compare-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .compare-row .label {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .compare-row .label b {
+        font-weight: 530;
+        font-size: 13px;
+      }
+
+      .compare-row .label span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .old-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        color: var(--text);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 12px;
+        min-height: 18px;
+      }
+
+      .status b {
+        color: var(--text);
+        font-weight: 530;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>主题：改成卡片选择</h1>
+        <p class="sub">
+          下面是外观设置里「主题」这一项的卡片式方案。配色全部取自
+          <code>packages/ui/src/theme/themes/*.json</code> 的真实调色板（36 个主题），点卡片即选中，可搜索、可切亮暗、可切卡片样式。
+        </p>
+      </header>
+
+      <section class="compare" aria-label="当前实现对照">
+        <div class="compare-row">
+          <div class="label">
+            <b>当前实现</b>
+            <span>一个下拉，只显示名字，看不到主题长什么样</span>
+          </div>
+          <span class="old-select">
+            <span>OpenCode</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </span>
+        </div>
+        <div class="compare-row">
+          <div class="label">
+            <b>改后</b>
+            <span>一屏看到配色，点一下即选，不用先选再看效果</span>
+          </div>
+          <span class="count" id="selected-label">已选：OpenCode</span>
+        </div>
+      </section>
+
+      <section class="toolbar" aria-label="展示控制">
+        <span class="row-label">卡片样式</span>
+        <div class="seg" id="style-seg" role="group" aria-label="卡片样式">
+          <button type="button" data-style="preview" aria-pressed="true">预览卡</button>
+          <button type="button" data-style="swatch" aria-pressed="false">色板卡</button>
+        </div>
+        <span class="row-label">预览亮暗</span>
+        <div class="seg" id="mode-seg" role="group" aria-label="预览亮暗">
+          <button type="button" data-mode="system" aria-pressed="true">跟随系统</button>
+          <button type="button" data-mode="light" aria-pressed="false">浅色</button>
+          <button type="button" data-mode="dark" aria-pressed="false">深色</button>
+        </div>
+        <input type="search" id="filter" placeholder="搜索主题…" aria-label="搜索主题" />
+        <span class="count" id="count"></span>
+      </section>
+
+      <div class="grid" id="grid" role="radiogroup" aria-label="主题"></div>
+      <div class="empty" id="empty" hidden>没有匹配的主题</div>
+
+      <p class="status" id="status" role="status" aria-live="polite">
+        点一张卡片试试：<b>选中</b>会把上面那行与卡片状态一起更新。
+      </p>
+
+      <p class="note">
+        待定：卡片用「预览卡」还是「色板卡」；选中是否立刻应用（现在下拉是立刻应用，卡片也可以改成先预览、松手才应用）。
+      </p>
+    </div>
+
+    <script>
+      // [id, name, "bg,ink,primary,accent,ok,err,info" (dark), same (light)]
+      const THEMES = [
+        ["amoled", "AMOLED", "#000000,#ffffff,#b388ff,#ff4081,#00ff88,#ff1744,#18ffff", "#f0f0f0,#0a0a0a,#6200ff,#ff0080,#00e676,#ff1744,#00b0ff"],
+        ["aura", "Aura", "#15141b,#edecee,#a277ff,#ff6767,#61ffca,#ff6767,#82e2ff", "#f5f0ff,#2d2640,#a277ff,#d94f4f,#40bf7a,#d94f4f,#5bb8d9"],
+        ["ayu", "Ayu", "#0f1419,#d6dae0,#3fb7e3,#f2856f,#78d05c,#f58572,#66c6f1", "#fdfaf4,#4f5964,#4aa8c8,#ef7d71,#5fb978,#e6656a,#2f9bce"],
+        ["carbonfox", "Carbonfox", "#393939,#f2f4f8,#33b1ff,#ff8389,#42be65,#ff8389,#78a9ff", "#8e8e8e,#161616,#0072c3,#da1e28,#198038,#da1e28,#0043ce"],
+        ["catppuccin", "Catppuccin", "#1e1e2e,#cdd6f4,#b4befe,#f38ba8,#a6e3a1,#f38ba8,#89dceb", "#eff1f5,#4c4f69,#7287fd,#d20f39,#40a02b,#d20f39,#04a5e5"],
+        ["catppuccin-frappe", "Catppuccin Frappe", "#303446,#c6d0f5,#8caaee,#f4b8e4,#a6d189,#e78284,#81c8be", "#eff1f5,#4c4f69,#7287fd,#d20f39,#40a02b,#d20f39,#04a5e5"],
+        ["catppuccin-macchiato", "Catppuccin Macchiato", "#24273a,#cad3f5,#8aadf4,#f5bde6,#a6da95,#ed8796,#8bd5ca", "#eff1f5,#4c4f69,#7287fd,#d20f39,#40a02b,#d20f39,#04a5e5"],
+        ["cobalt2", "Cobalt2", "#193549,#ffffff,#0088ff,#2affdf,#9eff80,#ff0088,#ff9d00", "#ffffff,#193549,#0066cc,#00acc1,#4caf50,#e91e63,#ff5722"],
+        ["cursor", "Cursor", "#181818,#e4e4e4,#88c0d0,#88c0d0,#3fa266,#e34671,#81a1c1", "#fcfcfc,#141414,#6f9ba6,#6f9ba6,#1f8a65,#cf2d56,#3c7cab"],
+        ["dracula", "Dracula", "#1d1e28,#f8f8f2,#bd93f9,#ff79c6,#50fa7b,#ff5555,#8be9fd", "#f8f8f2,#1f1f2f,#7c6bf5,#d16090,#2fbf71,#d9536f,#1d7fc5"],
+        ["everforest", "Everforest", "#2d353b,#d3c6aa,#a7c080,#d699b6,#a7c080,#e67e80,#83c092", "#fdf6e3,#5c6a72,#8da101,#df69ba,#8da101,#f85552,#35a77c"],
+        ["flexoki", "Flexoki", "#100F0F,#CECDC3,#DA702C,#8B7EC8,#879A39,#D14D41,#3AA99F", "#FFFCF0,#100F0F,#205EA6,#BC5215,#66800B,#AF3029,#24837B"],
+        ["github", "GitHub", "#0d1117,#c9d1d9,#58a6ff,#39c5cf,#3fb950,#f85149,#d29922", "#ffffff,#24292f,#0969da,#1b7c83,#1a7f37,#cf222e,#bc4c00"],
+        ["gruvbox", "Gruvbox", "#282828,#ebdbb2,#83a598,#fb4934,#b8bb26,#fb4934,#d3869b", "#fbf1c7,#3c3836,#076678,#9d0006,#79740e,#9d0006,#8f3f71"],
+        ["kanagawa", "Kanagawa", "#1F1F28,#DCD7BA,#7E9CD8,#D27E99,#98BB6C,#E82424,#76946A", "#F2E9DE,#54433A,#2D4F67,#D27E99,#6f894e,#E82424,#4d699b"],
+        ["lucent-orng", "Lucent Orng", "#2a1a15,#eeeeee,#EC5B2B,#FFF7F1,#6ba1e6,#e06c75,#56b6c2", "#fff5f0,#1a1a1a,#EC5B2B,#c94d24,#0062d1,#d1383d,#318795"],
+        ["material", "Material", "#263238,#eeffff,#82aaff,#89ddff,#c3e88d,#f07178,#ffcb6b", "#fafafa,#263238,#6182b8,#39adb5,#91b859,#e53935,#f4511e"],
+        ["matrix", "Matrix", "#0a0e0a,#62ff94,#2eff6a,#c770ff,#62ff94,#ff4b4b,#30b3ff", "#eef3ea,#203022,#1cc24b,#c770ff,#1cc24b,#ff4b4b,#30b3ff"],
+        ["mercury", "Mercury", "#171721,#dddde5,#8da4f5,#8da4f5,#77c599,#fc92b4,#77becf", "#ffffff,#363644,#5266eb,#8da4f5,#036e43,#b0175f,#007f95"],
+        ["monokai", "Monokai", "#272822,#f8f8f2,#ae81ff,#f92672,#a6e22e,#f92672,#66d9ef", "#fdf8ec,#292318,#bf7bff,#d9487c,#4fb54b,#e54b4b,#2d9ad7"],
+        ["nightowl", "Night Owl", "#011627,#d6deeb,#82aaff,#f78c6c,#c5e478,#ef5350,#82aaff", "#f0f0f0,#403f53,#4876d6,#aa0982,#2aa298,#de3d3b,#4876d6"],
+        ["nord", "Nord", "#2e3440,#e5e9f0,#88c0d0,#d57780,#a3be8c,#bf616a,#81a1c1", "#eceff4,#2e3440,#5e81ac,#bf616a,#8fbcbb,#bf616a,#81a1c1"],
+        ["one-dark", "One Dark", "#282c34,#abb2bf,#61afef,#56b6c2,#98c379,#e06c75,#d19a66", "#fafafa,#383a42,#4078f2,#0184bc,#50a14f,#e45649,#986801"],
+        ["onedarkpro", "One Dark Pro", "#1e222a,#abb2bf,#61afef,#e06c75,#98c379,#e06c75,#56b6c2", "#f5f6f8,#2b303b,#528bff,#d85462,#4fa66d,#e06c75,#61afef"],
+        ["oc-2", "OpenCode", "#1f1f1f,#f1ece8,#fab283,#edb2f1,#12c905,#fc533a,#edb2f1", "#f7f7f7,#171311,#dcde8d,#a753ae,#12c905,#fc533a,#a753ae"],
+        ["orng", "Orng", "#0a0a0a,#eeeeee,#EC5B2B,#FFF7F1,#6ba1e6,#e06c75,#56b6c2", "#ffffff,#1a1a1a,#EC5B2B,#c94d24,#0062d1,#d1383d,#318795"],
+        ["osaka-jade", "Osaka Jade", "#111c18,#C1C497,#2DD5B7,#549e6a,#549e6a,#FF5345,#2DD5B7", "#F6F5DD,#111c18,#1faa90,#3d7a52,#3d7a52,#c7392d,#1faa90"],
+        ["palenight", "Palenight", "#292d3e,#a6accd,#82aaff,#89ddff,#c3e88d,#f07178,#f78c6c", "#fafafa,#292d3e,#4976eb,#00acc1,#91b859,#e53935,#f4511e"],
+        ["rosepine", "Rose Pine", "#191724,#e0def4,#9ccfd8,#ebbcba,#31748f,#eb6f92,#9ccfd8", "#faf4ed,#575279,#31748f,#d7827e,#286983,#b4637a,#56949f"],
+        ["shadesofpurple", "Shades of Purple", "#1a102b,#f5f0ff,#c792ff,#ff7ac6,#7be0b0,#ff7ac6,#7dd4ff", "#f7ebff,#3b2c59,#7a5af8,#ff6bd5,#3dd598,#ff6bd5,#62d4ff"],
+        ["solarized", "Solarized", "#002b36,#93a1a1,#6c71c4,#d33682,#859900,#dc322f,#2aa198", "#fdf6e3,#586e75,#268bd2,#d33682,#859900,#dc322f,#2aa198"],
+        ["synthwave84", "Synthwave '84", "#262335,#ffffff,#36f9f6,#b084eb,#72f1b8,#fe4450,#ff8b39", "#fafafa,#262335,#00bcd4,#9c27b0,#4caf50,#f44336,#ff5722"],
+        ["tokyonight", "Tokyonight", "#1a1b26,#c0caf5,#7aa2f7,#ff9e64,#9ece6a,#f7768e,#7dcfff", "#e1e2e7,#273153,#2e7de9,#b15c00,#587539,#c94060,#007197"],
+        ["vercel", "Vercel", "#000000,#EDEDED,#0070F3,#8E4EC6,#46A758,#E5484D,#52A8FF", "#FFFFFF,#171717,#0070F3,#8E4EC6,#388E3C,#DC3545,#0070F3"],
+        ["vesper", "Vesper", "#101010,#FFF,#FFC799,#FF8080,#99FFE4,#FF8080,#FFC799", "#F0F0F0,#101010,#FFC799,#B30000,#99FFE4,#FF8080,#FFC799"],
+        ["zenburn", "Zenburn", "#3f3f3f,#dcdccc,#8cd0d3,#93e0e3,#7f9f7f,#cc9393,#dfaf8f", "#ffffef,#3f3f3f,#5f7f8f,#5f8f8f,#5f8f5f,#8f5f5f,#8f7f5f"],
+      ]
+
+      const themes = THEMES.map(([id, name, dark, light]) => ({
+        id,
+        name,
+        dark: dark.split(","),
+        light: light.split(","),
+      }))
+
+      const grid = document.getElementById("grid")
+      const empty = document.getElementById("empty")
+      const count = document.getElementById("count")
+      const filter = document.getElementById("filter")
+      const status = document.getElementById("status")
+      const selectedLabel = document.getElementById("selected-label")
+
+      let style = "preview"
+      let mode = "system"
+      let selected = "oc-2"
+
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)")
+
+      const shade = (hex, amount) => {
+        const value = hex.replace("#", "")
+        const full = value.length === 3 ? value.replace(/(.)/g, "$1$1") : value
+        const num = parseInt(full, 16)
+        const channel = (shift) => {
+          const base = (num >> shift) & 255
+          const next = Math.max(0, Math.min(255, Math.round(base + amount)))
+
+          return next.toString(16).padStart(2, "0")
+        }
+
+        return `#${channel(16)}${channel(8)}${channel(0)}`
+      }
+
+      const paletteOf = (theme) => {
+        const useDark = mode === "system" ? prefersDark.matches : mode === "dark"
+        const [bg, ink, primary, accent, ok, err, info] = useDark ? theme.dark : theme.light
+
+        return { bg, ink, primary, accent, ok, err, info, dark: useDark }
+      }
+
+      const miniPreview = (palette) => {
+        const chrome = shade(palette.bg, palette.dark ? 14 : -10)
+        const track = shade(palette.bg, palette.dark ? 26 : -22)
+
+        return `
+          <div class="mini" style="background:${palette.bg}">
+            <div class="mini-bar" style="background:${chrome}">
+              <i style="background:${palette.err}"></i>
+              <i style="background:${palette.info}"></i>
+              <i style="background:${palette.ok}"></i>
+            </div>
+            <div class="mini-body">
+              <div class="mini-line" style="background:${palette.ink};width:62%;opacity:.85"></div>
+              <div class="mini-line" style="background:${track};width:88%"></div>
+              <div class="mini-split">
+                <div class="mini-side" style="background:${chrome}"></div>
+                <div class="mini-main">
+                  <div class="mini-line" style="background:${palette.primary};width:74%"></div>
+                  <div class="mini-line" style="background:${track};width:96%"></div>
+                  <div class="mini-line" style="background:${palette.accent};width:52%"></div>
+                </div>
+              </div>
+            </div>
+          </div>`
+      }
+
+      const swatchPreview = (palette) => {
+        const colors = [palette.bg, palette.primary, palette.accent, palette.ok, palette.err, palette.info, palette.ink]
+
+        return `
+          <div class="swatches">
+            ${colors.map((color) => `<span style="background:${color}"></span>`).join("")}
+          </div>`
+      }
+
+      const render = () => {
+        const query = filter.value.trim().toLowerCase()
+        const list = themes.filter((theme) => theme.name.toLowerCase().includes(query))
+        const useDark = mode === "system" ? prefersDark.matches : mode === "dark"
+
+        grid.innerHTML = list
+          .map((theme) => {
+            const palette = paletteOf(theme)
+            const on = theme.id === selected
+
+            return `
+              <button
+                class="card"
+                type="button"
+                role="radio"
+                data-theme="${theme.id}"
+                aria-checked="${on}"
+                aria-pressed="${on}"
+              >
+                <span class="card-head">
+                  <span class="card-name">${theme.name}</span>
+                  <svg class="check" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3" aria-hidden="true">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </span>
+                ${style === "preview" ? miniPreview(palette) : swatchPreview(palette)}
+              </button>`
+          })
+          .join("")
+
+        empty.hidden = list.length > 0
+        count.textContent = `${list.length} / ${themes.length}${useDark ? " · 深色" : " · 浅色"}`
+
+        for (const button of grid.querySelectorAll(".card")) {
+          button.addEventListener("click", () => {
+            selected = button.dataset.theme
+            const theme = themes.find((item) => item.id === selected)
+
+            selectedLabel.textContent = `已选：${theme.name}`
+            status.innerHTML = `已选 <b>${theme.name}</b>（<code>${theme.id}</code>）— 真实实现里这一步会写 <code>localStorage</code> 并应用主题。`
+            render()
+          })
+        }
+      }
+
+      document.getElementById("style-seg").addEventListener("click", (event) => {
+        const button = event.target.closest("button")
+
+        if (!button) return
+        style = button.dataset.style
+
+        for (const item of event.currentTarget.querySelectorAll("button")) {
+          item.setAttribute("aria-pressed", String(item === button))
+        }
+
+        render()
+      })
+
+      document.getElementById("mode-seg").addEventListener("click", (event) => {
+        const button = event.target.closest("button")
+
+        if (!button) return
+        mode = button.dataset.mode
+
+        for (const item of event.currentTarget.querySelectorAll("button")) {
+          item.setAttribute("aria-pressed", String(item === button))
+        }
+
+        render()
+      })
+
+      filter.addEventListener("input", render)
+      prefersDark.addEventListener("change", render)
+
+      render()
+    </script>
+  </body>
+</html>

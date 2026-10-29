@@ -859,6 +859,25 @@ describe("ShellTool timeout policy", () => {
     expect(ShellTool.resolveTimeout({})).toBe(ShellTool.DEFAULT_TIMEOUT_MS)
     expect(ShellTool.resolveTimeout({ background: false })).toBe(ShellTool.DEFAULT_TIMEOUT_MS)
   })
+
+  test("a command moved to the background keeps a bounded lifetime", () => {
+    // Clearing the timeout here used to leave the process running forever, contradicting the cap.
+    expect(ShellTool.backgroundedTimeout({})).toBe(24 * 60 * 60 * 1_000)
+    expect(ShellTool.backgroundedTimeout({ timeout: 50 })).toBe(50)
+    expect(ShellTool.backgroundedTimeout({ timeout: 0 })).toBe(0)
+  })
+
+  test("only reports the blocking cost once a call is slow enough to matter", () => {
+    const original = ShellTool.slowTimings.thresholdMs
+    ShellTool.slowTimings.thresholdMs = 30_000
+    try {
+      expect(ShellTool.slowNotice(29_999, 42)).toBeUndefined()
+      expect(ShellTool.slowNotice(30_000, 1)).toContain("blocked the session for 30s and returned 1 character.")
+      expect(ShellTool.slowNotice(78_400, 0)).toContain("blocked the session for 78s and returned 0 characters.")
+    } finally {
+      ShellTool.slowTimings.thresholdMs = original
+    }
+  })
 })
 
 describe("ShellTool", () => {
@@ -897,6 +916,35 @@ describe("ShellTool", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
     ),
   )
+
+  it.live("tells the model how long a slow command blocked it", () => {
+    // Every command counts as slow, so the notice is observable without waiting 30 seconds. The
+    // threshold is lowered and restored inside the effect on purpose: mutating shared module state
+    // while building the effect leaks into every other shell test in this file.
+    return Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const original = ShellTool.slowTimings.thresholdMs
+            ShellTool.slowTimings.thresholdMs = 0
+            const result = yield* executeTool(registry, {
+              sessionID,
+              ...toolIdentity,
+              call: { type: "tool-call", id: "call-slow-shell", name: "shell", input: { command: helloCommand } },
+            }).pipe(Effect.ensuring(Effect.sync(() => (ShellTool.slowTimings.thresholdMs = original))))
+            expect(result.status).toBe("completed")
+            const text = (result.content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+            expect(result.content?.[0]).toEqual(Expected.text("hello"))
+            expect(text).toContain("blocked the session for")
+            expect(text).toContain("pass background: true")
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    )
+  })
 
   productionIt.live(
     "registers and returns real successful output from the active Location",

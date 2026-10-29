@@ -49,6 +49,34 @@ export const AUTHORIZATION = [
   "</authorization>",
 ].join("\n")
 
+// SiCode: product craft rules, distilled from the two rules every coding session is judged by. Kept to three
+// lines because this block sits in the stable prompt head: it earns its tokens or it does not go in.
+export const CRAFT = [
+  "<craft>",
+  "Delete redundant slogans, captions, and secondary tags. Before adding any interface text, try removing what is already there instead. If the screen stops making sense once the text is gone, the layout was the problem — redesign the layout rather than restoring the wording.",
+  "Every change must leave all three experiences better — the end user's, the developer's, and your own as the agent doing the work — and must not break what already works. If a change trades one of them away, say which and why before making it.",
+  "</craft>",
+].join("\n")
+
+// SiCode: models default to hand-rolling generic machinery instead of looking for prior art, and
+// hand-rolled parsers/protocol clients/algorithms are slower to build and buggier than the
+// battle-tested open-source equivalents. Two lines in the stable prompt head flip the default to
+// search first, using the websearch/webfetch tools the model otherwise only uses when told to.
+export const PRIOR_ART = [
+  "<prior-art>",
+  "Before implementing anything generic — file-format parsing, protocol clients, codecs, compression, image/media processing, well-known algorithms, third-party API integrations — search the web and package registries (npm, GitHub) for an existing open-source implementation, and prefer reusing or porting a battle-tested one. Hand-roll only when nothing suitable exists; state what you searched and why the options found were rejected.",
+  "</prior-art>",
+].join("\n")
+
+// SiCode: cmd.exe parses .bat/.cmd in the system ANSI code page (GBK on zh-CN Windows), so the
+// UTF-8 Chinese comments the model likes to write decode as mojibake, split lines, and the script
+// runs as garbage commands. Two lines in the stable prompt head prevent the whole failure class.
+export const SCRIPT_ENCODING = [
+  "<script-encoding>",
+  "Windows batch files (.bat/.cmd) are parsed by cmd.exe in the system ANSI code page (GBK on Chinese Windows), never UTF-8. Keep their content ASCII-only: English comments; put Chinese instructions in a separate .md file. Do not rely on chcp 65001 — it does not make cmd parse the file as UTF-8 reliably.",
+  "</script-encoding>",
+].join("\n")
+
 const GIT_STATUS_INTRO = [
   "The following is the git status at the start of the conversation. It is a snapshot and does not update as the conversation goes; run `git status` yourself if you need the current state.",
   "Do not revert or discard changes you did not make. Check `git diff` before undoing any edit you are unsure about.",
@@ -101,6 +129,36 @@ const layer = Layer.effect(
               render: {
                 initial: () => AUTHORIZATION,
                 changed: () => AUTHORIZATION,
+              },
+            }),
+            // SiCode: the craft contract rides every session — it is the review standard for the work itself.
+            Instructions.make({
+              key: Instructions.Key.make("core/craft"),
+              codec: Schema.toCodecJson(Schema.Literal("ok")),
+              read: Effect.succeed("ok" as const),
+              render: {
+                initial: () => CRAFT,
+                changed: () => CRAFT,
+              },
+            }),
+            // SiCode: search-for-prior-art rule, so generic machinery starts from open source.
+            Instructions.make({
+              key: Instructions.Key.make("core/prior-art"),
+              codec: Schema.toCodecJson(Schema.Literal("ok")),
+              read: Effect.succeed("ok" as const),
+              render: {
+                initial: () => PRIOR_ART,
+                changed: () => PRIOR_ART,
+              },
+            }),
+            // SiCode: batch-file encoding rule, same rationale as tool/plugin/batch-encoding.ts.
+            Instructions.make({
+              key: Instructions.Key.make("core/script-encoding"),
+              codec: Schema.toCodecJson(Schema.Literal("ok")),
+              read: Effect.succeed("ok" as const),
+              render: {
+                initial: () => SCRIPT_ENCODING,
+                changed: () => SCRIPT_ENCODING,
               },
             }),
             Instructions.make({

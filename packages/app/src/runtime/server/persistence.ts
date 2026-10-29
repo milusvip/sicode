@@ -33,6 +33,9 @@ const ProjectList = Persistence.array(
   Persistence.struct({
     worktree: Schema.String,
     expanded: Persistence.fallback(Schema.Boolean, () => true),
+    // Display order only: a pinned project leads its server's list without moving in the stored
+    // order, so unpinning restores the arrangement the user built in the home page.
+    pinned: Persistence.fallback(Schema.Boolean, () => false),
   }),
 )
 

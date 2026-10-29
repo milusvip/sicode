@@ -8,6 +8,8 @@ type Translator = (key: string, vars?: Record<string, string | number | boolean>
 export type ModelErr = {
   id?: string
   name?: string
+  context?: string
+  output?: string
 }
 
 export type HeaderErr = {
@@ -19,6 +21,15 @@ export type ModelRow = {
   row: string
   id: string
   name: string
+  /** Capabilities: the schema's defaults are tools on and image input on, reasoning off. */
+  tools: boolean
+  image: boolean
+  reasoning: boolean
+  /** Raw text so an empty field means "provider default" and never writes a limit. */
+  context: string
+  output: string
+  /** Per-row disclosure for the advanced block; UI state, never persisted. */
+  advanced: boolean
   err: ModelErr
 }
 
@@ -43,13 +54,28 @@ export type FormState = {
   }
 }
 
+/** A model entry as this form writes it: only the fields the user actually changed from defaults.
+ *  Read-side fields the form does not edit (output modalities, temperature, input limit) stay
+ *  optional so an existing config round-trips unchanged. */
+export type ModelConfigEntry = {
+  name: string
+  capabilities?: {
+    tools?: boolean
+    input?: string[]
+    output?: string[]
+    temperature?: boolean
+    reasoning?: { supported: boolean }
+  }
+  limit?: { context?: number; input?: number; output?: number }
+}
+
 export type CustomProviderConfig = {
   name: string
   package: string
   env?: string[]
   settings: { baseURL: string }
   headers?: Record<string, string>
-  models: Record<string, { name: string }>
+  models: Record<string, ModelConfigEntry>
 }
 
 type ValidateArgs = {
@@ -101,6 +127,16 @@ export function validateCustomProvider(input: ValidateArgs) {
 
   const seenModels = new Set<string>()
 
+  /** Empty means "use the provider default"; anything else must be a positive whole number. */
+  const limitValue = (raw: string) => {
+    const value = raw.trim()
+
+    if (!value) return {}
+    if (!/^\d+$/u.test(value) || Number(value) <= 0) return { error: input.t("provider.custom.error.number") }
+
+    return { value: Number(value) }
+  }
+
   const models = input.form.models.map((m) => {
     const id = m.id.trim()
 
@@ -116,13 +152,30 @@ export function validateCustomProvider(input: ValidateArgs) {
 
     // The display name is optional: an endpoint's model ids are usually legible enough, and a
     // fetched list should not force a second field per row. Empty falls back to the id.
-    return { id: idError, name: undefined }
+    return { id: idError, context: limitValue(m.context).error, output: limitValue(m.output).error }
   })
 
-  const modelsValid = models.every((m) => !m.id)
-  const modelConfig = Object.fromEntries(
-    input.form.models.map((m) => [m.id.trim(), { name: m.name.trim() || m.id.trim() }]),
-  )
+  const modelsValid = models.every((m) => !m.id && !m.context && !m.output)
+
+  const modelEntry = (m: ModelRow): ModelConfigEntry => {
+    // Only what differs from the schema defaults is written: a config that spells out `tools: true`
+    // for every model is noise, and a stale copy if the default ever changes.
+    const capabilities = {
+      ...(m.tools ? {} : { tools: false }),
+      ...(m.image ? {} : { input: ["text"] }),
+      ...(m.reasoning ? { reasoning: { supported: true } } : {}),
+    }
+    const context = limitValue(m.context).value
+    const output = limitValue(m.output).value
+
+    return {
+      name: m.name.trim() || m.id.trim(),
+      ...(Object.keys(capabilities).length ? { capabilities } : {}),
+      ...(context || output ? { limit: { ...(context ? { context } : {}), ...(output ? { output } : {}) } } : {}),
+    }
+  }
+
+  const modelConfig = Object.fromEntries(input.form.models.map((m) => [m.id.trim(), modelEntry(m)]))
 
   const seenHeaders = new Set<string>()
 
@@ -192,9 +245,30 @@ let row = 0
 
 const nextRow = () => `row-${row++}`
 
-export const modelRow = (): ModelRow => ({ row: nextRow(), id: "", name: "", err: {} })
+export const modelRow = (): ModelRow => ({
+  row: nextRow(),
+  id: "",
+  name: "",
+  tools: true,
+  image: true,
+  reasoning: false,
+  context: "",
+  output: "",
+  advanced: false,
+  err: {},
+})
 
 export const headerRow = (): HeaderRow => ({ row: nextRow(), key: "", value: "", err: {} })
+
+/** A provider id derived from a display name, offered until the user edits the id themselves. */
+export function providerIDFromName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 48)
+}
 
 export function formFromConfig(input: {
   providerID: string
@@ -203,13 +277,25 @@ export function formFromConfig(input: {
     env?: readonly string[]
     settings?: { baseURL?: string }
     headers?: Record<string, string>
-    models?: Record<string, { name?: string }>
+    models?: Record<string, { name?: string } & Omit<ModelConfigEntry, "name">>
   }
 }): FormState {
   const models = Object.entries(input.config.models ?? {}).map(([id, model]) => ({
     row: nextRow(),
     id,
     name: model.name ?? id,
+    tools: model.capabilities?.tools !== false,
+    image: !model.capabilities?.input || model.capabilities.input.includes("image"),
+    reasoning: model.capabilities?.reasoning?.supported === true,
+    context: model.limit?.context ? String(model.limit.context) : "",
+    output: model.limit?.output ? String(model.limit.output) : "",
+    // Anything beyond the defaults opens the block, so an existing setup is visible at a glance.
+    advanced:
+      model.capabilities?.tools === false ||
+      (!!model.capabilities?.input && !model.capabilities.input.includes("image")) ||
+      model.capabilities?.reasoning?.supported === true ||
+      !!model.limit?.context ||
+      !!model.limit?.output,
     err: {},
   }))
   const headers = Object.entries(input.config.headers ?? {}).map(([key, value]) => ({

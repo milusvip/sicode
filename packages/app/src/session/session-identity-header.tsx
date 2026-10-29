@@ -4,8 +4,8 @@ import { Menu } from "@opencode/ui/menu"
 import {
   displayName,
   getProjectAvatarSource,
-  getProjectAvatarVariant,
   ProjectAvatar,
+  resolveProjectAvatarVariant,
 } from "@opencode/ui/project-avatar"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
@@ -154,7 +154,7 @@ export function SessionProjectMenu(props: {
                   aria-hidden="true"
                   fallback={projectName()}
                   src={getProjectAvatarSource(props.project?.id, props.project?.icon)}
-                  variant={getProjectAvatarVariant(props.project?.icon?.color)}
+                  variant={resolveProjectAvatarVariant(props.project)}
                 />
                 <bdi
                   ref={(element) =>

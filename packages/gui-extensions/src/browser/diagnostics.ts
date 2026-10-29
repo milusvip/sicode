@@ -15,6 +15,8 @@ type Request = {
   redirected?: boolean
   /** ExtraInfo arrives once per redirect hop, in order; these mark which hops consumed theirs. */
   wire: { request: boolean; response: boolean }
+  /** Monotonic sequence of the request leaving "pending"; a wait compares this against its baseline. */
+  done?: number
 }
 
 type Wire = { headers: Protocol.Network.Headers; statusCode: number }
@@ -35,6 +37,7 @@ export function createDiagnostics(cdp: Cdp) {
   const extra = new Map<string, { request?: Protocol.Network.Headers; response?: Wire }>()
   const scope = crypto.randomUUID()
   let sequence = 0
+  let completions = 0
   let droppedMessages = 0
   let droppedRequests = 0
 
@@ -188,6 +191,7 @@ export function createDiagnostics(cdp: Cdp) {
       failure === undefined
         ? { ...request.info, state: "completed", durationMs }
         : { ...request.info, state: "failed", failure: failure.slice(0, 2_048), durationMs }
+    request.done = ++completions
   }
 
   cdp.on("Network.requestWillBeSent", (event, sessionID) => {
@@ -209,6 +213,7 @@ export function createDiagnostics(cdp: Cdp) {
         statusCode: previous.info.statusCode ?? event.redirectResponse.status,
         durationMs: Math.max(0, (event.timestamp - (previous.started ?? event.timestamp)) * 1000),
       }
+      previous.done = ++completions
     }
 
     begin(
@@ -342,6 +347,17 @@ export function createDiagnostics(cdp: Cdp) {
         )
 
       return request.info
+    },
+    /** Monotonic count of requests that left "pending"; a wait snapshots this as its baseline. */
+    done() {
+      return completions
+    },
+    /** Whether a matching request finished after the baseline: its response arrived, or it failed. */
+    completedSince(input: { urlContains: string; since: number }) {
+      return Array.from(requests.values()).some(
+        (request) =>
+          request.done !== undefined && request.done > input.since && request.info.url.includes(input.urlContains),
+      )
     },
     async get(input: Extract<Browser.Action, { type: "network.get" }>) {
       const request = requests.get(input.id)

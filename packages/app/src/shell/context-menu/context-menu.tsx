@@ -18,7 +18,18 @@ import "./context-menu.css"
 
 const EDITABLE = 'input, textarea, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]'
 
-const EMPTY: ContextMenuTarget = { editable: false, selection: "", link: undefined, dev: false }
+// SiCode: message surfaces a whole-bubble copy applies to — the user bubble's text and the
+// assistant answer body. `closest()` walks out of nested markdown nodes to the container.
+const MESSAGE = '[data-slot="user-message-text"], [data-slot="text-part-body"]'
+
+const EMPTY: ContextMenuTarget = {
+  editable: false,
+  selection: "",
+  link: undefined,
+  image: undefined,
+  message: undefined,
+  dev: false,
+}
 
 const EXTERNAL = new Set(["http:", "https:", "mailto:"])
 
@@ -43,6 +54,52 @@ function externalLink(element: Element | null) {
   if (!EXTERNAL.has(new URL(anchor.href, location.href).protocol)) return undefined
 
   return anchor.href
+}
+
+// SiCode: `innerText`, not `textContent` — markdown blocks would concatenate without newlines.
+function messageText(node: Element) {
+  const bubble = node.closest<HTMLElement>(MESSAGE)
+
+  return bubble?.innerText.trim() || undefined
+}
+
+function imageSource(node: Element) {
+  const image = node.closest("img")
+
+  return image?.src || undefined
+}
+
+// SiCode: the write goes through the renderer's own async clipboard — Electron 44 removed the
+// main-process writeImage, and ClipboardItem is constructible here only. PNG passes through;
+// anything else (webp/avif — what pastes and sites often carry) is re-encoded through a canvas,
+// because Chromium only accepts image/png on the system clipboard. A fetch that cannot pass CORS
+// or a lost user activation leaves the clipboard untouched; 复制图片地址 still works for that image.
+async function copyImage(source: string) {
+  try {
+    const response = await fetch(source)
+    const blob = await response.blob()
+    const png = blob.type === "image/png" ? blob : await toPng(blob)
+
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
+  } catch {
+    // Nothing sensible to surface from a menu action; the clipboard keeps its previous content.
+  }
+}
+
+async function toPng(blob: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob)
+  const canvas = document.createElement("canvas")
+  canvas.width = bitmap.width
+  canvas.height = bitmap.height
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0)
+
+  const encoded = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("Image encoding failed"))), "image/png"),
+  )
+
+  bitmap.close()
+
+  return encoded
 }
 
 function menuPlatform(os: string | undefined): ContextMenuPlatform {
@@ -98,6 +155,24 @@ export function AppContextMenu() {
 
         return
       }
+      case "message.copy": {
+        if (state.target.message) void platform.writeClipboardText?.(state.target.message)
+
+        return
+      }
+      case "image.copy": {
+        // Focus first the same way the text actions do: the menu owns it while open.
+        if (state.focus?.isConnected) state.focus.focus({ preventScroll: true })
+
+        if (state.target.image) void copyImage(state.target.image)
+
+        return
+      }
+      case "image.copyAddress": {
+        if (state.target.image) void platform.writeClipboardText?.(state.target.image)
+
+        return
+      }
       case "edit.copy": {
         // Read-only selections are copied from the captured text: clicking a menu item can
         // collapse the document selection before the native action would read it.
@@ -145,6 +220,8 @@ export function AppContextMenu() {
           editable: !!focus,
           selection: focus ? editableText(focus) : (window.getSelection()?.toString() ?? ""),
           link: externalLink(node),
+          image: imageSource(node),
+          message: messageText(node),
           dev: DEV,
         })
 

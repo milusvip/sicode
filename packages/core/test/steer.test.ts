@@ -55,6 +55,21 @@ describe("selectSteer", () => {
     })
   })
 
+  test("a file probed over and over is named, and never stops the turn", () => {
+    const result = steer({ probeNudged: "packages/ui/package.json" })
+    expect(result?.stop).toBe(false)
+    expect(result?.role).toBe("system")
+    expect(result?.prompt).toContain("packages/ui/package.json")
+  })
+
+  test("a loop outranks a repeated probe, because it is the more specific signal", () => {
+    expect(steer({ loopNudged: true, probeNudged: "a.ts", narrate: true })).toEqual({
+      prompt: LOOP_NUDGE_PROMPT,
+      role: "system",
+      stop: false,
+    })
+  })
+
   test("a failure streak is nudged toward research when no loop is in play", () => {
     expect(steer({ failureNudged: true, narrate: true, exploreSoft: true })).toEqual({
       prompt: FAILURE_RESEARCH_PROMPT,

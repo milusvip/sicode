@@ -217,7 +217,11 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
     ? ShellScan.scanPowerShell(command)
     : ShellScan.scan(command, name === "bash" || name === "zsh" ? name : "posix")
   if (result.kind === "opaque")
-    return yield* Effect.fail(new Error(`Portable shell scanner cannot analyze command: ${result.reason}`))
+    // SiCode: name the session shell in the failure, so a model that shipped the wrong dialect
+    // (a bash heredoc into a PowerShell session) can self-correct instead of retrying verbatim.
+    return yield* Effect.fail(
+      new Error(`Portable shell scanner cannot analyze command: ${result.reason} (session shell: ${shell})`),
+    )
 
   const output: Result = { commands: [], directories: [] }
   for (const item of result.commands) {

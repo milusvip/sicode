@@ -6,8 +6,6 @@ import { RestrictToVerticalAxis } from "@dnd-kit/abstract/modifiers"
 import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { arrayMove } from "@dnd-kit/helpers"
 import { Button } from "@opencode/ui/button"
-import { Icon } from "@opencode/ui/icon"
-import { IconButton } from "@opencode/ui/icon-button"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { SessionQueueView } from "./queue"
@@ -171,7 +169,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
                   data-action="session-queue-steer"
                   type="button"
                   size="small"
-                  variant="ghost-faint"
+                  variant="ghost-muted"
                   icon="arrow-up"
                   disabled={props.queue.busy()}
                   class="![font-weight:530]"
@@ -180,31 +178,29 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
                   {props.queue.working() ? language.t("session.queue.steer") : language.t("session.queue.send")}
                 </Button>
               </Tooltip>
-              <Tooltip placement="top" value={language.t("session.queue.undo")}>
-                <IconButton
-                  data-action="session-queue-undo"
-                  type="button"
-                  size="small"
-                  variant="ghost-muted"
-                  icon={<Icon name="outline-undo" />}
-                  disabled={props.queue.busy()}
-                  aria-label={language.t("session.queue.undo")}
-                  onClick={() => props.queue.undo(props.id)}
-                />
-              </Tooltip>
-            </Show>
-            <Tooltip placement="top" value={language.t("session.queue.remove")}>
-              <IconButton
-                data-action="session-queue-remove"
+              <Button
+                data-action="session-queue-undo"
                 type="button"
                 size="small"
                 variant="ghost-muted"
-                icon={<Icon name="outline-xmark" />}
+                icon="outline-undo"
                 disabled={props.queue.busy()}
-                aria-label={language.t("session.queue.remove")}
-                onClick={() => void props.queue.remove(props.id)}
-              />
-            </Tooltip>
+                onClick={() => props.queue.undo(props.id)}
+              >
+                {language.t("session.queue.undo")}
+              </Button>
+            </Show>
+            <Button
+              data-action="session-queue-remove"
+              type="button"
+              size="small"
+              variant="ghost-muted"
+              icon="outline-xmark"
+              disabled={props.queue.busy()}
+              onClick={() => void props.queue.remove(props.id)}
+            >
+              {language.t("session.queue.remove")}
+            </Button>
           </div>
         </div>
       )}

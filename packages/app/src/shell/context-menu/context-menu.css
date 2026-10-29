@@ -7,7 +7,11 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  min-width: 232px;
+  /* Sized by content, not by a fixed floor. A single 232px floor made every menu (including the
+     sidebar's three-character labels) that wide; max-content lets short menus stay short and long
+     ones grow, with the same rule for both the app-wide menu and the sidebar's. */
+  width: max-content;
+  min-width: 176px;
   max-width: 340px;
   padding: 4px;
   z-index: 70;
@@ -41,6 +45,13 @@
   }
 }
 
+/* The sidebar's labels are short by nature (新建会话 / 关闭项目). The shared 176px floor belongs to
+   the app-wide menu, whose items carry shortcuts and would look cramped any narrower; applied here
+   it only added an empty gutter to the right of every label. This variant hugs its own content. */
+[data-slot="left-sidebar-menu"] {
+  min-width: 0;
+}
+
 /* The selection preview confirms what Copy will take before it is taken. */
 [data-slot="sicode-context-menu-selection"] {
   margin: 0 0 2px;
@@ -62,7 +73,11 @@
   align-items: center;
   gap: 10px;
   flex: none;
-  height: 30px;
+  /* 28px matches the row height used everywhere else in the sidebar, so a menu item and the row
+     it acts on are the same module. The 13px text carries the compact 16px line box rather than a
+     solid one: `line-height: 1` clips g/j/p/q/y inside the truncating label, and this package
+     forbids it for text. */
+  height: 28px;
   padding: 0 8px;
   border-radius: 6px;
   background: transparent;
@@ -70,7 +85,7 @@
   font-family: var(--v2-font-family-sans);
   font-size: 13px;
   font-weight: 500;
-  line-height: 1;
+  line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 
   cursor: default;
