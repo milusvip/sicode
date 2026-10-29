@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SiCode 代码定位方案 · 全网调研</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6f8;
+    color: #1f2328;
+    line-height: 1.7;
+    padding: 32px 16px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 26px; margin-bottom: 6px; }
+  .sub { color: #656d76; font-size: 14px; margin-bottom: 28px; }
+  h2 { font-size: 19px; margin: 32px 0 12px; padding-left: 10px; border-left: 4px solid #0969da; }
+  .card {
+    background: #fff; border: 1px solid #d8dee4; border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 14px;
+  }
+  .card h3 { font-size: 16px; margin-bottom: 6px; }
+  .card p { font-size: 14px; color: #424a53; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; margin-left: 8px; vertical-align: 2px; }
+  .tag.red { background: #ffebe9; color: #cf222e; }
+  .tag.green { background: #dafbe1; color: #1a7f37; }
+  .tag.blue { background: #ddf4ff; color: #0969da; }
+  .tag.gray { background: #eff1f3; color: #57606a; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d8dee4; border-radius: 10px; overflow: hidden; font-size: 14px; }
+  th { background: #f0f2f4; text-align: left; padding: 10px 12px; font-size: 13px; }
+  td { padding: 10px 12px; border-top: 1px solid #e8ebef; vertical-align: top; }
+  .big { font-size: 15px; font-weight: 600; }
+  .good { color: #1a7f37; font-weight: 600; }
+  .bad { color: #cf222e; font-weight: 600; }
+  .layers { display: flex; flex-direction: column; gap: 10px; }
+  .layer { display: flex; align-items: flex-start; gap: 12px; background: #fff; border: 1px solid #d8dee4; border-radius: 10px; padding: 14px 16px; }
+  .num { flex: 0 0 30px; height: 30px; border-radius: 50%; background: #0969da; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-top: 2px; }
+  .layer.optional .num { background: #8250df; }
+  .layer h4 { font-size: 15px; margin-bottom: 3px; }
+  .layer p { font-size: 13.5px; color: #424a53; }
+  .verdict { background: #fff8c5; border: 1px solid #d4a72c; border-radius: 10px; padding: 16px 20px; margin: 20px 0; font-size: 14.5px; }
+  .ask { background: #ddf4ff; border: 1px solid #54aeff; border-radius: 10px; padding: 16px 20px; margin: 20px 0; font-size: 14.5px; }
+  .ask ol { margin: 8px 0 0 20px; }
+  .ask li { margin-bottom: 6px; }
+  code { background: #eff1f3; border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+  .foot { margin-top: 30px; font-size: 12px; color: #8b949e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>SiCode 代码定位方案：全网调研结果</h1>
+<div class="sub">2026-10-29 · 起因：那个改设置页的会话，模型猜了 7 次关键词、走了 21 轮才找到根因</div>
+
+<div class="verdict">
+  <b>最重要的发现：Cursor 在 2026 年 7 月把自己的「向量索引」砍掉了。</b><br>
+  它改用本地超快词法索引（Instant Grep）+ 子代理。也就是说——<b>别再抄 Cursor 的向量索引了，它自己都不用了。</b>网上大量讲 Cursor 向量索引的文章都是过时的。
+</div>
+
+<h2>一、现在各家到底在用什么</h2>
+<table>
+  <tr><th>谁</th><th>做法</th><th>一句话点评</th></tr>
+  <tr>
+    <td class="big">Cursor<br><span class="tag red">已转向</span></td>
+    <td>本地 trigram 倒排索引（正则搜索 16.8 秒 → 13 毫秒）+ Explore 子代理；不再存 embeddings</td>
+    <td>官方理由：模型已经够会用 grep，旧语义路径帮助不大</td>
+  </tr>
+  <tr>
+    <td class="big">Augment<br><span class="tag green">唯一加码索引的</span></td>
+    <td>预建「语义依赖图」，理解调用链、事件、跨仓库；做成了 MCP 可挂到任何 agent</td>
+    <td>SWE-bench Pro 第一名 51.80%（和 Cursor、Claude Code 用同一个模型，差距全在检索层）——但是厂商自测</td>
+  </tr>
+  <tr>
+    <td class="big">Devin/Windsurf</td>
+    <td>专门训练了一个「检索小模型」，8 路并行 grep，4 轮内出结果</td>
+    <td>效果最好但需要训练能力，我们复制不了</td>
+  </tr>
+  <tr>
+    <td class="big">Claude Code / Zed</td>
+    <td>什么都不建，纯 grep + read 硬搜</td>
+    <td>能用，但概念型问题就靠多花轮次——我们的会话就是这样慢的</td>
+  </tr>
+</table>
+
+<h2>二、向量检索到底有没有用？两边证据都摆出来</h2>
+<div class="card">
+  <h3>说没用的证据 <span class="tag red">多数派</span></h3>
+  <p>· BM25（升级版关键词检索）在 SWE-bench 检索任务上<b>打赢了 8 个向量模型里的 6 个</b><br>
+     · 实测同样的准确率，向量方案<b>贵 4 倍</b>（返回的是代码片段，缺上下文，模型得反复补搜）<br>
+     · SWE-bench 早期基线：纯向量 RAG 只有 1.96%，改用工具后 12.47%</p>
+</div>
+<div class="card">
+  <h3>说有用的证据 <span class="tag green">恰好是我们的场景</span></h3>
+  <p>· 2026 年 8 月一篇严格实验：概念型问题（"哪些文件负责 XX"）上，<b>向量检索 65.2% vs 硬搜 46.2%，高出 19 个百分点</b>，还便宜 2.3 倍<br>
+     · 我们的慢会话「侧栏底部留白」正是这种问题——<b>中文意图对英文代码，关键词永远搜不到</b>，这就是模型猜 7 次全落空的原因</p>
+</div>
+<div class="card">
+  <h3>结论</h3>
+  <p><b>不是二选一，是分层用</b>：找具体符号 → 词法秒杀；只能描述意图（尤其中文）→ 语义补位。两条腿都要，但分工明确。</p>
+</div>
+
+<h2>三、补充调研：CodeGraph（结构层，值得和语义 MCP 一起验证）</h2>
+<div class="card">
+  <h3>CodeGraph（colbymchenry）<span class="tag blue">无向量，与我们同路</span></h3>
+  <p>本地 tree-sitter 建调用图存 SQLite，8 个工具：搜符号、查调用者/被调用者、<b>改动影响面分析</b>、一键打包上下文。19+ 语言，保存后 2 秒增量同步。安装器<b>自动检测 opencode 并写配置</b>——SiCode 今天就能试。</p>
+</div>
+<div class="card">
+  <h3>独立实测（不是厂商数字）</h3>
+  <p>· 需要跨语言追调用链的问题：成本 <b>−16%</b>，工具调用 16.5 vs 25 次——有用但远没官方吹的 62%<br>
+     · grep 五次就能到的问题：<b>几乎无差别</b><br>
+     · 代价：常驻后台进程；会话窗口多 ~80% 检索上下文<br>
+     · 警示：另一图谱项目 Solograph 把内置图谱砍了——「四个月 agent 从没问过结构性问题」。<b>agent 用不用它，永远是最大变数</b></p>
+</div>
+<div class="card">
+  <h3>我们的验证安排（更新）</h3>
+  <p><b>CodeGraph 验证「结构层」，claude-context 验证「语义层」</b>，都是一行 npx 装上。我们的 repo map 已是它的迷你版（tree-sitter 符号+依赖边），缺的只是调用边和 callers/impact 查询——如果验证有效，这是第 1 层的自然延伸。</p>
+</div>
+
+<h2>四、各方案提升对比（重点看「口径」那列）</h2>
+<table>
+  <tr>
+    <th>方案</th><th>提升幅度（统一折算）</th><th>宣称/实测提升</th><th>口径可信度</th><th>对我们慢会话（21轮）的意义</th>
+  </tr>
+  <tr>
+    <td class="big">BM25F 分字段加权<br><span class="tag green">打算做</span></td>
+    <td class="big good">检索质量 +20%</td>
+    <td>约 +20% 检索质量；i18n 键/类名进符号字段后中文 UI 词可直接命中</td>
+    <td><span class="tag gray">Cody 内部评测</span> 方向可信，幅度存疑</td>
+    <td>中等——解决「猜 CSS 类名」这类半猜半搜，<b>解决不了纯中文意图</b></td>
+  </tr>
+  <tr>
+    <td class="big">查询扩展（先翻译再搜）</td>
+    <td class="big">待 A/B（预期步数 −30~50%）</td>
+    <td>无直接数字（Cursor 弃向量间接佐证：模型够聪明后语义路径无增益）</td>
+    <td><span class="tag gray">无数据</span> 需 A/B 验证</td>
+    <td><b>理论上最大</b>——直击「中文意图→英文代码」断链，零成本，值得先试</td>
+  </tr>
+  <tr>
+    <td class="big">CodeGraph 结构图谱</td>
+    <td class="big good">追调用链步数 −34%，成本 −16%；简单任务 0%</td>
+    <td>追调用链任务：成本 <b>−16%</b>，工具调用 25→16.5 次（=−34%）；简单任务无差别</td>
+    <td><span class="tag green">独立复现</span> rustman 10-27 实测，最可信的一份</td>
+    <td>中低——我们的痛点是找文件不是追调用链；适合改接口前的 impact 检查</td>
+  </tr>
+  <tr>
+    <td class="big">语义向量检索<br><span class="tag blue">MCP 可选</span></td>
+    <td class="big good">概念题通过率 <b>+41%</b>（46.2%→65.2%）<br><span class="bad">标识符题反而 −4pp、成本 +4×</span></td>
+    <td>概念型查询 +19 个百分点（=相对 +41%），且省 22× token；但定位标识符任务反而更差、成本 4×（另一实测）</td>
+    <td><span class="tag green">独立论文</span> + <span class="tag red">厂商吹 +71~80%</span>（Augment 自测不可信）</td>
+    <td><b>对「留白在哪」这种问题最对症</b>，但要解决 agent 不用它的问题</td>
+  </tr>
+  <tr>
+    <td class="big">Cursor Instant Grep</td>
+    <td class="big">搜索延迟 −99.9%（大仓库）</td>
+    <td>正则搜索 16.8 秒 → 13 毫秒（大仓库）</td>
+    <td><span class="tag red">厂商口径</span> 无第三方对照</td>
+    <td>低——本仓 ripgrep 全扫才 250ms，1万+文件仓库才需要</td>
+  </tr>
+  <tr>
+    <td class="big">SWE-grep 检索模型</td>
+    <td class="big">检索耗时 −95%（20×）</td>
+    <td>比 agentic 搜索快 20×、比向量快 10×</td>
+    <td><span class="tag red">厂商口径</span> 且需要训练能力，不可复制</td>
+    <td>仅作参考，不适用</td>
+  </tr>
+  <tr>
+    <td class="big">我们的 repo map</td>
+    <td class="big">未验证</td>
+    <td>未验证（能不能降步数还没有会话数据）</td>
+    <td><span class="tag gray">无数据</span></td>
+    <td>待测——它已是 CodeGraph 的迷你版，可借 CodeGraph 的验证方法补数据</td>
+  </tr>
+</table>
+
+<div class="verdict" style="margin-top:16px">
+  <b>读表结论：</b>所有「20×、+80%、94%」级别的大数字全是厂商自测，独立复现出来的真实收益是——
+  词法加权 +20%、结构图谱步数 −34%、语义向量概念题 +41%（仅概念型，标识符题反而变差）。<b>没有单一银弹，这就是为什么方案是三层叠加而不是押注一个。</b>
+  另外三份独立证据（repowise、Solograph、rustman）都指向同一个风险：<b>agent 可能根本不调用装好的检索工具</b>——所以第 2 层的提示词指引和第 1 层一样重要。
+</div>
+
+<h2>四点五、排名：最快 ≠ 最好</h2>
+<div class="card">
+  <h3>🥇 单项「最快」：Cursor Instant Grep <span class="tag red">但只是「搜得快」</span></h3>
+  <p>正则搜索 13ms，单项速度无敌。<b>但它只是把「关键词搜索」这一步做到极致</b>——前提是你已经知道要搜什么词。我们的慢会话里模型的问题不是搜得慢，是<b>不知道该搜什么词</b>（猜了 7 次全错）。所以它对我们那个场景无解。</p>
+</div>
+<div class="card">
+  <h3>🥇 综合「最好」：Augment Context Engine <span class="tag red">厂商自测 + 要花钱</span></h3>
+  <p>SWE-bench Pro 51.80% 第一（和 Cursor、Claude Code 同模型对比，差距全在检索层）。语义依赖图 + 跨仓理解确实是当前最强定位能力。<b>但：数字是厂商自测；按次收费（$0.03~0.06/查询）；代码要上云。</b></p>
+</div>
+<div class="card">
+  <h3>🥇 性价比「最实用」：分层叠加（我们方案）<span class="tag green">免费 + 本地</span></h3>
+  <p>行业给不出单一赢家时，收敛的都是分层：确定性索引（快而准）+ 查询扩展（解决中文意图）+ 可选语义兜底。每一层独立复现的真实收益：+20% / 待测 / +41%——<b>叠加才是对 21 轮慢会话的正解</b>。</p>
+</div>
+<div class="verdict">
+  <b>一句话排名：</b>搜得最快 = Instant Grep；定位最准 = Augment（贵、上云）；<b>最适合 SiCode = 分层方案</b>——因为我们用户的核心痛点是中文意图定位，且要免费、本地，这两个约束直接淘汰了前两名的主打场景。
+</div>
+
+<h2>五、我建议 SiCode 这么做（三层）</h2>
+<div class="layers">
+  <div class="layer">
+    <div class="num">1</div>
+    <div>
+      <h4>升级关键词搜索（先做，改动小）</h4>
+      <p>把 ripgrep 裸搜升级成「分字段加权」：代码内容、符号定义、文件路径、i18n 键、CSS 类名分开打分。tree-sitter 设施我们已有，直接复用。Cody 实证这类升级约 +20%。</p>
+    </div>
+  </div>
+  <div class="layer">
+    <div class="num">2</div>
+    <div>
+      <h4>教主模型「先翻译再搜」（零成本，这是关键层）</h4>
+      <p>既然已经对接了 AI，最便宜的语义层就是主模型自己：在提示词里教它——搜不到时先把中文意图翻译成英文候选词（「侧栏底部留白」→ sidebar / footer / empty / flex），再搜同义词。零新模型、零索引。Cursor 弃向量正是同款逻辑：模型够聪明，缺的是指引。</p>
+    </div>
+  </div>
+  <div class="layer optional">
+    <div class="num">3</div>
+    <div>
+      <h4>向量检索交给生态，不内建 <span class="tag red">本地模型方案已砍</span></h4>
+      <p>本地 embedding 模型没有意义——主模型本来就看得见代码，「隐私」不成立。想要向量检索的用户自己挂 MCP（claude-context 等），SiCode 提供配置示例即可，不背 400MB 下载和索引工程。</p>
+    </div>
+  </div>
+</div>
+
+<h2>六、要达到 Cursor / Augment 的效果，分别要补什么</h2>
+
+<div class="card">
+  <h3>目标 A：追平现在的 Cursor（Instant Grep + Explore 子代理）</h3>
+  <p><b>① Instant Grep 等价物 = trigram 倒排索引</b>：SQLite FTS5 就能做（CodeGraph 实测 1105 文件 5 秒建完、2 秒增量），tree-sitter 分词 + FTS5 表 + 倒排查询。只对 1 万+ 文件的仓库有显著收益，本仓这种 250ms 的不急。<br>
+  <b>② Explore 子代理 = 隔离搜索上下文</b>：opencode 本来就有 subagent 机制，配一个受限 agent 预设（只给 grep/read/glob 三件套 + 快模型），搜完只回传结论不回传正文。这是防「搜索垃圾撑爆主会话」的关键，而且成本很低。<br>
+  <b>③ 查询扩展指引</b>（我们第 2 层）——Cursor 没有的，我们对中文用户反而更有优势。</p>
+  <p><b>工作量：</b>① 一周内、② 两三天、③ 一天。合计约两周，全部本地免费。</p>
+</div>
+
+<div class="card">
+  <h3>目标 B：追平 Augment Context Engine（语义依赖图）</h3>
+  <p>它的核心是三件套，逐个看我们怎么补：<br>
+  <b>① 调用图 + 影响面分析</b>：repo map 已有符号和依赖边，缺的是「调用边」（tree-sitter 提取 call 表达式）和 callers/callees/impact 三个查询。这是 repo map 的自然延伸，一两周。<br>
+  <b>② 框架感知路由</b>（React Router/Django 式的「URL→处理函数」跳转）： CodeGraph 支持 13 个框架，我们按用户量先做 React/Vue 两三个。<br>
+  <b>③ commit 历史索引（Context Lineage）+ 跨仓库</b>：<b>这个不追</b>——工程量巨大、收益主要是企业级多仓场景，SiCode 用户单仓为主。</p>
+  <p><b>工作量：</b>①+② 约 2~3 周。③ 明确放弃。诚实说：追平的是<b>用户可感知的效果</b>（改接口前知道影响面、跨文件追调用链不看运气），不是 feature 清单对齐。</p>
+</div>
+
+<div class="card">
+  <h3>路线图（按收益/成本排序）</h3>
+  <p><b>第一阶段（本周可做）：</b>查询扩展指引 + BM25F 字段加权 —— 预期解决慢会话的一半问题<br>
+  <b>第二阶段（下周）：</b>Explore 式搜索子代理 —— 防上下文污染，所有用户受益<br>
+  <b>第三阶段（再做）：</b>trigram 索引（大仓库）+ repo map 加调用边/impact —— 对齐 Cursor 与 Augment 的核心能力<br>
+  <b>持续旁路：</b>CodeGraph / claude-context MCP 挂着验证，如果第三方做得够好就不自研重复轮子</p>
+</div>
+
+<div class="verdict">
+  <b>诚实的天花板：</b>Augment 靠语义依赖图 + commit 历史拿了 SWE-bench Pro 第一，那是它全公司的核心业务；我们两周追的是它「用户可感知的 80%」（调用图、影响面、快搜索），剩下 20%（跨仓、历史谱系、语义图）明确放弃或交给 MCP 生态。<b>免费 + 本地 + 中文扩展，是我们对它们没有的差异化，不是劣势补偿。</b>
+</div>
+
+<div class="ask">
+  <b>要你拍板的：</b>
+  <ol>
+    <li>第一阶段（查询扩展 + BM25F 加权）现在开工吗？</li>
+    <li>第二阶段的搜索子代理要不要一起排进去？</li>
+    <li>第三阶段的调用边/impact，先在 repo map 里做还是先用 CodeGraph MCP 顶着？</li>
+  </ol>
+</div>
+
+<div class="foot">详细数据、来源链接和口径说明见同目录 <code>codebase-retrieval.md</code>（v3）</div>
+
+</div>
+</body>
+</html>

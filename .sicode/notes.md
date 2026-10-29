@@ -802,6 +802,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 契约层不需要新增方法：`Browser.open(session, url)` 早已存在（`browser/renderer.tsx:52` → `model.openURL` → `command(tabs.open, {url})`）。**但 `canOpen`/`openURL` 都要求 pane 已 attach（`registration` 或 `browser` 状态存在）**，也就是这个会话的侧边浏览器至少被打开过一次，否则命令无处可发。这是侧边浏览器方案的硬前提，也是回退提示存在的原因。
 - 取舍：默认系统浏览器。理由是链接的语义是「去别处」，用户要的是自己的登录态与扩展；侧边面板适合不想离开应用的少数场景。`⌘/Ctrl/Shift/Alt + 点击` 始终交给平台（不拦截）。
 - 验证：app tsc 干净、`vite build` 通过（产物 `shell-*.js` 含 `settings-link-target`）、单测 779 pass / 3 fail（与改动前基线一致：settings search ×2 + visibleTimelineMessages ×1）。
+- 侧栏底部大片留白（2026-10-29 修）：`.settings-nav` 是 100% 高的 flex 列，但 `.settings-nav-groups` 只有内容高、没有吃剩余空间，导航组（含「关于」）因此全堆在顶部，下面空一块。改版演示稿 `.sicode/demos/settings-trae-demo.html` 里是用 `margin-top:auto` 把「关于」压在底部的，实装时漏了这一步。修于 `packages/app/src/settings/settings.css`：`.settings-nav-groups` 加 `flex:1`（超长时这一层自己滚）、`.settings-nav-group:last-child` 加 `margin-top:auto`、`.settings-nav-group` 加 `flex-shrink:0`（防止溢出时被压扁）。移动端断点 `.settings-nav { height:auto }`，auto 外边距退化为 0，不受影响。
 
 ## artifact 侧边预览
 
@@ -1239,3 +1240,24 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **system-first 栈 = workbuddy 参考实现（2026-10-29 固化，提交 064ba80a4a）**：当前 `--font-family-sans` = `-apple-system, BlinkMacSystemFont, "PingFang SC", Helvetica, Arial, "Microsoft YaHei", "微软雅黑", "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif`（mono 栈不变，真 mono 脸在前、CJK 兜底在后）。设计意图：mac 落 PingFang、Windows 落 Microsoft YaHei，英文由 Helvetica/Arial 兜（不走 CJK 脸的拉丁字形），打包的 Noto variable 只是**最后兜底**（Linux/无系统 CJK 脸的机器）——UI 字号下 Noto 在 Windows Chromium 里明显比系统 CJK 脸细，所以它绝不能排前面。
 - **三个坑**：① `"Microsoft YaHei UI"` 与 `"Microsoft YaHei"` 是**不同字体文件**，Windows 优先解析前者——曾因它导致 UI 跟参考实现漂移，已从栈里删除；② `packages/app/src/settings/model.tsx` 的 effect 在 settings 加载时把同一变量**内联写到 :root**，覆盖 theme.css 初值，两处必须 byte-identical（比对方法：正则提取两份栈、压缩空白后全等）；③ `stack(font, base)` 把用户设置存的值拼在 base **前面**——老用户在设置里存过 "思源黑体" 会让新栈完全架空，排查「改了没效果」先查这里。
 - **参考实现的真实栈提取法**：WorkBuddy 装在 `D:/Program Files\WorkBuddy\resources\app.asar.unpacked\renderer/assets/dist-*.css`，`grep -oh "font-family:[^;}]*"` 排序即得（它家用 Source Code Pro 作 mono）。
+
+## 内置浏览器代理
+
+- **侧边浏览器打不开外网（2026-10-29 修，提交 1f1be1638f）**：每个浏览器 pane 用独立 partition（`opencode-browser-<UUID>`，见 `pane.ts:119`），**partition session 是独立网络栈，不继承系统代理** → 内置浏览器直连 → 需要代理的站点全打不开，而系统浏览器（读系统代理）能开。用户机器代理：注册表 `ProxyServer=127.0.0.1:7897`（Clash 混合端口）、无 PAC、`ProxyOverride` 已含本地。
+- 修法（`gui-extensions/src/browser/chromium.ts`）：`createBrowserPage` 里拿到 `contents.session` 后 `applySystemProxy()`——用 `session.defaultSession.resolveProxy("https://example.com")` 拿到 PAC 结果串，取第一个 `PROXY host:port` 拼成 `http://host:port`，再 `session.setProxy({ proxyRules, proxyBypassRules: "<local>,localhost,127.0.0.1,[::1]" })`。解析结果模块级缓存（切了梯子需重启才生效，这是已知取舍）。
+- **旁路规则必须显式写**：上游 `lifecycle/configure.ts` 有 `app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")`（来自上游 e1e2efe8ec），`<-loopback>` 的语义是**取消** Chromium 默认的本地绕过、让 loopback 也走代理——不显式设 bypass，SiCode 自己的 3084/5173 sidecar 请求也会被送进代理。
+- **不要只改 env**：`desktop/src/main/service/system-proxy.ts` 的 `syncSystemProxy` 只把系统代理镜像进 `HTTP_PROXY/HTTPS_PROXY` 环境变量（给 sidecar 的 fetch/webfetch 用），它管不到任何浏览器 session。二者是两条独立路径。
+
+## 工具批量编辑
+
+- `packages/core/src/session/runner/step.ts:122-151` 每个 tool-call 到达就 `Effect.forkScoped` 一个 fiber，结束 `Fiber.awaitAll`，所以一条消息里的多个工具调用天然并发。
+- `packages/core/src/file-mutation.ts:60` 锁表是模块级 `transactionLocks`，跨 Location 共享；`:71-74` 按解析后绝对路径排序逐个加锁，同路径串行、不同路径不阻塞。`edit.ts:320` 和 `patch.ts:304` 各自整段包在 `withLock` 内。
+- `edit` 与 `patch` 的关键差异在失败语义：`edit.ts:268-297` 每次独立读→匹配→写，同一批多个 edit 前面写成功的不回退（部分成功）；`patch.ts:109-212` 先把全部 hunk 解析成 `Prepared` 并预校验，`:219` 才请权、`:233` 才逐文件写，任何 hunk 失败都不落盘。
+- `packages/core/src/plugin/syntax-check.ts:31` 的 `WRITERS` 只有 edit/write，`:94-99` 的 `writtenPath` 只读 `input.path`；`patch.ts:21-25` 输入只有 `patchText`，所以 patch 完全不触发语法检查。这是「批量路径没有即时诊断」的根因。
+- `packages/core/src/syntax-check/runner.ts:108-118` 每个文件 spawn 一个子进程（bun build --no-bundle / python -c / clang++ -fsyntax-only），单次 timeout 3s；`Effect.forEach` 默认顺序，要给 patch 加多文件检查必须显式 `{ concurrency: N }` 并设文件数上限。
+- `FileDiff.Info` 在 `packages/schema/src/file-diff.ts:6-12`，`status` 取 `added|deleted|modified`；patch 的 `metadata.files` 就是这个形状，多文件诊断应过滤 `deleted`。
+- 不要按模型家族切换编辑工具：`patch.ts:319-333` 的 SiCode 注释记录过上游 usePatch 的做法会让工具面漂移、破坏 prompt cache，三个工具同时注册是刻意的。
+
+## 代码检索方案
+
+- **第一手逆向材料在本机（2026-10-29 接入方案讨论）**：`D:/软件丨工具/cursor逆向专区/文档/`（38 篇，@verified 2026-10-24）——《Cursor-本地Trigram索引存储结构》《Cursor-本地检索与索引全链路》是方案级第一手材料（真实仓库 + crepectl 实测，非博客）。关键实测（SiCode 仓库 8654 文件）：稀有符号 indexed grep ~14ms vs 全库 rg 内容搜索 ~1000ms = 50~70×，Agent 每轮 5~10 次 grep → 每轮省秒级——**推翻「trigram 仅 1万+文件仓库才显著」的旧判断**（250ms 是 rg --files 的速度，内容搜索恒定 ~1s）。全量建索引 ~7s/8019 docs/87MB（源码 97MB）。机制：Crepe 倒排 `.git/cursor/crepe/<commit>/`（CRP2 格式，Rust 原生 file-service，非 SQLite）；更新=事件+防抖合并、commit 锚定、unsaved buffer 由工具层并搜；候选集无相关性排序（doc_id 序）；head_limit 无默认 + 2000 行/15k 字符硬帽；语义与正则分工具不混排，语义失败明确引导 grep/glob/read。抄能力最小清单：commit 级倒排（可选）+ ripgrep 并搜 unsaved（必须）+ path/line/text 返回（必须）+ 不为 grep 做 Merkle/向量合并。SiCode 检索实施方案在 `.sicode/plans/retrieval-implementation.html`（v6）。
