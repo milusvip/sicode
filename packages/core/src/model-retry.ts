@@ -13,12 +13,16 @@ interface Input {
 // surfaced as a failure the timeline can show than as silence.
 const RETRY_AFTER_MAX = Duration.toMillis("1 minute")
 
+// SiCode: only a throttle gets to dictate the wait. A 429 means "come back when the window reopens" and the provider
+// is the one authority on that, so honouring it avoids burning the whole attempt budget on a wall that is still up.
+// A 5xx (`ProviderInternal`) carries `Retry-After` too, but from relays it is routinely nonsense — a 502 behind a
+// gateway reported 57s, which turned one transient blip into a minute of a frozen session while our own backoff
+// (2s/4s/8s, then 10s) would have recovered the same blip in a fraction of that. Ignore it there and let the
+// schedule above decide.
 const retryAfter = (input: Input) => {
-  if (input.cause.reason._tag === "RateLimit" || input.cause.reason._tag === "ProviderInternal")
-    return input.cause.reason.retryAfterMs === undefined
-      ? undefined
-      : Math.min(input.cause.reason.retryAfterMs, RETRY_AFTER_MAX)
-  return undefined
+  if (input.cause.reason._tag !== "RateLimit") return undefined
+  if (input.cause.reason.retryAfterMs === undefined) return undefined
+  return Math.min(input.cause.reason.retryAfterMs, RETRY_AFTER_MAX)
 }
 
 // Exponential from 2s capped at 10s per gap, for 10 retries: 2, 4, 8, then 10 × 7, about 84s of
