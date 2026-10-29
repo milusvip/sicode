@@ -13,43 +13,24 @@ import type { State } from "./cache.js"
  * the same way every static call graph is — the answer is a lead, never a proof.
  */
 
-export interface Node {
-  /** Files where a symbol with this name is defined. */
-  readonly definedIn: readonly string[]
-  /** Files whose code calls this name. */
-  readonly calledBy: readonly string[]
-}
-
 export interface Graph {
   /** Symbols a file calls. */
   readonly callees: (file: string) => readonly string[]
   /** Files that call the given symbol name. */
   readonly callers: (name: string) => readonly string[]
   /**
-   * Files affected by changing a symbol: its callers, their callers, and so on. Stops when the
-   * closure saturates, so a hub function can fan out but never loops forever.
+   * Files affected by changing a symbol — its direct callers. One hop only: a transitive closure
+   * over bare names avalanches (a hub file exports many symbols and every one of their callers
+   * gets swept in), so the model is told to follow up for the next hop if it needs it.
    */
   readonly impact: (name: string) => readonly string[]
 }
 
 export const build = (state: State): Graph => {
-  // symbol name -> files that define it
-  const defined = new Map<string, Set<string>>()
   // file -> symbol names it calls
   const calls = new Map<string, Set<string>>()
-  // file -> symbols it defines (so `impact` can walk up through definitions, not just names)
-  const symbolsOf = new Map<string, Set<string>>()
 
   for (const [file, stored] of Object.entries(state.files)) {
-    const syms = new Set<string>()
-    for (const symbol of stored.symbols) {
-      syms.add(symbol.name)
-      const bucket = defined.get(symbol.name)
-      if (bucket) bucket.add(file)
-      else defined.set(symbol.name, new Set([file]))
-    }
-    symbolsOf.set(file, syms)
-
     const callees = new Set<string>()
     for (const callee of stored.calls ?? []) callees.add(callee)
     calls.set(file, callees)
@@ -62,26 +43,13 @@ export const build = (state: State): Graph => {
   }
 
   const impact = (name: string): readonly string[] => {
-    // Start from the files that define the name, then walk outward: anything that (transitively)
-    // calls a symbol defined in those files is affected. Iterate until no new file is reached.
-    const reached = new Set<string>()
-    const frontier = new Set<string>(defined.get(name) ?? [])
-    while (frontier.size > 0) {
-      const callersOfFrontier = new Set<string>()
-      for (const file of frontier) {
-        for (const symbol of symbolsOf.get(file) ?? []) {
-          for (const caller of callers(symbol)) callersOfFrontier.add(caller)
-        }
-      }
-      frontier.clear()
-      for (const file of callersOfFrontier) {
-        if (!reached.has(file) && !defined.get(name)?.has(file)) {
-          reached.add(file)
-          frontier.add(file)
-        }
-      }
-    }
-    return [...reached].sort()
+    // SiCode: "what does changing this reach" is only well-defined one hop out, because we match
+    // by bare name. Walking the caller closure was tried and it avalanched — a hub file defines
+    // several symbols, and every one of *their* callers got swept in, so `makeLocationNode` (whose
+    // defining file also exports `tags` and `makeGlobalNode`) reported 2767 files instead of the
+    // 59 that actually call it. Direct callers are the honest, non-exploding answer; the model can
+    // follow up with a second query if it wants the next hop.
+    return callers(name)
   }
 
   return {
@@ -108,6 +76,6 @@ export const render = (state: State, query: { kind: "callers" | "callees" | "imp
   }
   const impacted = graph.impact(query.name)
   return impacted.length === 0
-    ? `Changing ${query.name} affects no other files (by name).`
-    : `Changing ${query.name} affects:\n${impacted.map((f) => `- ${f}`).join("\n")}`
+    ? `No direct callers found for ${query.name}.`
+    : `Direct callers of ${query.name} (${impacted.length} files; for the next hop, re-run impact on one of these):\n${impacted.map((f) => `- ${f}`).join("\n")}`
 }

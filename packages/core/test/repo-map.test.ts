@@ -182,14 +182,10 @@ describe("call graph", () => {
     expect(graph.callers("missing")).toEqual([])
   })
 
-  test("impact walks the transitive caller closure", () => {
+  test("impact returns direct callers only, no avalanche", () => {
     const graph = RepoMapCallGraph.build(state)
-    // hub -> called by a and b; a -> called by deep. So changing hub reaches a, b, deep.
-    expect(graph.impact("hub")).toEqual(["src/a.ts", "src/b.ts", "src/deep.ts"])
-  })
-
-  test("impact of a leaf symbol is empty", () => {
-    const graph = RepoMapCallGraph.build(state)
+    // hub -> called by a and b directly; deep calls a (not hub). Impact is one hop.
+    expect(graph.impact("hub")).toEqual(["src/a.ts", "src/b.ts"])
     expect(graph.impact("deep")).toEqual([])
   })
 })

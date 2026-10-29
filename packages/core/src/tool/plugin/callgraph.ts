@@ -12,7 +12,7 @@ const KINDS = ["callers", "callees", "impact"] as const
 export const Input = Schema.Struct({
   kind: Schema.Literals(KINDS).annotate({
     description:
-      '"callers" lists files that call a symbol; "callees" lists what a file calls; "impact" lists every file a change to a symbol reaches (its callers, then their callers, transitively).',
+      '"callers" lists files that call a symbol; "callees" lists what a file calls; "impact" lists the direct callers of a symbol (one hop — re-run on a caller for the next).',
   }),
   name: Schema.String.annotate({
     description:
@@ -40,7 +40,7 @@ export const Plugin = {
           name,
           options: { codemode: false },
           description:
-            "Ask who calls a symbol (callers), what a file calls (callees), or what changing a symbol reaches (impact). Matches by name from the parsed sources, so it is instant but approximate: confirm with a read before relying on it. Use it to trace a call chain or judge the blast radius of a change instead of grepping and reading file by file.",
+            "Ask who calls a symbol (callers), what a file calls (callees), or the direct callers a change to a symbol would hit (impact — one hop; re-run on a caller to go further). Matches by bare name from the parsed sources, so it is instant but approximate and it counts real call sites, not import lines: confirm with a read before relying on it. Use it to trace a call chain or size the blast radius of a change instead of grepping and reading file by file.",
           input: Input,
           output: Output,
           execute: (input) =>
