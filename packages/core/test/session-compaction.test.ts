@@ -724,6 +724,30 @@ it.effect(
     }),
 )
 
+it.effect("compaction sizes the unchanged request by the measured count, not the characters", () =>
+  Effect.gen(function* () {
+    requests = []
+    const session = yield* insertSession(Session.ID.make("ses_compaction_measured"))
+    // The provider counted 100k for a prompt whose text estimates near 200k: characters overstate a conversation
+    // whose old reasoning the provider drops, so the measured count decides and the conversation goes out whole.
+    const assistant = Schema.decodeUnknownSync(SessionMessage.Assistant)({
+      id: SessionMessage.ID.create(),
+      type: "assistant",
+      agent: Agent.defaultID,
+      model: { id: "summary-model", providerID: "test" },
+      content: [{ type: "text", text: "Done" }],
+      tokens: { input: 100_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 0, completed: 0 },
+    })
+    const messages = [textUser("older " + "x".repeat(800_000)), assistant, textUser("latest")]
+
+    expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    // Unchanged: every message, plus the summary prompt appended by `send`.
+    expect(requests[0].messages).toHaveLength(4)
+  }),
+)
+
 it.effect("compaction lowers the output limit when it sends a request it could not shrink", () =>
   Effect.gen(function* () {
     requests = []
