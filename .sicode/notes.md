@@ -1291,3 +1291,9 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 ## 代码检索方案
 
 - **第一手逆向材料在本机（2026-10-29 接入方案讨论）**：`D:/软件丨工具/cursor逆向专区/文档/`（38 篇，@verified 2026-10-24）——《Cursor-本地Trigram索引存储结构》《Cursor-本地检索与索引全链路》是方案级第一手材料（真实仓库 + crepectl 实测，非博客）。关键实测（SiCode 仓库 8654 文件）：稀有符号 indexed grep ~14ms vs 全库 rg 内容搜索 ~1000ms = 50~70×，Agent 每轮 5~10 次 grep → 每轮省秒级——**推翻「trigram 仅 1万+文件仓库才显著」的旧判断**（250ms 是 rg --files 的速度，内容搜索恒定 ~1s）。全量建索引 ~7s/8019 docs/87MB（源码 97MB）。机制：Crepe 倒排 `.git/cursor/crepe/<commit>/`（CRP2 格式，Rust 原生 file-service，非 SQLite）；更新=事件+防抖合并、commit 锚定、unsaved buffer 由工具层并搜；候选集无相关性排序（doc_id 序）；head_limit 无默认 + 2000 行/15k 字符硬帽；语义与正则分工具不混排，语义失败明确引导 grep/glob/read。抄能力最小清单：commit 级倒排（可选）+ ripgrep 并搜 unsaved（必须）+ path/line/text 返回（必须）+ 不为 grep 做 Merkle/向量合并。SiCode 检索实施方案在 `.sicode/plans/retrieval-implementation.html`（v6）。
+
+## 长会话与压缩
+
+- 耐久块容量放宽（2026-10-30）：`compaction-durable.ts` 的 `MAX_FILES` 4→6、`MAX_CHARS_TOTAL` 24k→36k（单文件上限 12k 不变）。依据：真实改码常跨 5~6 个文件，第 5 个以后的文件原来直接从 checkpoint 里丢、下一个 agent 得重读（实测压缩后 6 步内 90% 读的是已读文件）。新增测试 `keeps up to six files` 回归保护。提交 f3a8793a34。
+- 「补 plan 块」的结论（防止再踩）：SiCode **没有 plan 工具**（只有 `todowrite`，`tool/plugin/todo.ts`），所以 Cursor 的「plan 全文耐久块」在 SiCode 体系里没有对应数据源可提取，不能照搬。SiCode 的「做到哪了」由 todos 承载（等价 Cursor 的 plan+todo 核心），已覆盖。若要补真正的 plan，得先引入 plan 工具/模式，那是另一个更大的决定，暂不做。
+- 与「阈值前移」（治每轮 9.9s 固定开销）的关系：耐久块放宽是「压完不降智」的地基，阈值前移是「压得更早」——后者需在前者验证够用后再动，否则降智更明显。
