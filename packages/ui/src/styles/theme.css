@@ -20,15 +20,18 @@
     monospace, "思源黑体", "Source Han Sans SC", "Noto Sans SC Variable", "Noto Sans SC";
   --font-family-mono--font-feature-settings: normal;
 
-  /* SiCode: sizes/weights tuned for CJK legibility on Windows. Regular is 400, the face's own default:
-     the earlier 460 only made sense while 思源黑体's Latin was scaled up to 115% inside a mixed stack,
-     and it read heavy for body copy. Chat content (markdown/message-part/session-turn) hangs off base. */
+  /* SiCode: type scale raised for CJK legibility on Windows. Chat content
+     (markdown/message-part/session-turn) hangs off base. */
   --font-size-x-small: 12px;
   --font-size-small: 14px;
   --font-size-base: 15px;
   --font-size-large: 16px;
   --font-size-x-large: 20px;
-  --font-weight-regular: 400;
+  /* SiCode: 460 — the regular weight the workbuddy alignment pass (32fe8f6869) shipped with this
+     type scale, restored with the stack. Microsoft YaHei ships only 400/700, so on Windows
+     Chromium this snaps to 400 and body copy reads the same either way; it only diverges on a
+     face with an intermediate cut (a variable font, or PingFang's Medium). */
+  --font-weight-regular: 460;
   --font-weight-medium: 500;
   /* SiCode: 670 — the softened bold from the original design pass. Microsoft YaHei ships only
      400/700, so on Windows this snaps up to 700 and bold CJK reads heavier there than on mac. */
