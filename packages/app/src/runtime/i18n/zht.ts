@@ -539,8 +539,6 @@ export const dict = {
   "dock.session.archive.many.button": "封存工作階段",
   "dock.session.select": "選取工作階段",
   "dock.select.exit": "結束選取",
-  "dock.select.scope": "範圍",
-  "dock.select.scope.all": "全部工作階段",
   "dock.select.count.one": "{{count}} 個",
   "dock.select.count.other": "{{count}} 個",
   "dock.select.projects.one": "{{count}} 個專案",

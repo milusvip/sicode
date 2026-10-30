@@ -742,8 +742,6 @@ export const dict = {
   "dock.session.archive.many.button": "Archive sessions",
   "dock.session.select": "Select sessions",
   "dock.select.exit": "Exit selection",
-  "dock.select.scope": "Scope",
-  "dock.select.scope.all": "All sessions",
   "dock.select.count.one": "{{count}} selected",
   "dock.select.count.other": "{{count}} selected",
   "dock.select.projects.one": "{{count}} project",

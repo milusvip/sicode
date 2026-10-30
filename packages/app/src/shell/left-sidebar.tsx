@@ -349,38 +349,15 @@ export function LeftSidebar() {
   /** Counted from the rows rather than the stored ids, so a leftover that no longer resolves never inflates it. */
   const selectedCount = () => selectedRows().length
 
-  /** Picking a scope replaces the selection rather than adding to it — one click, one meaning. */
-  const selectRows = (rows: readonly SelectedRow[]) =>
-    setSelection("ids", rows.map((row) => rowID(row.key, row.session)))
+  /** Whether every row in the column is already picked, so the button can name its own next effect. */
+  const allSelected = () => {
+    const rows = selectable()
 
-  /**
-   * The one scope the per-project checkboxes cannot reach: every group in the column at once, with
-   * its size shown before the click. Picking a project is the headers' job — each one is a tri-state
-   * checkbox over its own rows — so this menu deliberately carries no project entry to duplicate.
-   */
-  const openScopeMenu = (event: MouseEvent) => {
-    const all = selectable()
-
-    const items: MenuItem[] = [
-      {
-        icon: "select-element",
-        label: language.t("dock.select.scope.all"),
-        shortcut: String(all.length),
-        onSelect: () => selectRows(all),
-      },
-    ]
-
-    // Clearing is its own item rather than the same entry toggling: a scope that silently means
-    // "unselect" on the second press is the ambiguity this menu exists to remove.
-    if (selectedCount() > 0)
-      items.push("separator", {
-        icon: "close",
-        label: language.t("home.sessions.select.none"),
-        onSelect: () => setSelection("ids", []),
-      })
-
-    showMenu(event, items)
+    return rows.length > 0 && rows.every((row) => isSelected(row.key, row.session))
   }
+
+  const toggleAllSelected = () =>
+    setSelection("ids", allSelected() ? [] : selectable().map((row) => rowID(row.key, row.session)))
 
   /**
    * One update call per session: the endpoint carries a single `archived` flag, so there is no
@@ -1394,14 +1371,8 @@ export function LeftSidebar() {
                     </span>
                   </Show>
                 </span>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  class="h-7 shrink-0 gap-1 px-1.5"
-                  onClick={openScopeMenu}
-                >
-                  <span class="truncate">{language.t("dock.select.scope")}</span>
-                  <Icon name="outline-chevron-down" class="size-3 shrink-0" />
+                <Button variant="ghost" size="small" class="h-7 shrink-0 px-1.5" onClick={toggleAllSelected}>
+                  {allSelected() ? language.t("home.sessions.select.none") : language.t("home.sessions.select.all")}
                 </Button>
               </div>
               <div class="flex items-center gap-1">
