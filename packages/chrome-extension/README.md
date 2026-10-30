@@ -4,7 +4,7 @@ Ships as `SiCode-Browser-Bridge.crx` inside the desktop app (`electron-builder` 
 
 ## End users
 
-SiCode → Settings → **Browser** → turn on → **Install** → in the browser: developer mode → **Add** (same extension ID update: remove old first). No need to open this repo.
+SiCode → Settings → **Browser** → turn on → **Install** → in the browser: developer mode → **Add** (same extension ID: a higher version over-installs without removing the old one; only if the extension still reports an old version afterwards, remove and reinstall). No need to open this repo.
 
 Day-to-day: **extension push** / **pick element** sticks Agent to system Chrome + page/element chips; in-app「加入对话」sticks the pane. No `@系统浏览器` / `/browser`. Pick element: popup **选元素推送** or right-click → click a node on the page (Esc cancels) → select-element chip in the current chat.
 

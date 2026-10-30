@@ -400,6 +400,9 @@ export async function openChromeExtensionInstall(
     extensionPath: crxPath,
     detected,
     actions,
-    message: `v${packageVersion || "?"} 已就绪。先删旧扩展，再点「添加」。`,
+    // SiCode: a higher-version CRX over-installs the same extension ID on most Chromium builds —
+    // the "remove first" ritual was only needed when the version string did not change. The
+    // extension reports its manifest version on hello, so a stale install still surfaces.
+    message: `v${packageVersion || "?"} 已就绪。浏览器弹出添加框后点「添加」即可（会自动覆盖旧版）；如果之后扩展仍提示版本落后，再移除旧版重装一次。`,
   }
 }

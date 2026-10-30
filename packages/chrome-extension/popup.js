@@ -39,7 +39,7 @@ const STRINGS = {
     copy_fail: "复制失败",
     copy_working: "读取中…",
     update_title: "需要更新扩展",
-    update_body: "桌面端已带新版本。请先移除本扩展，再在 SiCode「设置 → 浏览器」安装并添加。",
+    update_body: "桌面端已带新版本。在 SiCode 里点「连接」重新打开安装，弹窗点「添加」即可覆盖更新；若版本仍显示落后，再移除重装。",
     update_open: "打开扩展管理页",
   },
   en: {
@@ -82,7 +82,7 @@ const STRINGS = {
     copy_fail: "Copy failed",
     copy_working: "Reading…",
     update_title: "Extension update required",
-    update_body: "Desktop has a newer package. Remove this extension, then Install & Add in SiCode Settings → Browser.",
+    update_body: "Desktop has a newer package. Click Connect in SiCode to reopen the install dialog and Add — it over-installs; only remove the extension if the version still shows outdated.",
     update_open: "Open extensions page",
   },
 }
