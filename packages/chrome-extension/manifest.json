@@ -3,9 +3,23 @@
   "default_locale": "zh_CN",
   "name": "__MSG_extName__",
   "description": "__MSG_extDescription__",
-  "version": "0.2.32",
-  "permissions": ["tabs", "activeTab", "scripting", "storage", "alarms", "contextMenus", "cookies", "debugger"],
-  "host_permissions": ["<all_urls>", "http://*/*", "https://*/*", "file://*/*"],
+  "version": "0.2.33",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "alarms",
+    "contextMenus",
+    "cookies",
+    "debugger"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://*/*",
+    "https://*/*",
+    "file://*/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
