@@ -34,6 +34,7 @@ const STRINGS = {
     sync_fail_empty: "这个站点没有可同步的 Cookie",
     sync_fail: "同步失败",
     copy_ok: "已复制 · 去内置浏览器导入",
+    copy_skipped: (count) => ` · 略过 ${count} 项非登录数据`,
     copy_fail_url: "无法读取此页",
     copy_fail_empty: "没有 Cookie / localStorage",
     copy_fail: "复制失败",
@@ -77,6 +78,7 @@ const STRINGS = {
     sync_fail_empty: "No cookies to sync for this site",
     sync_fail: "Sync failed",
     copy_ok: "Copied · paste in Import session",
+    copy_skipped: (count) => ` · left out ${count} non-login entries`,
     copy_fail_url: "Can't read this page",
     copy_fail_empty: "No cookies / localStorage",
     copy_fail: "Copy failed",
@@ -252,7 +254,10 @@ copyLoginBtn.addEventListener("click", () => {
       const bits = []
       if (typeof reply.cookies === "number") bits.push(`Cookie ${reply.cookies}`)
       if (typeof reply.storage === "number") bits.push(`LS ${reply.storage}`)
-      setFeedback(bits.length ? `${table.copy_ok} (${bits.join(" · ")})` : table.copy_ok)
+      // Only the login-carrying entries are kept; saying so keeps the shorter paste from looking lossy.
+      const skipped = typeof reply.skipped === "number" && reply.skipped > 0 ? table.copy_skipped(reply.skipped) : ""
+      const counts = bits.length ? ` (${bits.join(" · ")}${skipped})` : skipped
+      setFeedback(`${table.copy_ok}${counts}`)
     } catch {
       setFeedback(table.copy_fail)
     } finally {

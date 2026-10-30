@@ -17,6 +17,7 @@ const FILES = [
   "manifest.json",
   "background.js",
   "debugger-buffer.js",
+  "login-dump.js",
   "page.js",
   "pick-element.js",
   "popup.html",

@@ -1,3 +1,5 @@
+import { candidatePorts, respondingPorts } from "./bridge-ports.js"
+import { loginStateDump } from "./login-dump.js"
 import { PROTOCOL_VERSION, chromeIdFromTabID, isPackageBehind, toBridgeTab } from "./protocol.js"
 import {
   captureScreenshot,
@@ -147,15 +149,46 @@ async function syncLiveStatus() {
   return "disconnected"
 }
 
-async function hostListening(port) {
-  try {
-    const response = await fetch(`http://127.0.0.1:${port}/status`, { cache: "no-store" })
-    if (!response.ok) return false
-    const body = await response.json()
-    return !!body?.ok && !!body?.enabled
-  } catch {
-    return false
-  }
+/** Whether one port's bridge is up and switched on. Bounded, so a silent port cannot stall the rest. */
+async function probeBridge(port, timeoutMs) {
+  const response = await fetch(`http://127.0.0.1:${port}/status`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (!response.ok) return false
+  const body = await response.json()
+  return !!body?.ok && !!body?.enabled
+}
+
+/** True once the host answered hello on the socket that is open now. */
+let paired = false
+/** Callers waiting for that hello; every one of them hears the same answer. */
+const helloWaiters = new Set()
+
+function settleHello(ok) {
+  paired = ok
+  for (const waiter of helloWaiters) waiter(ok)
+  helloWaiters.clear()
+}
+
+/**
+ * Whether this connect attempt got its hello, as soon as that is decided.
+ *
+ * Decided by the message itself rather than by polling storage every 100ms as this used to: the
+ * answer already arrives on the socket, so waiting to read it back from storage only adds latency.
+ */
+function waitHello(timeoutMs = 3_000) {
+  if (paired) return Promise.resolve(true)
+
+  return new Promise((resolve) => {
+    const done = (ok) => {
+      clearTimeout(timer)
+      helloWaiters.delete(done)
+      resolve(ok)
+    }
+    const timer = setTimeout(() => done(false), timeoutMs)
+    helloWaiters.add(done)
+  })
 }
 
 function scheduleReconnect() {
@@ -166,7 +199,9 @@ function scheduleReconnect() {
     void connect()
   }, 800)
   // MV3 service workers sleep and drop setTimeout — alarms keep retrying while Chrome is open.
-  void chrome.alarms.create("sicode-bridge-reconnect", { delayInMinutes: 0.5, periodInMinutes: 1 })
+  // 30s is the shortest period Chrome accepts, and it is how long an idle extension can lag behind
+  // a desktop app that has just started.
+  void chrome.alarms.create("sicode-bridge-reconnect", { delayInMinutes: 0.5, periodInMinutes: 0.5 })
 }
 
 /** Reconnect when the desktop bridge is up but our socket is dead (stale "已连接"). */
@@ -805,25 +840,6 @@ const LOGIN_DUMP_COOKIE_MAX = 100
 const LOGIN_DUMP_STORAGE_MAX = 100
 
 /**
- * Format cookies + localStorage into the paste dump expected by in-app「导入会话」.
- * @param {string} url
- * @param {Array<{ name: string; value: string }>} cookies
- * @param {Array<{ key: string; value: string }>} storage
- */
-function formatLoginStateDump(url, cookies, storage) {
-  const lines = [`网址：${url}`]
-  if (cookies.length > 0) {
-    lines.push("cookie：")
-    for (const cookie of cookies) lines.push(`${cookie.name}=${cookie.value}`)
-  }
-  if (storage.length > 0) {
-    lines.push("Token：")
-    for (const entry of storage) lines.push(`${entry.key}=${entry.value}（localStorage）`)
-  }
-  return lines.join("\n")
-}
-
-/**
  * Read cookies (incl. HttpOnly) + page localStorage for the active/scriptable tab.
  * Does not require bridge connection — dump is for pasting into the in-app browser import dialog.
  * @param {{ id?: number; url?: string }} [tab]
@@ -841,13 +857,12 @@ async function dumpLoginState(tab) {
     return { ok: false, message: "no_tab" }
   }
 
-  /** @type {Array<{ name: string; value: string }>} */
+  /** @type {Array<object>} */
   let cookies = []
   try {
+    // Chrome's own cookie objects carry domain, path, expiry and SameSite; the pane writes them as they are.
     const raw = await chrome.cookies.getAll({ url })
-    cookies = raw
-      .slice(0, LOGIN_DUMP_COOKIE_MAX)
-      .map((cookie) => ({ name: cookie.name, value: cookie.value }))
+    cookies = raw.slice(0, LOGIN_DUMP_COOKIE_MAX)
   } catch {
     return { ok: false, message: "cookies_failed" }
   }
@@ -888,13 +903,16 @@ async function dumpLoginState(tab) {
     return { ok: false, message: "empty" }
   }
 
-  return {
-    ok: true,
-    text: formatLoginStateDump(url, cookies, storage),
-    url,
-    cookies: cookies.length,
-    storage: storage.length,
+  // SiCode: a site can carry a hundred cookies and as many storage keys, most of them measurement,
+  // consent and app state. The paste keeps the ones that carry the login so it stays short enough to
+  // hand over; `skipped` is how many were left behind, which the popup reports.
+  const dump = loginStateDump(url, cookies, storage)
+
+  if (dump.cookies === 0 && dump.storage === 0) {
+    return { ok: false, message: "empty" }
   }
+
+  return { ok: true, text: dump.text, url, cookies: dump.cookies, storage: dump.storage, skipped: dump.skipped }
 }
 
 /**
@@ -1003,7 +1021,15 @@ async function syncLoginState() {
   /** @type {Array<object>} */
   let cookies = []
   try {
-    cookies = await chrome.cookies.getAll({ url })
+    // Query by domain, not by the full URL: a site's login cookie often lives on a parent
+    // domain (`.example.com` for a `www.example.com` page), which getAll({ url }) misses and
+    // wrongly reports "empty". Filtering by host keeps out unrelated subdomains.
+    const host = new URL(url).hostname
+    const all = await chrome.cookies.getAll({ domain: host })
+    cookies = all.filter((cookie) => {
+      const d = (cookie.domain || "").replace(/^\./, "")
+      return host === d || host.endsWith("." + d)
+    })
   } catch {
     return { ok: false, message: "cookies_failed" }
   }
