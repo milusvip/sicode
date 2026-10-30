@@ -132,7 +132,7 @@ export function ChromeLink(props: { model: Model; disabled?: boolean }) {
           <Show when={note()}>
             <div data-slot="chrome-link-note">{note()}</div>
           </Show>
-          <Button size="small" variant="ghost" disabled={busy()} onClick={() => void install()}>
+          <Button size="small" variant="outline" disabled={busy()} onClick={() => void install()}>
             {busy() ? "正在打开浏览器…" : phase() === "connected" ? "更新扩展" : "连接我平时的浏览器"}
           </Button>
         </Popover.Content>
