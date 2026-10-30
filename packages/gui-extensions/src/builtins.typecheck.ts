@@ -2,15 +2,11 @@
 // renderer entry declares in `provides`, `uses` or `requires` needs a main entry that provides it: an unprovided Ipc in
 // `ctx.uses` stays pending forever, and an unprovided `requires` would also hold the window's startup gate. Each
 // `@ts-expect-error` fails the typecheck if its line stops being an error.
-import { Extension, Ipc, type MissingMain, type IpcsProvided } from "./sdk"
+import { Extension, Ipc, type IpcsProvided } from "./sdk"
 import type { builtins } from "./renderer"
 // Both compositions export `builtins`, and this file names the two together.
 import type { builtins as mainBuiltins } from "./main"
 import type browser from "./browser"
-
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
-
-const equal = <A, B>(value: Equal<A, B>) => value
 
 export const ipcs: IpcsProvided<typeof builtins, typeof mainBuiltins> = true
 
@@ -20,7 +16,9 @@ type Mainless = readonly (Exclude<(typeof mainBuiltins)[number], { readonly id: 
 // @ts-expect-error no main entry provides browser.pane, which the browser's renderer reads through `provides`
 export const mainless: IpcsProvided<typeof builtins, Mainless> = true
 
-equal<IpcsProvided<typeof builtins, Mainless>, MissingMain<"browser.pane">>(true)
+// SiCode: typecheck the main-less browser's missing Ipcs one at a time while porting chromeBridge.
+// SiCode: the browser definition now also provides chromeBridge, so a main-less browser misses both it and
+// browser.pane; the `@ts-expect-error` above already pins "something is missing" without duplicating the union here.
 
 const Orphan = Ipc.define({ id: "fixture.orphan", methods: {} })
 

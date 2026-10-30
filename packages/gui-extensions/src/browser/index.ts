@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { Extension, Ipc, Store } from "../sdk"
 import { SEARCH_ENGINES } from "./address"
 import { Browser } from "./contract"
+import { ChromeBridge, CHROME_BRIDGE_DEFAULT_PORT } from "./chrome-bridge"
 import { History } from "./history"
 import en from "./i18n/en"
 import type { BrowserPane } from "./ipc"
@@ -12,10 +13,26 @@ const Pane = Ipc.ref<typeof BrowserPane>("browser.pane")
 
 export default Extension.define({
   id: "browser",
-  provides: { browser: Browser, pane: Pane },
+  provides: { browser: Browser, pane: Pane, chromeBridge: ChromeBridge },
   stores: {
     // The end of the last block of element refs main reserved, so refs stay unique across reloads.
     refs: Store.main(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), 0),
+    // SiCode: system-Chrome bridge. Off by default; the token is minted when first enabled.
+    chromeBridgeEnabled: Store.main(Schema.Boolean, false),
+    chromeBridgeToken: Store.main(Schema.String, ""),
+    chromeBridgePort: Store.main(Schema.Number, CHROME_BRIDGE_DEFAULT_PORT),
+    /** True after the extension has successfully hello'd at least once (proxy for "installed"). */
+    chromeBridgeEverConnected: Store.main(Schema.Boolean, false),
+    /**
+     * Per-conversation sticky: `ses…` / `draft:<id>` → true=system, false=in-app pane.
+     * Set by extension push (true) or in-app「加入对话」(false). Absent → default system.
+     */
+    chromeBridgePreferSystem: Store.main(Schema.Record(Schema.String, Schema.Boolean), {}),
+    /**
+     * Root domains Agent must not remotely control (http/https host or subdomain match).
+     * Applies to the system-Chrome agent channel; edited in Settings → Browser.
+     */
+    chromeBridgeBlockedDomains: Store.main(Schema.Array(Schema.String), []),
     // Pages the browser showed, for the new tab page and the address field's suggestions. One list for every
     // session and server, kept on this device.
     history: Store.global(History, { visits: [] }),
