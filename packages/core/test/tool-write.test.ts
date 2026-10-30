@@ -3,6 +3,7 @@ import path from "path"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { FileMutation } from "@opencode/core/file-mutation"
+import { FileReadState } from "@opencode/core/file-read-state"
 import { Formatter } from "@opencode/core/formatter"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -426,6 +427,69 @@ describe("WriteTool", () => {
           // The same characters in a non-batch file draw no warning.
           const plain = yield* executeTool(registry, call({ path: "notes.txt", content: "中文说明" }))
           expect(plain.content).toEqual([{ type: "text", text: "Created file successfully: notes.txt" }])
+        }),
+      )
+    }),
+  )
+
+  // SiCode: the staleness gate — a write whose view of the file went stale must fail instead of
+  // silently discarding whatever landed between the model's read and its write.
+  it.live("fails when the file changed since the session last read it", () =>
+    withTempDir((tmp) => {
+      const fixture = makeWriteFixture()
+      return withTool(tmp.path, fixture, (registry) =>
+        Effect.gen(function* () {
+          const absolute = path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "watched.txt")
+          yield* Effect.promise(() => fs.writeFile(absolute, "before"))
+          const info = yield* Effect.promise(() => fs.stat(absolute))
+          FileReadState.record(sessionID, absolute, {
+            mtimeMs: info.mtimeMs,
+            hash: FileReadState.hashText("before"),
+          })
+          yield* Effect.promise(() => fs.writeFile(absolute, "changed elsewhere"))
+          // Force the mtime forward: two writes can land inside one clock tick.
+          yield* Effect.promise(() => fs.utimes(absolute, new Date(), new Date(Date.now() + 5_000)))
+          const settled = yield* executeTool(registry, call({ path: "watched.txt", content: "after" }))
+          expect(settled.status).toBe("error")
+          expect(JSON.stringify(settled)).toContain("has been modified since this session last read it")
+          expect(yield* Effect.promise(() => fs.readFile(absolute, "utf8"))).toBe("changed elsewhere")
+        }),
+      )
+    }),
+  )
+
+  it.live("passes when only the mtime moved and the content is identical", () =>
+    withTempDir((tmp) => {
+      const fixture = makeWriteFixture()
+      return withTool(tmp.path, fixture, (registry) =>
+        Effect.gen(function* () {
+          const absolute = path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "touched.txt")
+          yield* Effect.promise(() => fs.writeFile(absolute, "same"))
+          const info = yield* Effect.promise(() => fs.stat(absolute))
+          FileReadState.record(sessionID, absolute, {
+            mtimeMs: info.mtimeMs,
+            hash: FileReadState.hashText("same"),
+          })
+          // Cloud sync and antivirus bump mtime without changing content; the hash rules them out.
+          yield* Effect.promise(() => fs.writeFile(absolute, "same"))
+          yield* Effect.promise(() => fs.utimes(absolute, new Date(), new Date(Date.now() + 5_000)))
+          const settled = yield* executeTool(registry, call({ path: "touched.txt", content: "after" }))
+          expect(settled.status).toBe("completed")
+          expect(yield* Effect.promise(() => fs.readFile(absolute, "utf8"))).toBe("after")
+        }),
+      )
+    }),
+  )
+
+  it.live("lets the session overwrite a file it just wrote itself", () =>
+    withTempDir((tmp) => {
+      const fixture = makeWriteFixture()
+      return withTool(tmp.path, fixture, (registry) =>
+        Effect.gen(function* () {
+          yield* executeTool(registry, call({ path: "mine.txt", content: "first" }))
+          const second = yield* executeTool(registry, call({ path: "mine.txt", content: "second" }))
+          expect(second.status).toBe("completed")
+          expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "mine.txt"), "utf8"))).toBe("second")
         }),
       )
     }),

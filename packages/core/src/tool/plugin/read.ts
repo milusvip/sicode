@@ -9,6 +9,7 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { SessionInstructions } from "../../session/instructions.js"
+import { FileReadState } from "../../file-read-state.js"
 import { AbsolutePath } from "../../schema.js"
 import { ReadToolFileSystem } from "../read-filesystem.js"
 import { Environment } from "../../environment/index.js"
@@ -43,6 +44,7 @@ export const Plugin = {
     const sessionInstructions = yield* SessionInstructions.Service
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
+    const environment = yield* Environment.Service
 
     yield* ctx.tool
       .transform((editor) =>
@@ -115,6 +117,27 @@ export const Plugin = {
                   Effect.catch(() => Effect.void),
                   Effect.catchDefect(() => Effect.void),
                 )
+                // SiCode: record what this session last saw of the file, so write can detect that
+                // its snapshot went stale instead of silently overwriting whoever changed it in
+                // between. The hash needs the file's faithful whole text: a paged read never has
+                // it, and a full read whose long lines were truncated does not either — both
+                // record the mtime alone, which still catches change but cannot rule out a
+                // mtime-only touch. Bookkeeping must never fail a read.
+                yield* Effect.gen(function* () {
+                  const content = result.content
+                  if (content.type === "file" && content.encoding === "utf8") {
+                    const info = yield* environment.files.stat(result.target.absolute)
+                    FileReadState.record(context.sessionID, result.target.absolute, {
+                      mtimeMs: info.mtimeMs,
+                      hash: content.content.includes(ReadToolFileSystem.MAX_LINE_SUFFIX)
+                        ? undefined
+                        : FileReadState.hashText(content.content),
+                    })
+                  } else if (content.type === "text-page") {
+                    const info = yield* environment.files.stat(result.target.absolute)
+                    FileReadState.record(context.sessionID, result.target.absolute, { mtimeMs: info.mtimeMs })
+                  }
+                }).pipe(Effect.catch(() => Effect.void), Effect.catchDefect(() => Effect.void))
                 return { output: result.content, path: result.path }
               }).pipe(
                 Effect.mapError((error) => {

@@ -13,6 +13,7 @@ import { Bom } from "@opencode/util/bom"
 import { Effect, Schema } from "effect"
 import { Environment } from "../../environment/index.js"
 import { FileMutation } from "../../file-mutation.js"
+import { FileReadState } from "../../file-read-state.js"
 import { Formatter } from "../../formatter.js"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
@@ -228,6 +229,11 @@ export const Plugin = {
             // SiCode: the batch-file warning needs the resulting text, which only exists inside the
             // generator; this per-invocation closure carries it to the content mapper below.
             let batchWarning = ""
+            // SiCode: edit matches against the disk's current text, so a change that landed after
+            // the model's read is applied correctly by construction — but the model should know its
+            // context was stale. Applied anyway (oldString still identifies the spot); the note
+            // tells it what happened instead of failing a match that was never wrong.
+            let staleNote = ""
             return Effect.gen(function* () {
               const permissionSource = {
                 type: "tool" as const,
@@ -259,6 +265,9 @@ export const Plugin = {
                 ),
               )
               const source = original.text
+              if ((yield* FileReadState.changedSince(context.sessionID, target.absolute, environment.files)) === true)
+                staleNote =
+                  " Note: the file changed on disk since this session last read it; the edit was applied against the current content."
               // Strings that differ only in \r ask to change line endings themselves, so they apply to the exact
               // bytes. Every other edit matches the LF view Read shows the model and keeps the file's endings.
               const endingsOnly = input.oldString.replaceAll("\r", "") === input.newString.replaceAll("\r", "")
@@ -312,6 +321,9 @@ export const Plugin = {
               const formatted = (yield* formatter.file(target.absolute))
                 ? yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)
                 : (yield* FileMutation.readText(environment.files, target.absolute)).text
+              // SiCode: the session's own edit and formatter moved the mtime — refresh the snapshot
+              // so a follow-up edit or write to the same file in this turn is not tripped by it.
+              yield* FileReadState.track(context.sessionID, target.absolute, environment.files, formatted)
               return {
                 files: [fileDiff(result.resource, source, formatted)],
                 replacements,
@@ -324,7 +336,8 @@ export const Plugin = {
                 // the script at run time; warn so the model rewrites it ASCII-only.
                 content:
                   `Edited ${output.files[0]?.file} (${output.replacements} replacement${output.replacements === 1 ? "" : "s"})` +
-                  batchWarning,
+                  batchWarning +
+                  staleNote,
                 metadata: { files: output.files },
               })),
               Effect.mapError((error) =>

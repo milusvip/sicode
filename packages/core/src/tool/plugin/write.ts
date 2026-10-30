@@ -13,6 +13,7 @@ import { FileDiff } from "@opencode/schema/file-diff"
 import { Bom } from "@opencode/util/bom"
 import { Environment } from "../../environment/index.js"
 import { FileMutation } from "../../file-mutation.js"
+import { FileReadState } from "../../file-read-state.js"
 import { Formatter } from "../../formatter.js"
 import { FileAccess } from "../../file-access.js"
 import { Location } from "../../location.js"
@@ -101,11 +102,37 @@ export const Plugin = {
                 agent: context.agent,
                 source,
               })
+              // SiCode: optimistic staleness gate, the last thing before the bytes land. Unlike
+              // edit, a write has no oldString to fail on — without this check it overwrites
+              // whatever landed between the model's read and here (user edit, formatter, codegen,
+              // another session) without a trace. A mtime bump with byte-identical content —
+              // cloud sync, antivirus, or this session's own formatter — passes through the hash;
+              // `current` was already read above, so the gate costs one stat, not one file read.
+              if (current !== undefined) {
+                const changed = yield* FileReadState.changedSince(
+                  context.sessionID,
+                  target.absolute,
+                  environment.files,
+                )
+                const recorded = FileReadState.get(context.sessionID, target.absolute)
+                const untouched =
+                  changed !== true ||
+                  (recorded?.hash !== undefined && FileReadState.hashText(current.text) === recorded.hash)
+                if (!untouched)
+                  return yield* new ToolFailure({
+                    message:
+                      `File has been modified since this session last read it (by the user, a formatter, codegen, or another agent); writing would discard those changes. ` +
+                      `Read ${input.path} again, then reapply your change.`,
+                  })
+              }
               const result = yield* fileMutation.writeTextPreservingBom({ target, content: input.content })
               const bom = (yield* FileMutation.readText(environment.files, target.absolute)).bom
               const formatted = (yield* formatter.file(target.absolute))
                 ? yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)
                 : (yield* FileMutation.readText(environment.files, target.absolute)).text
+              // SiCode: the session's own write and formatter moved the mtime — refresh the
+              // snapshot so a follow-up write to the same file in this turn is not tripped by it.
+              yield* FileReadState.track(context.sessionID, target.absolute, environment.files, formatted)
               // SiCode: report the diff the way `edit` does — against the formatted result, so the
               // card and the turn's file list show the file's final content and an overwrite reads as
               // `modified` instead of `added`. `preview` above stays the approval-time diff.
