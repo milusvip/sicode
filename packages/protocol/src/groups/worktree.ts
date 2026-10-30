@@ -13,7 +13,6 @@ export class WorktreeError extends Schema.TaggedError<WorktreeError>()(
     data: Schema.Struct({
       message: Schema.String,
       forceRequired: Schema.optional(Schema.Boolean),
-      conflicted: Schema.optional(Schema.Array(Schema.String)),
     }),
   },
   { httpApiStatus: 400 },
@@ -73,34 +72,6 @@ export const WorktreeGroup = HttpApiGroup.make("server.worktree")
         summary: "Refresh worktrees",
         description:
           "Load the project's canonical configuration, discover worktrees across known checkout roots using all available strategies, and reconcile saved state.",
-      }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("worktree.mergePreview", `${root}/merge-preview`, {
-      payload: Worktree.MergeInput,
-      success: Worktree.MergePreview,
-      error: [WorktreeError, ProjectNotFoundError],
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "worktree.mergePreview",
-        summary: "Preview a worktree merge",
-        description:
-          "Inspect a managed worktree's branch, its ahead/behind counts against the source checkout, and whether either side has uncommitted changes — without touching either tree.",
-      }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("worktree.merge", `${root}/merge`, {
-      payload: Worktree.MergeInput,
-      success: Worktree.MergeResult,
-      error: [WorktreeError, ProjectNotFoundError],
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "worktree.merge",
-        summary: "Merge a worktree back into its source checkout",
-        description:
-          "Snapshot uncommitted worktree changes onto its branch, require a clean source checkout, then merge the branch in. A conflicted merge is aborted before failing, leaving both checkouts untouched.",
       }),
     ),
   )

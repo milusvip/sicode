@@ -256,10 +256,6 @@ import type {
   WorktreeRemoveOutput,
   WorktreeRefreshInput,
   WorktreeRefreshOutput,
-  WorktreeMergePreviewInput,
-  WorktreeMergePreviewOutput,
-  WorktreeMergeInput,
-  WorktreeMergeOutput,
   VcsInitInput,
   VcsInitOutput,
   VcsGetInput,
@@ -1589,27 +1585,11 @@ const EndpointWorktreeRefresh = (raw: RawClient["server.worktree"]) => (input: W
     raw["worktree.refresh"]({ payload: { projectID: input["projectID"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
-const EndpointWorktreeMergePreview = (raw: RawClient["server.worktree"]) => (input: WorktreeMergePreviewInput) =>
-  preserveEffect<WorktreeMergePreviewOutput>()(
-    raw["worktree.mergePreview"]({ payload: { projectID: input["projectID"], directory: input["directory"] } }).pipe(
-      Effect.mapError(mapClientError),
-    ),
-  )
-
-const EndpointWorktreeMerge = (raw: RawClient["server.worktree"]) => (input: WorktreeMergeInput) =>
-  preserveEffect<WorktreeMergeOutput>()(
-    raw["worktree.merge"]({ payload: { projectID: input["projectID"], directory: input["directory"] } }).pipe(
-      Effect.mapError(mapClientError),
-    ),
-  )
-
 const adaptGroupWorktree = (raw: RawClient["server.worktree"]) => ({
   list: EndpointWorktreeList(raw),
   create: EndpointWorktreeCreate(raw),
   remove: EndpointWorktreeRemove(raw),
   refresh: EndpointWorktreeRefresh(raw),
-  mergePreview: EndpointWorktreeMergePreview(raw),
-  merge: EndpointWorktreeMerge(raw),
 })
 
 const EndpointVcsInit = (raw: RawClient["server.vcs"]) => (input?: VcsInitInput) =>

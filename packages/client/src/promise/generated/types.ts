@@ -342,26 +342,6 @@ export type WorktreeDirectory = { directory: AbsolutePath; strategy?: string }
 
 export type WorktreeInfo = { directory: AbsolutePath }
 
-export type WorktreeMergePreview = {
-  directory: AbsolutePath
-  source: AbsolutePath
-  branch: string
-  ahead: number
-  behind: number
-  dirty: boolean
-  sourceDirty: boolean
-}
-
-export type WorktreeMergeResult = {
-  directory: AbsolutePath
-  source: AbsolutePath
-  branch: string
-  committed?: string
-  mergeCommit: string
-  ahead: number | "Infinity" | "-Infinity" | "NaN"
-  behind: number | "Infinity" | "-Infinity" | "NaN"
-}
-
 export type LocationPublicInfo = {
   directory: AbsolutePath
   project: { id: ProjectID; directory: AbsolutePath; canonical: AbsolutePath }
@@ -2981,11 +2961,7 @@ export const isShellNotFoundError = (value: unknown): value is ShellNotFoundErro
 export type WorktreeError = {
   readonly _tag: "WorktreeError"
   readonly name: "WorktreeError"
-  readonly data: {
-    readonly message: string
-    readonly forceRequired?: boolean | undefined
-    readonly conflicted?: ReadonlyArray<string> | undefined
-  }
+  readonly data: { readonly message: string; readonly forceRequired?: boolean | undefined }
 }
 export const isWorktreeError = (value: unknown): value is WorktreeError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "WorktreeError"
@@ -6054,20 +6030,6 @@ export type WorktreeRemoveOutput = void
 export type WorktreeRefreshInput = { readonly projectID: { readonly projectID: string }["projectID"] }
 
 export type WorktreeRefreshOutput = void
-
-export type WorktreeMergePreviewInput = {
-  readonly projectID: { readonly projectID: string; readonly directory: string }["projectID"]
-  readonly directory: { readonly projectID: string; readonly directory: string }["directory"]
-}
-
-export type WorktreeMergePreviewOutput = WorktreeMergePreview
-
-export type WorktreeMergeInput = {
-  readonly projectID: { readonly projectID: string; readonly directory: string }["projectID"]
-  readonly directory: { readonly projectID: string; readonly directory: string }["directory"]
-}
-
-export type WorktreeMergeOutput = WorktreeMergeResult
 
 export type VcsInitInput = {
   readonly location?: {

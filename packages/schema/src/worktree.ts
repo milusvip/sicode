@@ -27,39 +27,6 @@ export const RemoveInput = Schema.Struct({
 }).annotate({ identifier: "Worktree.RemoveInput" })
 export interface RemoveInput extends Schema.Schema.Type<typeof RemoveInput> {}
 
-export const MergeInput = Schema.Struct({
-  projectID: Project.ID,
-  directory: AbsolutePath,
-}).annotate({ identifier: "Worktree.MergeInput" })
-export interface MergeInput extends Schema.Schema.Type<typeof MergeInput> {}
-
-export const MergePreview = Schema.Struct({
-  directory: AbsolutePath,
-  source: AbsolutePath,
-  branch: Schema.String,
-  ahead: Schema.Number,
-  behind: Schema.Number,
-  dirty: Schema.Boolean,
-  sourceDirty: Schema.Boolean,
-}).annotate({
-  identifier: "Worktree.MergePreview",
-  description: "What merging a worktree back into its source checkout would do, before doing it.",
-})
-export interface MergePreview extends Schema.Schema.Type<typeof MergePreview> {}
-
-export const MergeResult = Schema.Struct({
-  directory: AbsolutePath,
-  source: AbsolutePath,
-  branch: Schema.String,
-  committed: optional(Schema.String).annotate({
-    description: "Sha of the snapshot commit created for uncommitted worktree changes, if any.",
-  }),
-  mergeCommit: Schema.String,
-  ahead: Schema.Number,
-  behind: Schema.Number,
-}).annotate({ identifier: "Worktree.MergeResult" })
-export interface MergeResult extends Schema.Schema.Type<typeof MergeResult> {}
-
 export const Info = Schema.Struct({
   directory: AbsolutePath,
 }).annotate({ identifier: "Worktree.Info" })
@@ -80,19 +47,6 @@ export interface ListEntry extends Schema.Schema.Type<typeof ListEntry> {}
 export class OperationError extends Schema.TaggedError<OperationError>()("Worktree.OperationError", {
   message: Schema.String,
   forceRequired: optional(Schema.Boolean),
-}) {}
-
-export class MergeConflictError extends Schema.TaggedError<MergeConflictError>()(
-  "Worktree.MergeConflictError",
-  { files: Schema.Array(Schema.String) },
-) {
-  constructor(options: { readonly files: ReadonlyArray<string> }) {
-    super({ files: [...options.files] })
-  }
-}
-
-export class MergeDirtyError extends Schema.TaggedError<MergeDirtyError>()("Worktree.MergeDirtyError", {
-  directory: AbsolutePath,
 }) {}
 
 export const List = Schema.Array(Directory).annotate({ identifier: "Worktree.List" })

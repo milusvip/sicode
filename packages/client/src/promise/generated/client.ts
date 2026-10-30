@@ -254,10 +254,6 @@ import type {
   WorktreeRemoveOutput,
   WorktreeRefreshInput,
   WorktreeRefreshOutput,
-  WorktreeMergePreviewInput,
-  WorktreeMergePreviewOutput,
-  WorktreeMergeInput,
-  WorktreeMergeOutput,
   VcsInitInput,
   VcsInitOutput,
   VcsGetInput,
@@ -2166,30 +2162,6 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [400, 401, 404],
             empty: true,
-          },
-          requestOptions,
-        ),
-      mergePreview: (input: WorktreeMergePreviewInput, requestOptions?: RequestOptions) =>
-        request<WorktreeMergePreviewOutput>(
-          {
-            method: "POST",
-            path: `/api/worktree/merge-preview`,
-            body: { projectID: input["projectID"], directory: input["directory"] },
-            successStatus: 200,
-            declaredStatuses: [400, 401, 404],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      merge: (input: WorktreeMergeInput, requestOptions?: RequestOptions) =>
-        request<WorktreeMergeOutput>(
-          {
-            method: "POST",
-            path: `/api/worktree/merge`,
-            body: { projectID: input["projectID"], directory: input["directory"] },
-            successStatus: 200,
-            declaredStatuses: [400, 401, 404],
-            empty: false,
           },
           requestOptions,
         ),

@@ -21,8 +21,6 @@ export const WorktreeHandler = HttpApiBuilder.group(Api, "server.worktree", (han
       .handle("worktree.refresh", (ctx) =>
         worktrees.refresh(ctx.payload).pipe(badRequest, Effect.as(HttpApiSchema.NoContent.make())),
       )
-      .handle("worktree.mergePreview", (ctx) => worktrees.mergePreview(ctx.payload).pipe(badRequest))
-      .handle("worktree.merge", (ctx) => worktrees.merge(ctx.payload).pipe(badRequest))
   }),
 )
 
@@ -39,8 +37,6 @@ function badRequest<A, R>(effect: Effect.Effect<A, Worktree.Error, R>) {
                 error instanceof Git.WorktreeError || error instanceof Worktree.OperationError
                   ? error.forceRequired
                   : undefined,
-              conflicted:
-                error instanceof Worktree.MergeConflictError ? [...error.files] : undefined,
             },
           }),
     ),
@@ -60,9 +56,5 @@ function message(error: Exclude<Worktree.Error, Project.NotFoundError>) {
   if (error instanceof Worktree.DirectoryUnavailableError) return `Worktree directory unavailable: ${error.directory}`
   if (error instanceof Worktree.InvalidDirectoryError) return `Invalid worktree directory: ${error.directory}`
   if (error instanceof Worktree.StrategyUnavailableError) return `Worktree strategy unavailable: ${error.strategy}`
-  if (error instanceof Worktree.MergeDirtyError)
-    return `Source checkout has uncommitted changes: ${error.directory}. Commit or stash them, then merge again`
-  if (error instanceof Worktree.MergeConflictError)
-    return `Merge stopped on conflicts in ${error.files.length} file${error.files.length === 1 ? "" : "s"}; both checkouts are untouched`
   return error.message
 }

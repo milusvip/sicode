@@ -2242,23 +2242,11 @@ export type WorktreeRefreshOperation<E = never> = (
   input: WorktreeRefreshInput,
 ) => Effect.Effect<WorktreeRefreshOutput, E>
 
-export type WorktreeMergePreviewInput = { readonly projectID: Project.ID; readonly directory: AbsolutePath }
-export type WorktreeMergePreviewOutput = Worktree.MergePreview
-export type WorktreeMergePreviewOperation<E = never> = (
-  input: WorktreeMergePreviewInput,
-) => Effect.Effect<WorktreeMergePreviewOutput, E>
-
-export type WorktreeMergeInput = { readonly projectID: Project.ID; readonly directory: AbsolutePath }
-export type WorktreeMergeOutput = Worktree.MergeResult
-export type WorktreeMergeOperation<E = never> = (input: WorktreeMergeInput) => Effect.Effect<WorktreeMergeOutput, E>
-
 export interface WorktreeApi<E = never> {
   readonly list: WorktreeListOperation<E>
   readonly create: WorktreeCreateOperation<E>
   readonly remove: WorktreeRemoveOperation<E>
   readonly refresh: WorktreeRefreshOperation<E>
-  readonly mergePreview: WorktreeMergePreviewOperation<E>
-  readonly merge: WorktreeMergeOperation<E>
 }
 
 export type VcsInitInput = {

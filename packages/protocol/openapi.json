@@ -3246,23 +3246,6 @@
             "required": false
           },
           {
-            "name": "prompt",
-            "in": "query",
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "enum": ["true", "false"]
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Diff from this prompt alone instead of from the turn that contains it: the range ends at the next prompt, or at the turn's idle marker when it is the last one. `to` is ignored."
-            },
-            "required": false
-          },
-          {
             "name": "context",
             "in": "query",
             "schema": {
@@ -3352,7 +3335,7 @@
             }
           }
         },
-        "description": "Structured per-file diffs of the files a turn changed. A turn runs from the first prompt after the session was last idle until its next idle marker, so prompts steered in while it was busy belong to the same turn; `to` extends the range through a later turn. Set `prompt` to slice the range at `from` instead, which ends at the next prompt so each prompt of a steered turn reports its own work. Compares the range's first recorded snapshot with its last; a step still running in the active session compares against the working copy. Ranges that span a location change are rejected. In sessions without any idle marker, a prompt's turn spans until the next user message.",
+        "description": "Structured per-file diffs of the files a turn changed. A turn runs from the first prompt after the session was last idle until its next idle marker, so prompts steered in while it was busy belong to the same turn; `to` extends the range through a later turn. Compares the range's first recorded snapshot with its last; a step still running in the active session compares against the working copy. Ranges that span a location change are rejected. In sessions without any idle marker, a prompt's turn spans until the next user message.",
         "summary": "Diff session turns"
       }
     },
@@ -5709,220 +5692,6 @@
         },
         "description": "Retrieve a single AI provider so clients can inspect its availability and endpoint settings.",
         "summary": "Get provider"
-      }
-    },
-    "/api/provider/models": {
-      "post": {
-        "tags": ["provider"],
-        "operationId": "provider.models",
-        "parameters": [],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "ProviderModelProbe",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProviderModelProbe"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "LocationNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
-                }
-              }
-            }
-          }
-        },
-        "description": "Query an OpenAI-compatible endpoint's model list with the credentials being configured, so a custom provider can offer its models for selection.",
-        "summary": "List a provider's models",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "baseURL": {
-                    "type": "string"
-                  },
-                  "apiKey": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "headers": {
-                    "anyOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": ["baseURL"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        }
-      }
-    },
-    "/api/provider/test": {
-      "post": {
-        "tags": ["provider"],
-        "operationId": "provider.test",
-        "parameters": [],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "ProviderProbeResult",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProviderProbeResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "LocationNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
-                }
-              }
-            }
-          }
-        },
-        "description": "Check that an OpenAI-compatible endpoint accepts the configured credentials. With a model id it sends one minimal turn; without one it only verifies the model listing.",
-        "summary": "Test a provider endpoint",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "baseURL": {
-                    "type": "string"
-                  },
-                  "apiKey": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "headers": {
-                    "anyOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "model": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": ["baseURL"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        }
       }
     },
     "/api/integration": {
@@ -12786,144 +12555,6 @@
         }
       }
     },
-    "/api/worktree/merge-preview": {
-      "post": {
-        "tags": ["worktree"],
-        "operationId": "worktree.mergePreview",
-        "parameters": [],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "What merging a worktree back into its source checkout would do, before doing it.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Worktree.MergePreview"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "WorktreeError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorktreeErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ProjectNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundErrorEncoded"
-                }
-              }
-            }
-          }
-        },
-        "description": "Inspect a managed worktree's branch, its ahead/behind counts against the source checkout, and whether either side has uncommitted changes — without touching either tree.",
-        "summary": "Preview a worktree merge",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Worktree.MergeInput"
-              }
-            }
-          },
-          "required": true
-        }
-      }
-    },
-    "/api/worktree/merge": {
-      "post": {
-        "tags": ["worktree"],
-        "operationId": "worktree.merge",
-        "parameters": [],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Worktree.MergeResult",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Worktree.MergeResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "WorktreeError | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/WorktreeErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ProjectNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundErrorEncoded"
-                }
-              }
-            }
-          }
-        },
-        "description": "Snapshot uncommitted worktree changes onto its branch, require a clean source checkout, then merge the branch in. A conflicted merge is aborted before failing, leaving both checkouts untouched.",
-        "summary": "Merge a worktree back into its source checkout",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Worktree.MergeInput"
-              }
-            }
-          },
-          "required": true
-        }
-      }
-    },
     "/api/vcs/init": {
       "post": {
         "tags": ["vcs"],
@@ -15466,21 +15097,9 @@
                 "type": "null"
               }
             ]
-          },
-          "providers": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/Config.ProviderEncoded"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
           }
         },
+        "required": ["shell"],
         "additionalProperties": false
       },
       "Config.Plugin.EntryEncoded": {
@@ -19073,36 +18692,6 @@
         "type": "string",
         "enum": ["http", "websocket"]
       },
-      "ProviderModelProbe": {
-        "type": "object",
-        "properties": {
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": ["id"],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": ["models"],
-        "additionalProperties": false
-      },
       "ProviderNotFoundErrorEncoded": {
         "type": "object",
         "properties": {
@@ -19118,17 +18707,6 @@
           }
         },
         "required": ["_tag", "providerID", "message"],
-        "additionalProperties": false
-      },
-      "ProviderProbeResult": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": ["chat", "models"]
-          }
-        },
-        "required": ["mode"],
         "additionalProperties": false
       },
       "Pty": {
@@ -19798,9 +19376,6 @@
             "type": "object",
             "properties": {
               "created": {
-                "type": "number"
-              },
-              "firstOutput": {
                 "type": "number"
               },
               "streamed": {
@@ -20908,29 +20483,6 @@
         ],
         "additionalProperties": false
       },
-      "SessionStats.Latency": {
-        "type": "object",
-        "properties": {
-          "sampled": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "queueP50": {
-            "type": "number"
-          },
-          "generationP50": {
-            "type": "number"
-          },
-          "stepP50": {
-            "type": "number"
-          },
-          "cacheRead": {
-            "type": "number"
-          }
-        },
-        "required": ["sampled"],
-        "additionalProperties": false
-      },
       "SessionStats.ModelUsage": {
         "type": "object",
         "properties": {
@@ -20946,9 +20498,6 @@
           },
           "cost": {
             "$ref": "#/components/schemas/Money.USD"
-          },
-          "latency": {
-            "$ref": "#/components/schemas/SessionStats.Latency"
           }
         },
         "required": ["model", "steps", "tokens", "cost"],
@@ -21889,108 +21438,6 @@
           "$ref": "#/components/schemas/Worktree.Directory"
         }
       },
-      "Worktree.MergeInput": {
-        "type": "object",
-        "properties": {
-          "projectID": {
-            "$ref": "#/components/schemas/Project.ID"
-          },
-          "directory": {
-            "$ref": "#/components/schemas/AbsolutePath"
-          }
-        },
-        "required": ["projectID", "directory"],
-        "additionalProperties": false
-      },
-      "Worktree.MergePreview": {
-        "type": "object",
-        "properties": {
-          "directory": {
-            "$ref": "#/components/schemas/AbsolutePath"
-          },
-          "source": {
-            "$ref": "#/components/schemas/AbsolutePath"
-          },
-          "branch": {
-            "type": "string"
-          },
-          "ahead": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          },
-          "behind": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          },
-          "dirty": {
-            "type": "boolean"
-          },
-          "sourceDirty": {
-            "type": "boolean"
-          }
-        },
-        "required": ["directory", "source", "branch", "ahead", "behind", "dirty", "sourceDirty"],
-        "additionalProperties": false,
-        "description": "What merging a worktree back into its source checkout would do, before doing it."
-      },
-      "Worktree.MergeResult": {
-        "type": "object",
-        "properties": {
-          "directory": {
-            "$ref": "#/components/schemas/AbsolutePath"
-          },
-          "source": {
-            "$ref": "#/components/schemas/AbsolutePath"
-          },
-          "branch": {
-            "type": "string"
-          },
-          "committed": {
-            "type": "string"
-          },
-          "mergeCommit": {
-            "type": "string"
-          },
-          "ahead": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          },
-          "behind": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
-          }
-        },
-        "required": ["directory", "source", "branch", "mergeCommit", "ahead", "behind"],
-        "additionalProperties": false
-      },
       "Worktree.RemoveInput": {
         "type": "object",
         "properties": {
@@ -22028,19 +21475,6 @@
                 "anyOf": [
                   {
                     "type": "boolean"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "conflicted": {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
                   },
                   {
                     "type": "null"
