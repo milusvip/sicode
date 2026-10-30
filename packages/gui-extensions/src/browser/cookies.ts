@@ -1,3 +1,5 @@
+import { Option, Schema } from "effect"
+
 /** A cookie the pane can write for the current page. */
 export type CookieDraft = {
   name: string
@@ -33,15 +35,108 @@ export const MAX_COOKIE_TEXT = 262_144
  * EditThisCookie style).
  */
 export function parseCookies(input: string): CookieDraft[] {
+  return parseLoginPaste(input).cookies
+}
+
+/** A login handed over in one paste: the cookies, the localStorage half, and the page both came from. */
+export type LoginPaste = {
+  cookies: CookieDraft[]
+  /** A dump's localStorage entries by name; absent when the paste carries none. */
+  storage?: Record<string, string>
+  /** The page the paste was copied from, when it names one. */
+  url?: string
+}
+
+/**
+ * Parse a login paste. Besides the cookie shapes {@link parseCookies} takes, this understands the dump the
+ * browser extension's「复制登录态」copies — a `网址：`, a `cookie：`, and a `Token：` section, one `name=value` per
+ * line — and the JSON form that replaces it, which also carries each cookie's domain and the localStorage entries.
+ *
+ * A site that keeps its session in localStorage cannot be signed in by cookies alone, so the two halves travel
+ * together and the caller writes both.
+ */
+export function parseLoginPaste(input: string): LoginPaste {
   const text = input.trim()
 
-  if (!text) return []
+  if (!text) return { cookies: [] }
 
   if (text.length > MAX_COOKIE_TEXT) throw new Error("Cookie paste is too large.")
 
   if (text.startsWith("{") || text.startsWith("[")) return fromJSON(text)
 
-  return fromHeader(text)
+  // The dump always opens with the page it came from; without it a paste is just a Cookie header.
+  if (DUMP_URL.test(text.split(/\r?\n/, 1)[0] ?? "")) return fromDump(text)
+
+  return { cookies: fromHeader(text) }
+}
+
+/** A dump's first line names the page, with the label in whichever language the extension's popup used. */
+const DUMP_URL = /^(?:网址|網址|url)\s*[:：]/i
+
+/** The line that starts the dump's cookie section; the lines that follow are `name=value`. */
+const DUMP_COOKIES = /^(?:cookie|cookies)\s*[:：]\s*$/i
+
+/** The line that starts the dump's localStorage section, which the extension also labels「Token」. */
+const DUMP_STORAGE = /^(?:token|storage|localstorage)\s*[:：]\s*$/i
+
+/** How the dump marks a localStorage entry: `name=value（localStorage）`, in either bracket width. */
+const DUMP_ENTRY = /\s*[（(]\s*localstorage\s*[）)]\s*$/i
+
+/**
+ * The dump the extension's「复制登录态」copies. It is written for a person to read, so nothing is escaped: the page on
+ * the first line, then a `cookie：` section and a `Token：` section of one `name=value` per line. Its cookies carry no
+ * domain, so the page it names is what tells the pane which site they belong to.
+ */
+function fromDump(text: string): LoginPaste {
+  const cookies: CookieDraft[] = []
+  const storage: Record<string, string> = {}
+  let url: string | undefined
+  let section: "cookies" | "storage" = "cookies"
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+
+    if (!line) continue
+
+    const page = DUMP_URL.exec(line)
+
+    if (page) {
+      url = line.slice(page[0].length).trim()
+
+      continue
+    }
+
+    if (DUMP_COOKIES.test(line)) {
+      section = "cookies"
+
+      continue
+    }
+
+    if (DUMP_STORAGE.test(line)) {
+      section = "storage"
+
+      continue
+    }
+
+    // A value can carry anything but a line break, so the first "=" separates the name from the rest.
+    const entry = section === "storage" ? line.replace(DUMP_ENTRY, "") : line
+    const stored = section === "storage" || DUMP_ENTRY.test(line)
+    const index = entry.indexOf("=")
+
+    if (index <= 0) throw new Error(`Invalid ${stored ? "localStorage" : "cookie"} pair: ${entry}`)
+
+    const name = entry.slice(0, index).trim()
+    const value = entry.slice(index + 1)
+
+    if (stored) storage[name] = value
+    else cookies.push({ name, value: value.trim() })
+  }
+
+  return {
+    cookies,
+    ...(Object.keys(storage).length > 0 ? { storage } : undefined),
+    ...(url ? { url } : undefined),
+  }
 }
 
 /** Turn drafts into cookie.set payloads scoped to the open page; rejects unrelated domains. */
@@ -63,32 +158,46 @@ export function cookiesForPage(pageURL: string, drafts: readonly CookieDraft[]):
 
     const secure = draft.secure ?? page.protocol === "https:"
     const path = draft.path?.trim() || "/"
-    // Host-only cookies omit domain; domain cookies keep the pasted host (with or without a leading dot).
+    // Host-only cookies omit domain; domain cookies keep the pasted host (leading dot stripped for Electron).
     const url = cookieSetURL(page, domain, path, secure)
 
-    return cookieSet({ url, draft, domain, path, secure })
+    return cookieSet({ url, draft, domain: domain?.replace(/^\./, ""), path, secure })
   })
 }
 
 /**
- * Cookies pasted with no page open: each names its own domain, which the paste then writes for. A cookie without one
- * has nowhere to go, so it fails with the reason instead of landing on a site the user did not pick.
+ * Cookies pasted with no page open: each names its own domain, which the paste then writes for. A dump names the page
+ * instead of every cookie's domain, so `source` stands in for it — the cookie is then written for that host alone,
+ * host-only, exactly as the site set it. A cookie with neither has nowhere to go and fails instead of landing on a
+ * site the user did not pick.
  */
-export function cookiesForDomain(drafts: readonly CookieDraft[]): CookieSet[] {
+export function cookiesForDomain(drafts: readonly CookieDraft[], source?: string): CookieSet[] {
   if (drafts.length === 0) throw new Error("No cookies found in the paste.")
+
+  const pageURL = source && URL.canParse(source) ? new URL(source) : undefined
+  const page = pageURL && /^https?:$/.test(pageURL.protocol) ? pageURL : undefined
 
   return drafts.map((draft) => {
     if (!draft.name) throw new Error("Each cookie needs a name.")
     const domain = draft.domain?.trim()
-
-    if (!domain) throw new Error(`Cookie "${draft.name}" needs a domain: no page is open to write it for.`)
     const path = draft.path?.trim() || "/"
+
+    if (!domain) {
+      if (!page) throw new Error(`Cookie "${draft.name}" needs a domain: no page is open to write it for.`)
+      const secure = draft.secure ?? page.protocol === "https:"
+      // No `domain` field: a host-only cookie is what a site sets for itself, and it must not leak to subdomains.
+
+      return cookieSet({ url: cookieSetURL(page, undefined, path, secure), draft, path, secure })
+    }
+
     // Without a page there is no scheme to inherit; the paste's own or https, as a login usually is.
+    // SiCode: chrome.cookies.getAll returns a leading-dot domain (`.example.com`), which Electron's
+    // cookies.set rejects; strip it so the domain matches the URL we write at.
     const secure = draft.secure ?? true
     const host = domain.replace(/^\./, "")
     const url = `${secure ? "https:" : "http:"}//${host}${path.startsWith("/") ? path : `/${path}`}`
 
-    return cookieSet({ url, draft, domain, path, secure })
+    return cookieSet({ url, draft, domain: host, path, secure })
   })
 }
 
@@ -106,6 +215,17 @@ function cookieSet(input: { url: string; draft: CookieDraft; domain?: string; pa
     ...(draft.expirationDate !== undefined ? { expirationDate: draft.expirationDate } : undefined),
     ...(draft.sameSite ? { sameSite: draft.sameSite } : undefined),
   }
+}
+
+/**
+ * The address a cookie is written or removed at: its domain without the leading dot, its path, and its scheme. An IPv6
+ * host needs its brackets in a URL.
+ */
+export function cookieURL(cookie: { domain?: string; path?: string; secure?: boolean }) {
+  const domain = (cookie.domain ?? "").replace(/^\./, "")
+  const host = domain.includes(":") && !domain.startsWith("[") ? `[${domain}]` : domain
+
+  return `${cookie.secure ? "https" : "http"}://${host}${cookie.path ?? "/"}`
 }
 
 export function hostMatches(pageHost: string, domain: string) {
@@ -131,50 +251,147 @@ function fromHeader(text: string): CookieDraft[] {
     })
 }
 
-function fromJSON(text: string): CookieDraft[] {
-  let value: unknown
+/** An expiry as exporters write it: Unix seconds, Unix milliseconds, or a date string. */
+const Expiry = Schema.Union([Schema.Number, Schema.String])
 
-  try {
-    value = JSON.parse(text)
-  } catch {
-    throw new Error("Cookie JSON could not be parsed.")
-  }
+/**
+ * One cookie object from a paste. Every field is optional and both spellings are accepted, because Chrome, EditThisCookie,
+ * cookie-editor and DevTools each capitalize a different subset. Exports also carry fields this pane ignores (`hostOnly`,
+ * `session`, `storeId`), so decoding ignores excess properties rather than rejecting the paste.
+ */
+const CookieItem = Schema.Struct({
+  name: Schema.optionalKey(Schema.String),
+  Name: Schema.optionalKey(Schema.String),
+  value: Schema.optionalKey(Schema.String),
+  Value: Schema.optionalKey(Schema.String),
+  domain: Schema.optionalKey(Schema.String),
+  Domain: Schema.optionalKey(Schema.String),
+  path: Schema.optionalKey(Schema.String),
+  Path: Schema.optionalKey(Schema.String),
+  secure: Schema.optionalKey(Schema.Boolean),
+  Secure: Schema.optionalKey(Schema.Boolean),
+  httpOnly: Schema.optionalKey(Schema.Boolean),
+  HttpOnly: Schema.optionalKey(Schema.Boolean),
+  http_only: Schema.optionalKey(Schema.Boolean),
+  expirationDate: Schema.optionalKey(Expiry),
+  expiration_date: Schema.optionalKey(Expiry),
+  expires: Schema.optionalKey(Expiry),
+  sameSite: Schema.optionalKey(Schema.String),
+  same_site: Schema.optionalKey(Schema.String),
+  SameSite: Schema.optionalKey(Schema.String),
+})
 
-  if (Array.isArray(value)) {
-    return value.map((item, index) => {
-      if (!item || typeof item !== "object") throw new Error(`Cookie at index ${index} is not an object.`)
+type Item = typeof CookieItem.Type
 
-      return fromObject(item as Record<string, unknown>, `at index ${index}`)
-    })
-  }
+/** A name→value map, or a name→cookie-object map: both are pasted as one object. */
+const CookieMap = Schema.Record(
+  Schema.String,
+  Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Null, CookieItem]),
+)
 
-  if (value && typeof value === "object") {
-    // EditThisCookie / cookie-editor sometimes wrap a list.
-    const record = value as Record<string, unknown>
+const Decode = { onExcessProperty: "ignore" } as const
 
-    if (Array.isArray(record.cookies)) return fromJSON(JSON.stringify(record.cookies))
+/** A JSON object whose values a schema decides on; the shape a wrapper's `localStorage` arrives in. */
+const Dictionary = Schema.Record(Schema.String, Schema.Unknown)
 
-    return Object.entries(record).map(([name, entry]) => {
-      if (entry && typeof entry === "object") return fromObject({ name, ...(entry as object) }, `named ${name}`)
+type Dictionary = typeof Dictionary.Type
 
-      return { name, value: String(entry ?? "") }
-    })
-  }
+/** One localStorage entry; JSON may have turned a number or a flag into its own type. */
+const Entry = Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
+
+const decodeEntry = Schema.decodeUnknownOption(Entry)
+
+const decodeJSON = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
+const decodeArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
+
+/** A paste that wraps its parts: the extension's own JSON dump, or any exporter that also names the page. */
+const LoginWrapper = Schema.Struct({
+  url: Schema.optionalKey(Schema.String),
+  cookies: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+  localStorage: Schema.optionalKey(Dictionary),
+})
+
+const decodeWrapper = Schema.decodeUnknownOption(LoginWrapper, Decode)
+
+const decodeMap = Schema.decodeUnknownOption(CookieMap, Decode)
+
+const decodeItem = Schema.decodeUnknownOption(CookieItem, Decode)
+
+function fromJSON(text: string): LoginPaste {
+  const parsed = Option.getOrUndefined(decodeJSON(text))
+
+  if (parsed === undefined) throw new Error("Cookie JSON could not be parsed.")
+
+  const array = Option.getOrUndefined(decodeArray(parsed))
+
+  if (array) return { cookies: draftsOf(array) }
+
+  // EditThisCookie / cookie-editor sometimes wrap a list; a dump also carries the page and the localStorage.
+  const wrapped = Option.getOrUndefined(decodeWrapper(parsed))
+
+  if (wrapped && (wrapped.cookies || wrapped.localStorage))
+    return {
+      cookies: wrapped.cookies ? draftsOf(wrapped.cookies) : [],
+      ...(wrapped.localStorage ? { storage: entriesOf(wrapped.localStorage) } : undefined),
+      ...(wrapped.url ? { url: wrapped.url } : undefined),
+    }
+
+  const map = Option.getOrUndefined(decodeMap(parsed))
+
+  if (map)
+    return {
+      cookies: Object.entries(map).map(([name, entry]) => {
+        const item = Option.getOrUndefined(decodeItem(entry))
+
+        // The key names the cookie unless the value is an object that says otherwise.
+        return item ? draft({ name, ...item }, `named ${name}`) : { name, value: String(entry ?? "") }
+      }),
+    }
 
   throw new Error("Cookie JSON must be an array or an object.")
 }
 
-function fromObject(item: Record<string, unknown>, where: string): CookieDraft {
-  const name = stringField(item, "name") ?? stringField(item, "Name")
+/** localStorage is strings, but a dump that passed through JSON may have stringified a number or a flag. */
+function entriesOf(input: Dictionary) {
+  return Object.entries(input).reduce<Record<string, string>>((entries, [name, value]) => {
+    const entry = Option.getOrUndefined(decodeEntry(value))
+
+    // An object or a null is not a value localStorage stores, so it is dropped rather than stringified.
+    if (entry !== undefined) entries[name] = String(entry)
+
+    return entries
+  }, {})
+}
+
+function draftsOf(entries: readonly unknown[]) {
+  return entries.flatMap((entry, index) => {
+    const where = `at index ${index}`
+    const item = Option.getOrUndefined(decodeItem(entry))
+
+    if (!item) throw new Error(`Cookie ${where} is not an object.`)
+
+    // A real browser dump can carry one malformed entry — a cookie with no usable name, which no cookie
+    // store accepts. Skipping it keeps the rest of a live sync from failing over one bad row.
+    try {
+      return [draft(item, where)]
+    } catch {
+      return []
+    }
+  })
+}
+
+function draft(item: Item, where: string): CookieDraft {
+  const name = item.name ?? item.Name
 
   if (!name) throw new Error(`Cookie ${where} is missing a name.`)
-  const value = stringField(item, "value") ?? stringField(item, "Value") ?? ""
-  const domain = stringField(item, "domain") ?? stringField(item, "Domain")
-  const path = stringField(item, "path") ?? stringField(item, "Path")
-  const secure = boolField(item, "secure") ?? boolField(item, "Secure")
-  const httpOnly = boolField(item, "httpOnly") ?? boolField(item, "HttpOnly") ?? boolField(item, "http_only")
-  const expirationDate = expiry(item)
-  const sameSite = sameSiteField(item)
+  const value = item.value ?? item.Value ?? ""
+  const domain = item.domain ?? item.Domain
+  const path = item.path ?? item.Path
+  const secure = item.secure ?? item.Secure
+  const httpOnly = item.httpOnly ?? item.HttpOnly ?? item.http_only
+  const expirationDate = expiry(item.expirationDate, item.expiration_date, item.expires)
+  const sameSite = sameSiteOf(item.sameSite, item.same_site, item.SameSite)
 
   return {
     name,
@@ -188,35 +405,29 @@ function fromObject(item: Record<string, unknown>, where: string): CookieDraft {
   }
 }
 
-function stringField(item: Record<string, unknown>, key: string) {
-  const value = item[key]
+function expiry(...candidates: readonly (number | string | undefined)[]) {
+  const seconds = candidates.find((value) => value !== undefined)
 
-  return typeof value === "string" ? value : undefined
-}
+  if (seconds === undefined) return
 
-function boolField(item: Record<string, unknown>, key: string) {
-  const value = item[key]
+  if (Schema.is(Schema.String)(seconds)) {
+    const trimmed = seconds.trim()
 
-  return typeof value === "boolean" ? value : undefined
-}
+    if (!trimmed) return
 
-function expiry(item: Record<string, unknown>) {
-  const seconds = item.expirationDate ?? item.expiration_date ?? item.expires
+    const parsed = Date.parse(trimmed)
 
-  if (typeof seconds === "number" && Number.isFinite(seconds)) {
-    // Milliseconds from some exporters.
-    return seconds > 1e12 ? Math.floor(seconds / 1000) : seconds
+    return Number.isNaN(parsed) ? undefined : Math.floor(parsed / 1000)
   }
 
-  if (typeof seconds === "string" && seconds.trim()) {
-    const parsed = Date.parse(seconds)
+  if (!Number.isFinite(seconds)) return
 
-    if (!Number.isNaN(parsed)) return Math.floor(parsed / 1000)
-  }
+  // Milliseconds from some exporters.
+  return seconds > 1e12 ? Math.floor(seconds / 1000) : seconds
 }
 
-function sameSiteField(item: Record<string, unknown>): CookieDraft["sameSite"] | undefined {
-  const value = stringField(item, "sameSite") ?? stringField(item, "same_site") ?? stringField(item, "SameSite")
+function sameSiteOf(...candidates: readonly (string | undefined)[]): CookieDraft["sameSite"] | undefined {
+  const value = candidates.find((entry) => entry !== undefined)
 
   if (!value) return
 
