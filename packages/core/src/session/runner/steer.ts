@@ -40,7 +40,12 @@ export interface SteerInput {
 export function selectSteer(input: SteerInput): Steer | undefined {
   if (input.stepLimitReached) return { prompt: MAX_STEPS_PROMPT, role: "assistant", stop: true }
   if (input.loopStopped) return { prompt: LOOP_STOP_PROMPT, role: "assistant", stop: true }
-  if (input.exploreHard) return { prompt: EXPLORE_BUDGET_PROMPT, role: "assistant", stop: true }
+  // SiCode: a spent exploration budget no longer ends the turn. It only urges the model to hand its
+  // remaining search to `explore`, the way Cursor teaches its subagent via the description — never a
+  // forced tool call. A forced `toolChoice` misfires on legitimate reading (a long report, a pure
+  // analysis task), where "24 read-only steps" does not mean "hunting and lost". The step limit is
+  // the one unconditional hard stop; this stays a hint the model may decline.
+  if (input.exploreHard) return { prompt: EXPLORE_BUDGET_PROMPT, role: "assistant", stop: false }
   if (input.loopNudged) return { prompt: LOOP_NUDGE_PROMPT, role: "system", stop: false }
   // SiCode: softer than a loop and deliberately never fatal — a re-read can still be legitimate,
   // so this only suggests, and only once per file.

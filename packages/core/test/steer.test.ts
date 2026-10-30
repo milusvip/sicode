@@ -39,11 +39,11 @@ describe("selectSteer", () => {
     })
   })
 
-  test("a spent exploration budget stops the turn", () => {
+  test("a spent exploration budget urges an explore handoff, but keeps tools and never stops", () => {
     expect(steer({ exploreHard: true, narrate: true, exploreSoft: true })).toEqual({
       prompt: EXPLORE_BUDGET_PROMPT,
       role: "assistant",
-      stop: true,
+      stop: false,
     })
   })
 
@@ -94,10 +94,10 @@ describe("selectSteer", () => {
     })
   })
 
-  test("only the stop messages withdraw tools", () => {
+  test("only the step limit and a survived loop withdraw tools", () => {
     expect(steer({ stepLimitReached: true })!.stop).toBe(true)
     expect(steer({ loopStopped: true })!.stop).toBe(true)
-    expect(steer({ exploreHard: true })!.stop).toBe(true)
+    expect(steer({ exploreHard: true })!.stop).toBe(false)
     expect(steer({ loopNudged: true })!.stop).toBe(false)
     expect(steer({ narrate: true })!.stop).toBe(false)
     expect(steer({ exploreSoft: true })!.stop).toBe(false)

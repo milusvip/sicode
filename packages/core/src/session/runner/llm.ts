@@ -39,6 +39,7 @@ import {
   FAILURE_STREAK_FIRST,
 } from "./failure-streak.js"
 import { selectSteer } from "./steer.js"
+import { effectiveStepLimit } from "./max-steps.js"
 import { completionFingerprint, completionGatePrompt, detectPendingTodos } from "./completion-gate.js"
 import { FINAL_ANSWER_PROMPT, unansweredPrompt } from "./final-answer-gate.js"
 
@@ -283,7 +284,12 @@ const layer = Layer.effect(
           continue
         }
         yield* compaction.precompute(Effect.succeed(loaded))
-        const stepLimitReached = loaded.agent.info.steps !== undefined && step >= loaded.agent.info.steps
+        // SiCode: upstream left `steps` undefined by default, which made this the only hard stop
+        // that never fired. Fall back to a default ceiling so a runaway turn always ends, the way
+        // Cursor caps its agent, instead of letting the model edit-verify-edit for 77+ steps. A turn
+        // the model planned out with a multi-item todo list gets more headroom, so a real multi-file
+        // change is not cut off mid-job — only an unplanned spiral hits the tight ceiling.
+        const stepLimitReached = step >= effectiveStepLimit(loaded.messages, loaded.agent.info.steps)
         // Say something before the silence gets long: a turn that only speaks at the end leaves an
         // interrupted conversation with no assistant text at all.
         const silent = silentSteps(loaded.messages)

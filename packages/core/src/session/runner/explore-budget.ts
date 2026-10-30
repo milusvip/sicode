@@ -21,21 +21,41 @@ export const EXPLORE_HARD_STEPS = 24
 
 export const EXPLORE_SOFT_PROMPT = `You have spent several steps reading and searching without changing anything.
 
-Before your next tool call, write one or two sentences: what you have confirmed so far, and what you still need. If you already have enough to answer or to act, do that now instead of reading more.`
+If you are still hunting for where something lives or how something is wired — a multi-file search in plain language, not one exact symbol — stop grepping and reading file after file. Dispatch one \`subagent\` call (subagent_type "explore") with everything you still need, and let it return file:line pointers. Keep your own context small.
 
-export const EXPLORE_BUDGET_PROMPT = `CRITICAL - EXPLORATION BUDGET EXHAUSTED
+If you already have enough to answer or to act, do that now instead of reading more.`
 
-You have spent many steps reading and searching without changing anything. Stop exploring in this turn.
+export const EXPLORE_BUDGET_PROMPT = `You have spent many steps reading and searching without changing anything.
 
-Reply with:
-1. What you have confirmed so far, in a few lines.
-2. What you still do not know.
-3. The single next action you would take, or the question you need answered to continue.
+If you are still hunting for where something lives or how something is wired, stop grepping and reading file after file: dispatch one \`subagent\` call (subagent_type "explore") with everything you still need, and let it return file:line pointers. Keep your own context small.
 
-Do not call any more tools in this turn.`
+If you are not hunting — you are reading a long document, or reasoning through an analysis that legitimately does not change files — ignore this and continue. Do not force an explore call you do not need.`
 
 /** Tools that only look at things. Anything else counts as progress and ends the streak. */
 const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "list", "webfetch", "websearch", "recall"])
+
+/**
+ * SiCode: a `shell` command whose job is only to look. The budget used to treat every shell call as
+ * progress, so a model that searched via `rg`, `Get-ChildItem`, `Select-String`, `find`, or `git
+ * log` — instead of the `grep`/`glob` tools — reset its read-only streak every step and explored
+ * forever without ever tripping the budget. A command whose first word is one of these only reads,
+ * so it counts as exploration, not progress.
+ */
+const SHELL_READ_ONLY_COMMANDS = /^(rg|grep|egrep|Get-ChildItem|Get-Content|Select-String|find|ls|dir|git\s+(log|show|status|diff|grep|branch)|where\.exe|where)\b/
+
+function shellReadsOnly(part: Extract<SessionMessage.AssistantContent, { type: "tool" }>): boolean {
+  const input = part.state.input as { command?: string } | undefined
+  const command = input?.command?.trim()
+  if (!command) return false
+  return SHELL_READ_ONLY_COMMANDS.test(command)
+}
+
+/** Whether a single tool part only looks at things, rather than changing or building anything. */
+function isReadOnlyTool(part: Extract<SessionMessage.AssistantContent, { type: "tool" }>): boolean {
+  if (READ_ONLY_TOOLS.has(part.name)) return true
+  if (part.name === "shell") return shellReadsOnly(part)
+  return false
+}
 
 /**
  * Trailing assistant steps of the current turn that only read. A step breaks the streak when it
@@ -51,7 +71,7 @@ export function readOnlySteps(messages: ReadonlyArray<SessionMessage.Info>) {
     if (message.type !== "assistant") continue
     const tools = message.content.filter((part) => part.type === "tool")
     if (tools.length === 0) break
-    if (!tools.every((part) => READ_ONLY_TOOLS.has(part.name))) break
+    if (!tools.every((part) => isReadOnlyTool(part))) break
 
     count += 1
   }

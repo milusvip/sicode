@@ -17,6 +17,7 @@ import { ReferenceInstructions } from "../reference/instructions.js"
 import { SkillInstructions } from "../skill/instructions.js"
 import { Tool } from "../tool.js"
 import { SessionClarifyHint } from "./clarify-hint.js"
+import { SessionUiBehaviorHint } from "./ui-behavior-hint.js"
 import { SessionContextHints } from "./context-hints.js"
 import { SessionDesignHint } from "./design-hint.js"
 import { AgentNotFoundError } from "./error.js"
@@ -201,9 +202,12 @@ const layer = Layer.effect(
         initial: history.initial,
         // SiCode: a request too thin to act on gets what it leaves open named, so the model states
         // the reading it took instead of guessing silently. Request-only; `OPENCODE_CLARIFY=0` off.
-        messages: SessionClarifyHint.inject({
-          messages: designed,
-          enabled: process.env.OPENCODE_CLARIFY !== "0",
+        messages: SessionUiBehaviorHint.inject({
+          messages: SessionClarifyHint.inject({
+            messages: designed,
+            enabled: process.env.OPENCODE_CLARIFY !== "0",
+          }),
+          enabled: process.env.OPENCODE_UI_BEHAVIOR !== "0",
         }),
         tools: selection.tools,
       }
