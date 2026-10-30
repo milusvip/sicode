@@ -1,5 +1,6 @@
 import { createMemo, createSignal, getOwner, lazy, onCleanup, runWithOwner, Show, Suspense } from "solid-js"
 import { showToast } from "@opencode/ui/toast"
+import { elementOfferNote, pageOfferNote } from "./comment"
 import { Command, createKeyed, LinkHandler, MenuItem, onIdle, Panel, Style, type PanelTab, type Setup } from "../sdk"
 import { Browser } from "./contract"
 import type definition from "./index"
@@ -47,8 +48,39 @@ const setup: Setup<typeof definition> = (ctx) => {
     })
   })
 
-  // SiCode: the extension pushed this site's login cookies; write into the pane and open the site.
+  // SiCode: extension popup pushes — a page, a picked element, or the site's login cookies.
   createKeyed(ctx.uses.chromeBridge, (client) => {
+    client.on("tabOffer", (event) => {
+      const screen = ctx.screen.current()
+      if (!screen) return showToast({ title: "推送失败", description: "没有打开的会话" })
+      screen.composer.attach(
+        pageOfferNote({
+          origin: ctx.id,
+          url: event.tab.url,
+          title: event.tab.title,
+          comment: event.tab.url,
+          chromeTabID: event.tab.id,
+        }),
+      )
+      showToast({ title: "已推送到对话", description: event.tab.title || event.tab.url })
+    })
+    client.on("elementOffer", (event) => {
+      const screen = ctx.screen.current()
+      if (!screen) return showToast({ title: "推送失败", description: "没有打开的会话" })
+      const elements = event.elements?.length ? event.elements : event.element ? [event.element] : []
+      if (!elements.length) return
+      const first = elements[0]!
+      screen.composer.attach(
+        elementOfferNote({
+          origin: ctx.id,
+          url: event.tab.url,
+          title: event.tab.title,
+          element: first,
+          comment: event.comment,
+        }),
+      )
+      showToast({ title: "元素已推送到对话", description: first.label || first.selector })
+    })
     client.on("cookieSync", (event) => {
       void model()
         ?.syncLogin(event.url, event.text)

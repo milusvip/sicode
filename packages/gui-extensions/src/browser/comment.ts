@@ -40,6 +40,54 @@ export function commentNote(input: ElementComment): ComposerNote {
   return ref ? { ...note, live: { subject: subject(input, ref), href: `${input.tabID}#${ref}` } } : note
 }
 
+/** SiCode: a page pushed from the system-browser extension popup — no in-app tab exists yet. */
+export function pageOfferNote(input: {
+  origin: string
+  url: string
+  title?: string
+  comment: string
+  chromeTabID?: string
+}): ComposerNote {
+  const title = input.title?.trim()
+  const named = title && title !== input.url ? ` titled ${JSON.stringify(title)}` : ""
+
+  return {
+    type: "note",
+    origin: input.origin,
+    commentID: crypto.randomUUID(),
+    label: "浏览器页面",
+    icon: "outline-globe",
+    subject: `browser page at ${input.url}${named}`,
+    comment: input.comment,
+    href: input.chromeTabID,
+  }
+}
+
+/** SiCode: an element picked in the system browser — identified by selector, no live in-app ref. */
+export function elementOfferNote(input: {
+  origin: string
+  url: string
+  title?: string
+  element: { selector: string; label: string; role?: string; name?: string; text?: string }
+  comment?: string
+}): ComposerNote {
+  const title = input.title?.trim()
+  const named = title && title !== input.url ? ` titled ${JSON.stringify(title)}` : ""
+  const element = input.element
+  const named2 = [element.role, element.name].filter(Boolean).join(" ")
+
+  return {
+    type: "note",
+    origin: input.origin,
+    commentID: crypto.randomUUID(),
+    label: element.label || named2 || "元素",
+    icon: "select-element",
+    subject: `element ${element.selector} on the browser page at ${input.url}${named}`,
+    comment: input.comment ?? "",
+    href: input.url,
+  }
+}
+
 /** The composer note for a comment on a whole page; its chip shows the page's tab again. */
 export function pageNote(input: {
   origin: string
