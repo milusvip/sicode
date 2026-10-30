@@ -160,10 +160,23 @@ async function probeBridge(port, timeoutMs) {
   return !!body?.ok && !!body?.enabled
 }
 
+/** The most one socket may take to open before the next candidate port is tried instead. */
+const SOCKET_TIMEOUT_MS = 2_500
+
+/**
+ * How long an open socket may take to answer hello. The host replies as soon as it reads ours, so
+ * this only bounds a wedged peer, not the normal path.
+ */
+const HELLO_TIMEOUT_MS = 3_000
+
 /** True once the host answered hello on the socket that is open now. */
 let paired = false
 /** Callers waiting for that hello; every one of them hears the same answer. */
 const helloWaiters = new Set()
+/** The connect attempt in flight, shared by every caller so two of them cannot fight over the socket. */
+let connecting
+/** The attempt whose hello the host rejected; it stops trying further ports and waits for the retry. */
+let rejected
 
 function settleHello(ok) {
   paired = ok
@@ -177,7 +190,7 @@ function settleHello(ok) {
  * Decided by the message itself rather than by polling storage every 100ms as this used to: the
  * answer already arrives on the socket, so waiting to read it back from storage only adds latency.
  */
-function waitHello(timeoutMs = 3_000) {
+function waitHello(timeoutMs = HELLO_TIMEOUT_MS) {
   if (paired) return Promise.resolve(true)
 
   return new Promise((resolve) => {
@@ -199,117 +212,150 @@ function scheduleReconnect() {
     void connect()
   }, 800)
   // MV3 service workers sleep and drop setTimeout — alarms keep retrying while Chrome is open.
-  // 30s is the shortest period Chrome accepts, and it is how long an idle extension can lag behind
-  // a desktop app that has just started.
-  void chrome.alarms.create("sicode-bridge-reconnect", { delayInMinutes: 0.5, periodInMinutes: 0.5 })
+  void chrome.alarms.create("sicode-bridge-reconnect", { delayInMinutes: 0.5, periodInMinutes: 1 })
 }
 
 /** Reconnect when the desktop bridge is up but our socket is dead (stale "已连接"). */
 async function ensureConnected() {
-  const storedStatus = await chrome.storage.local.get(["connectionStatus"])
-  if (liveSocket() && storedStatus.connectionStatus === "connected") return "connected"
-  if (!liveSocket()) await syncLiveStatus()
+  // An open socket is already answering; its hello settles this, so do not open a second one.
+  if (liveSocket()) return (await waitHello()) ? "connected" : liveSocket() ? "connecting" : "disconnected"
 
-  const stored = await chrome.storage.local.get(["port"])
-  const portHint = typeof stored.port === "number" ? stored.port : DEFAULT_PORT
-  // Probe every channel port — prod may be free while a leftover hint still points at dead 17891.
-  const candidates = [...new Set([portHint, ...DISCOVERY_PORTS, DEFAULT_PORT])]
-  let listening = false
-  for (const port of candidates) {
-    if (await hostListening(port)) {
-      listening = true
-      break
-    }
-  }
-  if (!listening) {
-    scheduleReconnect()
-    return "disconnected"
-  }
+  await syncLiveStatus()
 
-  if (!liveSocket()) await connect()
-
-  // Wait briefly for hello.ok so popup/desktop don't race a half-open socket.
-  for (let i = 0; i < 25; i++) {
-    if (!liveSocket()) return "disconnected"
-    const next = await chrome.storage.local.get(["connectionStatus"])
-    if (next.connectionStatus === "connected") return "connected"
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  return liveSocket() ? "connecting" : "disconnected"
+  return (await connect()) ? "connected" : "disconnected"
 }
 
-async function connect() {
+/**
+ * Connect, or join the attempt already running.
+ *
+ * The popup, the alarm, and the worker's own start can all ask for a connection at once, and each
+ * used to open its own socket — closing the one the other had just opened. They now share one
+ * attempt, so a cold start opens one socket instead of three.
+ */
+function connect() {
+  connecting ??= attemptConnect().finally(() => {
+    connecting = undefined
+  })
+
+  return connecting
+}
+
+/** @returns {Promise<boolean>} whether the host answered hello on the socket that opened. */
+async function attemptConnect() {
   // Clear legacy pause flag from older extension builds.
   void chrome.storage.local.remove(["bridgePaused"])
 
   const generation = ++connectGeneration
   await loadOwned()
   const stored = await chrome.storage.local.get(["port"])
-  const portHint = typeof stored.port === "number" ? stored.port : DEFAULT_PORT
+  const hint = typeof stored.port === "number" ? stored.port : DEFAULT_PORT
 
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    intentionalClose = true
-    socket.close()
-    intentionalClose = false
-    socket = undefined
+  closeSocket()
+
+  const listening = await respondingPorts(candidatePorts(hint, DISCOVERY_PORTS), probeBridge)
+
+  if (generation !== connectGeneration) return false
+  if (listening.length === 0) {
+    await setConnectionStatus("disconnected")
+    scheduleReconnect()
+
+    return false
   }
 
   await setConnectionStatus("connecting")
 
-  // Prod (17891) first, then beta / dev — never let a leftover `bun dev` steal push when prod is up.
-  for (const port of [...new Set([...DISCOVERY_PORTS, portHint, DEFAULT_PORT])]) {
-    if (generation !== connectGeneration) return
+  // Only ports that answered, most preferred first: a dead port no longer costs one socket timeout
+  // before the port that would have worked is tried.
+  for (const port of listening) {
+    if (generation !== connectGeneration) return false
 
-    try {
-      socket = new WebSocket(`ws://127.0.0.1:${port}`)
-    } catch {
-      continue
-    }
-
-    const opened = await new Promise((resolve) => {
-      let done = false
-      const finish = (ok) => {
-        if (done) return
-        done = true
-        clearTimeout(timer)
-        resolve(ok)
-      }
-      const timer = setTimeout(() => {
-        try {
-          socket?.close()
-        } catch {
-          // ignore
-        }
-        finish(false)
-      }, 2500)
-
-      socket.addEventListener("open", () => {
-        socket?.send(JSON.stringify({ type: "hello", version: PROTOCOL_VERSION }))
-        finish(true)
-      })
-      socket.addEventListener("error", () => finish(false))
-      socket.addEventListener("close", () => finish(false))
-    })
-
-    if (!opened || !socket || socket.readyState !== WebSocket.OPEN) continue
-
-    socket.addEventListener("message", (event) => {
-      void onMessage(String(event.data), port)
-    })
-    socket.addEventListener("close", () => {
-      if (generation !== connectGeneration) return
-      socket = undefined
-      void setConnectionStatus("disconnected")
-      scheduleReconnect()
-    })
-    socket.addEventListener("error", () => {
-      socket?.close()
-    })
-    return
+    if (!(await openSocket(port))) continue
+    if (await waitHello()) return true
+    // A rejection is the host's answer, not a port to give up on: it already scheduled the retry, and
+    // trying the other channels here would race that retry for the socket.
+    if (rejected === generation) return false
+    // Opened but never said hello; drop it so its seat is free for the next candidate.
+    closeSocket()
   }
 
   await setConnectionStatus("disconnected")
   scheduleReconnect()
+
+  return false
+}
+
+/** Drop the current socket without letting its close handler schedule another reconnect. */
+function closeSocket() {
+  const previous = socket
+
+  socket = undefined
+  settleHello(false)
+  if (!previous) return
+
+  intentionalClose = true
+  try {
+    previous.close()
+  } catch {
+    // Already closed.
+  }
+  intentionalClose = false
+}
+
+/**
+ * Open one socket and say hello.
+ * @param {number} port
+ * @returns {Promise<boolean>} whether it opened
+ */
+function openSocket(port) {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (ok) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(ok)
+    }
+
+    let next
+    try {
+      next = new WebSocket(`ws://127.0.0.1:${port}`)
+    } catch {
+      finish(false)
+
+      return
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        next.close()
+      } catch {
+        // Already closed.
+      }
+      finish(false)
+    }, SOCKET_TIMEOUT_MS)
+
+    next.addEventListener("open", () => {
+      socket = next
+      settleHello(false)
+      next.addEventListener("message", (event) => {
+        void onMessage(String(event.data), port)
+      })
+      // Identity, not a generation number: a socket this connect has since replaced is not the one
+      // whose loss matters, and the close event can arrive long after the replacement opened.
+      next.addEventListener("close", () => {
+        if (socket !== next) return
+        socket = undefined
+        settleHello(false)
+        void setConnectionStatus("disconnected")
+        scheduleReconnect()
+      })
+      next.addEventListener("error", () => next.close())
+      next.send(JSON.stringify({ type: "hello", version: PROTOCOL_VERSION }))
+      finish(true)
+    })
+    next.addEventListener("error", () => finish(false))
+    next.addEventListener("close", () => finish(false))
+  })
 }
 
 function send(message) {
@@ -453,12 +499,15 @@ async function onMessage(raw, port) {
       installedPackageVersion: installed,
     })
     await setConnectionStatus("connected")
+    settleHello(true)
     void chrome.alarms.clear("sicode-bridge-reconnect")
     return
   }
 
   if (message.type === "hello.reject") {
+    rejected = connectGeneration
     await setConnectionStatus("disconnected")
+    settleHello(false)
     intentionalClose = true
     socket?.close()
     intentionalClose = false
@@ -1016,7 +1065,9 @@ async function syncLoginState() {
   const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0] ?? {}
   const url = (tab.url || "").trim()
   if (!/^https?:/i.test(url)) return { ok: false, message: "bad_url" }
-  if (!liveSocket()) return { ok: false, message: "not_connected" }
+  // Waited for, not asserted: the worker may have been asleep, and a check of the dead socket alone
+  // reported "not connected" on a bridge that was up and would have answered.
+  if ((await ensureConnected()) !== "connected") return { ok: false, message: "not_connected" }
 
   /** @type {Array<object>} */
   let cookies = []
@@ -1025,13 +1076,25 @@ async function syncLoginState() {
     // domain (`.example.com` for a `www.example.com` page), which getAll({ url }) misses and
     // wrongly reports "empty". Filtering by host keeps out unrelated subdomains.
     const host = new URL(url).hostname
-    const all = await chrome.cookies.getAll({ domain: host })
+    // Some Chromium forks hang on getAll({ domain }); bound it and fall back to the URL query.
+    const all = await Promise.race([
+      chrome.cookies.getAll({ domain: host }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2_000)),
+    ])
     cookies = all.filter((cookie) => {
       const d = (cookie.domain || "").replace(/^\./, "")
       return host === d || host.endsWith("." + d)
     })
   } catch {
-    return { ok: false, message: "cookies_failed" }
+    // Fall back to the URL-scoped query; it misses parent-domain cookies but never hangs.
+    try {
+      cookies = await Promise.race([
+        chrome.cookies.getAll({ url }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2_000)),
+      ])
+    } catch {
+      return { ok: false, message: "cookies_failed" }
+    }
   }
   if (cookies.length === 0) return { ok: false, message: "empty" }
 
