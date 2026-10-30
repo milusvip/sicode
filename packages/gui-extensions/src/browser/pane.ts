@@ -7,12 +7,15 @@ import { Deferred, Effect, ManagedRuntime, Queue, Schedule, Schema, Stream } fro
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { Embeds, Persisted, ServerEndpoints, Storage, Windows } from "../sdk/main"
 import { createBrowserPage, type BrowserPage, type Shared } from "./chromium"
+import { cookiesForDomain, parseLoginPaste } from "./cookies"
 import { browserFailure } from "./errors"
 import { createBrowserNetwork, type BrowserNetwork } from "./network"
 import { destinationOrigin, fileURLWithin, refusal } from "./policy"
 import { createRefs } from "./refs"
 import type { PaneEvent } from "./ipc"
 import { createBrowserRestoreStore } from "./restore"
+import { createLocalStorageStore, storageOrigin } from "./local-storage"
+import { createSessionJar } from "./session-jar"
 
 type Target = { readonly server: string; readonly session: string; readonly restore?: Browser.State }
 
@@ -43,6 +46,14 @@ type Entry = {
    * own sidecar: a forwarded or explicit loopback server does not share this machine's disk.
    */
   fileRoots: string[]
+  /** The workspace this attachment keeps its login state under, known once the session is fetched. */
+  jarKey?: string
+  /**
+   * Whether the connected server runs on this machine. Decides who resolves the network: a local server shares this
+   * machine's OS proxy, so the pane may use it directly; a remote one must keep the attachment's tunnel, whose whole
+   * purpose is that pages load through the server's network.
+   */
+  local: boolean
 }
 
 export type Pane = ReturnType<typeof createBrowserPane>
@@ -58,6 +69,8 @@ export function createBrowserPane(input: {
 }) {
   const entries = new Map<string, Entry>()
   const restore = createBrowserRestoreStore(input.storage)
+  const jar = createSessionJar(input.storage)
+  const originStorage = createLocalStorageStore(input.storage)
   const shared: Shared = { ref: createRefs(input.refs) }
   // Page disposals in flight. Finishing a trace or CPU profile can hold a page open, and the pane's own disposal waits
   // for them so a replacement never starts beside old pages still recording.
@@ -122,6 +135,7 @@ export function createBrowserPane(input: {
         access: target.access ?? "read",
         locked: { read: false, write: false },
         fileRoots: [],
+        local: server.local === true,
       }
 
       // Navigation guards cover documents; subresources (img, script, fetch) also must not read
@@ -166,6 +180,13 @@ export function createBrowserPane(input: {
             )
 
             const session = yield* client.session.get({ sessionID })
+
+            // Login state outlives this attachment: the workspace's jar lands in the fresh partition before any page
+            // can load, so a page that sets its session on arrival sees the cookies already there. A cookie the site
+            // rejects restores nothing rather than keeping the pane from opening.
+            const jarKey = session.location.directory
+            entry.jarKey = jarKey
+            yield* Effect.tryPromise(() => jar.restore(entry.partition, jarKey)).pipe(Effect.ignore)
 
             // The agent can already read this workspace, so showing its files adds no access.
             if (server.local) entry.fileRoots = [session.location.directory]
@@ -392,6 +413,46 @@ export function createBrowserPane(input: {
 
       return page.setCookies(text)
     },
+    /**
+     * Writes a paste into the attachment's own cookie store, each cookie at the domain it names. Needs no tab: the
+     * store belongs to the partition, so an extension can hand over a login before the pane opens the site.
+     *
+     * A paste copied from the extension may carry the site's localStorage too — a site that keeps its session there is
+     * not signed in by cookies alone. That half is saved under the paste's own page, merged with what the workspace
+     * already keeps, so the next page of that origin opens with it.
+     */
+    async setDomainCookies(window: number, binding: string, text: string) {
+      const entry = owned(window, binding)
+      const session = electron.session.fromPartition(entry.partition)
+      const pasted = parseLoginPaste(text)
+      const cookies = cookiesForDomain(pasted.cookies, pasted.url)
+      let written = 0
+      let rejection: string | undefined
+
+      // SiCode: temporary diagnostics for the login-sync write — remove once the stay-signed-out
+      // bug is pinned. Logs what the pane actually wrote, since the toast only reports counts.
+      console.log(`[sync-login] partition=${entry.partition} paste.url=${pasted.url ?? ""} drafts=${pasted.cookies.length}`)
+
+      for (const cookie of cookies) {
+        try {
+          await session.cookies.set(cookie)
+          written++
+          console.log(`[sync-login] wrote ${cookie.name} @ ${cookie.url} domain=${cookie.domain ?? ""} secure=${cookie.secure} httpOnly=${cookie.httpOnly} sameSite=${cookie.sameSite}`)
+        } catch (cause) {
+          // One cookie the site rejects (an expired paste, an insecure SameSite=None) must not drop the others.
+          rejection ??= `Cookie "${cookie.name}" was rejected: ${cause instanceof Error ? cause.message : String(cause)}`
+          console.warn(`[sync-login] rejected ${cookie.name}: ${cause instanceof Error ? cause.message : String(cause)}`)
+        }
+      }
+
+      const storage = writeStorage(entry, pasted)
+
+      // A storage-only paste is a login too: the site reads its session from there and has no cookie to write.
+      if (!written && storage === 0) throw new Error(rejection ?? "No cookie or localStorage entry was written.")
+
+      console.log(`[sync-login] done written=${written} storage=${storage}`)
+      return { cookies: written, storage }
+    },
     async command(window: number, binding: string, command: Browser.Action) {
       const entry = owned(window, binding)
       const url = command.type === "navigate" || command.type === "tabs.open" ? command.url : undefined
@@ -426,6 +487,22 @@ export function createBrowserPane(input: {
     return entry
   }
 
+  /**
+   * Saves a paste's localStorage half under the page it came from, merged into what the workspace already keeps.
+   * Returns how many entries it wrote. Without a page, or before the workspace key is known, there is nowhere to put
+   * them, so the paste's cookies are all that lands.
+   */
+  function writeStorage(entry: Entry, pasted: ReturnType<typeof parseLoginPaste>) {
+    const origin = pasted.url ? storageOrigin(pasted.url) : undefined
+    const jarKey = entry.jarKey
+
+    if (!pasted.storage || !origin || !jarKey) return 0
+
+    originStorage.save(jarKey, origin, { ...originStorage.load(jarKey, origin), ...pasted.storage })
+
+    return Object.keys(pasted.storage).length
+  }
+
   function publish(entry: Entry, event: PaneEvent) {
     if (!entries.has(entry.binding) || entry.win.isDestroyed() || entry.win.webContents.isDestroyed()) return
     input.emit(entry.window, { binding: entry.binding, event })
@@ -434,6 +511,11 @@ export function createBrowserPane(input: {
   function close(entry: Entry, reason = "browser.pane.registration.closed") {
     if (entries.get(entry.binding) !== entry) return
     entry.report = undefined
+
+    // The partition dies with this attachment; copy what the user signed in with, so the next pane of this
+    // workspace opens signed in. Covers a suspension (extension reload) as well as closing the pane.
+    if (entry.jarKey) void jar.capture(entry.partition, entry.jarKey).catch(() => undefined)
+
     entry.requests.forEach((request) => request.abort.abort())
     entry.requests.clear()
     const suspended = reason === "browser.pane.suspended"
@@ -530,6 +612,8 @@ export function createBrowserPane(input: {
   ) {
     if (!entry.network) throw new Error("Browser network is not ready; no tab was opened.")
     const id = restore?.id ?? Browser.TabID.make(`tab_${crypto.randomUUID()}`)
+    // Read once: the workspace a pane was attached to does not change under its tabs.
+    const jarKey = entry.jarKey
 
     const fail = () => {
       if (entry.pages.has(id)) void closePage(entry, id, "page_crashed").catch(() => undefined)
@@ -543,6 +627,17 @@ export function createBrowserPane(input: {
       restore,
       popupOptions,
       fileRoots: () => entry.fileRoots,
+      systemProxy: entry.local,
+      // Same workspace key as the cookie jar: signing in once in a project carries to its other sessions.
+      ...(jarKey
+        ? {
+            localStorage: {
+              load: (origin: string) => originStorage.load(jarKey, origin),
+              save: (origin: string, entries: Readonly<Record<string, string>>) =>
+                originStorage.save(jarKey, origin, entries),
+            },
+          }
+        : undefined),
       shared,
       embeds: input.embeds,
       fail,
