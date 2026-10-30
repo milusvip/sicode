@@ -916,6 +916,31 @@
   }
 }
 
+/* SiCode: a live thought wears the process-shell chrome too. Its reasoning-part sits one extra
+   wrapper deep (`session-turn-thinking-row`), so the head-bar fill and padding above do not reach
+   it; this mirrors the same light bar so the live thought reads as the panel's head, not a bare
+   line inside the border. The thinking-row's 12px top margin is dropped so the bar hugs the shell's
+   top border like any other process head. */
+[data-component="collapsed-tool-group"][data-process-shell]
+  > [data-slot="session-turn-thinking-row"] {
+  margin-top: 0;
+}
+
+[data-component="collapsed-tool-group"][data-process-shell]
+  > [data-slot="session-turn-thinking-row"]
+  > [data-component="reasoning-part"]
+  > [data-component="collapsible"].tool-collapsible {
+  gap: 0;
+  overflow: visible;
+
+  > [data-slot="collapsible-trigger"] {
+    min-height: 26px;
+    padding: 3px 8px 3px 5px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--v2-background-bg-layer-01, var(--background-weak)) 100%, transparent);
+  }
+}
+
 /* Silky folds. Kobalte measures the content and publishes `--kb-collapsible-content-height`, so a
    click can grow the row instead of teleporting the transcript under the pointer. Scoped to the
    process shell on purpose: the timeline above it is virtualized and the rest of the app keeps its
