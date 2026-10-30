@@ -1072,33 +1072,27 @@ export function createSessionTimelineRowRenderer(input: {
       return (
         <Frame row={current()}>
           <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
-            {/* SiCode: a live thought wears the same process-shell chrome as a settled one, so the
-                first thought of a turn — the longest stretch — reads as work in progress rather than
-                a bare line under the status bar. */}
-            <div data-component="collapsed-tool-group" data-process-shell>
-              <div data-slot="session-turn-thinking-row">
-                <Show when={content()}>
-                  {(content) => (
-                    <AssistantReasoningContent
-                      id={current().ref.partID}
-                      content={content()}
-                      streaming
-                      chain
-                      defaultOpen={
-                        input.timelineDetail
-                          ? input.timelineDetail().thinking.details === "expanded"
-                          : input.reasoningMode() === "full"
-                      }
-                      open={
-                        input.disclosure.value(current().ref.partID) ??
-                        (input.timelineDetail ? input.timelineDetail().thinking.details === "expanded" : undefined)
-                      }
-                      onOpenChange={(open) => input.disclosure.set(current().ref.partID, open)}
-                      onContentRendered={onSizeChange}
-                    />
-                  )}
-                </Show>
-              </div>
+            <div data-slot="session-turn-thinking-row">
+              <Show when={content()}>
+                {(content) => (
+                  <AssistantReasoningContent
+                    id={current().ref.partID}
+                    content={content()}
+                    streaming
+                    defaultOpen={
+                      input.timelineDetail
+                        ? input.timelineDetail().thinking.details === "expanded"
+                        : input.reasoningMode() === "full"
+                    }
+                    open={
+                      input.disclosure.value(current().ref.partID) ??
+                      (input.timelineDetail ? input.timelineDetail().thinking.details === "expanded" : undefined)
+                    }
+                    onOpenChange={(open) => input.disclosure.set(current().ref.partID, open)}
+                    onContentRendered={onSizeChange}
+                  />
+                )}
+              </Show>
             </div>
           </div>
         </Frame>
