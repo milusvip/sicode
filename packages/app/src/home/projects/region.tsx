@@ -39,6 +39,7 @@ export function HomeProjects(props: {
       onImportSession={props.projects.project.importSession}
       onEditProject={props.projects.project.edit}
       onRevealProject={props.projects.project.reveal}
+      onMergeProject={props.projects.project.merge}
       onClearNotifications={props.projects.project.clearNotifications}
       onCloseProject={props.projects.project.close}
       onOpenSettings={props.projects.utility.settings}

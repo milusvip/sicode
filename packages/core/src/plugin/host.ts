@@ -539,6 +539,8 @@ export const make = Effect.fn("PluginHost.make")(function* (
       create: (input) => worktrees.create(input, currentWorktreeStrategies),
       refresh: (input) => worktrees.refresh(input, currentWorktreeStrategies).pipe(Effect.asVoid),
       remove: (input) => worktrees.remove(input, currentWorktreeStrategies),
+      mergePreview: (input) => worktrees.mergePreview(input),
+      merge: (input) => worktrees.merge(input),
       reload: worktreeStrategies.reload,
       transform: (callback) =>
         worktreeStrategies.transform((editor) =>

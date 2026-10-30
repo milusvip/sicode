@@ -27,7 +27,7 @@ import { WorktreeStrategies } from "./worktree/strategies.js"
 export type { Strategy, Editor } from "./worktree/strategies.js"
 
 export { DirectoryUnavailableError } from "./worktree/directory.js"
-export { OperationError } from "@opencode/schema/worktree"
+export { OperationError, MergeConflictError, MergeDirtyError } from "@opencode/schema/worktree"
 
 export const StrategyID = Worktree.StrategyID
 export type StrategyID = typeof StrategyID.Type
@@ -37,6 +37,15 @@ export type CreateInput = typeof CreateInput.Type
 
 export const RemoveInput = Worktree.RemoveInput
 export type RemoveInput = typeof RemoveInput.Type
+
+export const MergeInput = Worktree.MergeInput
+export type MergeInput = typeof MergeInput.Type
+
+export const MergePreview = Worktree.MergePreview
+export type MergePreview = typeof MergePreview.Type
+
+export const MergeResult = Worktree.MergeResult
+export type MergeResult = typeof MergeResult.Type
 
 export const Info = Worktree.Info
 export type Info = typeof Info.Type
@@ -76,6 +85,8 @@ export type Error =
   | InvalidDirectoryError
   | StrategyUnavailableError
   | Worktree.OperationError
+  | Worktree.MergeConflictError
+  | Worktree.MergeDirtyError
   | AppProcess.AppProcessError
   | Git.WorktreeError
 
@@ -99,6 +110,8 @@ export interface Interface {
     input: { projectID: Project.ID },
     current?: WorktreeStrategies.Interface,
   ) => Effect.Effect<void, Error>
+  readonly mergePreview: (input: MergeInput) => Effect.Effect<MergePreview, Error>
+  readonly merge: (input: MergeInput) => Effect.Effect<MergeResult, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Worktree") {}
@@ -107,6 +120,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
+    const git = yield* Git.Service
     const database = yield* Database.Service
     const db = database.db
     const bus = yield* Bus.Service
@@ -326,6 +340,110 @@ const layer = Layer.effect(
       yield* changed(input.projectID, changes.updated.length > 0 || changes.removed.length > 0)
     }, Effect.scoped)
 
+    // The merge path only talks to git through this shim so its failures land in Worktree's
+    // own error vocabulary, the same one the handler and the client already understand.
+    const gitMerge = <A, R>(effect: Effect.Effect<A, Git.MergeConflictError | Git.OperationError, R>) =>
+      effect.pipe(
+        Effect.mapError((error) =>
+          error instanceof Git.MergeConflictError
+            ? new Worktree.MergeConflictError({ files: error.files })
+            : new Worktree.OperationError({ message: error.message }),
+        ),
+      )
+
+    const mergeState = Effect.fn("Worktree.mergeState")(function* (input: MergeInput) {
+      const row = yield* project(input.projectID)
+      const directory = yield* canonical(fs, input.directory)
+      const stored = yield* ops.find(input.projectID, directory)
+      if (!stored?.strategy) return yield* new InvalidDirectoryError({ directory })
+      const worktreeRepository = yield* git.repo.discover(directory)
+      if (!worktreeRepository) return yield* new DirectoryUnavailableError({ directory })
+      const sourceDirectory = yield* canonical(fs, row.worktree)
+      const sourceRepository = yield* git.repo.discover(sourceDirectory)
+      if (!sourceRepository)
+        return yield* new SourceDirectoryNotFoundError({ projectID: input.projectID, directory: sourceDirectory })
+      // Worktrees are created detached unless a branch was named, so the merge reference is the
+      // branch when there is one and HEAD's sha otherwise — git merges any committish, and both
+      // worktrees share one object store.
+      const head = yield* git.history.head(worktreeRepository)
+      if (!head)
+        return yield* new Worktree.OperationError({ message: `Worktree ${directory} has no commits to merge` })
+      const branch = yield* git.history.branch(worktreeRepository)
+      return {
+        directory,
+        sourceDirectory,
+        worktreeRepository,
+        sourceRepository,
+        branch,
+        ref: branch ?? head,
+      }
+    })
+
+    const mergePreview = Effect.fn("Worktree.mergePreview")(function* (input: MergeInput) {
+      const state = yield* mergeState(input)
+      // The worktree side reports what a snapshot would pick up, untracked files included; the
+      // source side reports the narrower tracked-only condition that makes a merge unsafe.
+      const dirty = yield* gitMerge(git.merge.dirty(state.worktreeRepository, { untracked: true }))
+      const sourceDirty = yield* gitMerge(git.merge.dirty(state.sourceRepository))
+      const { ahead, behind } = yield* gitMerge(git.merge.counts(state.sourceRepository, state.ref))
+      return {
+        directory: state.directory,
+        source: state.sourceDirectory,
+        branch: state.branch ?? `(detached at ${state.ref.slice(0, 7)})`,
+        ahead,
+        behind,
+        dirty,
+        sourceDirty,
+      }
+    })
+
+    /**
+     * Bring a managed worktree's work back into the project's main checkout. Uncommitted
+     * worktree changes are snapshotted onto its branch first — an agent rarely leaves a clean
+     * tree — while the source checkout must be clean: merging into a dirty tree risks exactly
+     * the silent loss the staleness gate in the tools exists to prevent. A conflicted merge is
+     * aborted before this fails, so a refused merge leaves both checkouts untouched.
+     */
+    const merge = Effect.fn("Worktree.merge")(function* (input: MergeInput) {
+      const state = yield* mergeState(input)
+      const committed = yield* gitMerge(
+        git.merge.commitAll(
+          state.worktreeRepository,
+          `SiCode: snapshot worktree changes before merge (${new Date().toISOString()})`,
+        ),
+      )
+      // A snapshot commit moved the worktree's HEAD; merging the stale reference would leave
+      // exactly the work the snapshot just captured sitting unmerged in the worktree.
+      const ref = committed
+        ? ((yield* git.history.head(state.worktreeRepository)) ?? state.ref)
+        : state.ref
+      const sourceDirty = yield* gitMerge(git.merge.dirty(state.sourceRepository))
+      if (sourceDirty) return yield* new Worktree.MergeDirtyError({ directory: state.sourceDirectory })
+      const { ahead, behind } = yield* gitMerge(git.merge.counts(state.sourceRepository, ref))
+      let mergeCommit: string
+      if (ahead === 0) {
+        // Nothing to integrate: the branch is already contained in the source HEAD.
+        const head = yield* git.history.head(state.sourceRepository)
+        if (!head)
+          return yield* new Worktree.OperationError({
+            message: `Source checkout ${state.sourceDirectory} has no commits to merge into`,
+          })
+        mergeCommit = head
+      } else {
+        const merged = yield* gitMerge(git.merge.into(state.sourceRepository, ref))
+        mergeCommit = merged.commit
+      }
+      return {
+        directory: state.directory,
+        source: state.sourceDirectory,
+        branch: state.branch ?? `(detached at ${ref.slice(0, 7)})`,
+        committed,
+        mergeCommit,
+        ahead,
+        behind,
+      }
+    }, Effect.scoped)
+
     return Service.of({
       list: Effect.fn("Worktree.list")(function* (input) {
         yield* project(input.projectID)
@@ -334,6 +452,8 @@ const layer = Layer.effect(
       create,
       remove,
       refresh,
+      mergePreview,
+      merge,
     })
   }),
 )
@@ -341,7 +461,7 @@ const layer = Layer.effect(
 export const node: LayerNode.Provider<Service, never, typeof Node.tags.values.global> = Node.makeGlobalNode({
   service: Service,
   layer,
-  deps: [FSUtil.node, Bus.node, Database.node, AppProcess.node, LocationServiceMap.node],
+  deps: [FSUtil.node, Bus.node, Database.node, AppProcess.node, LocationServiceMap.node, Git.node],
 })
 
 function operationError(strategy: StrategyID, operation: string, error: unknown) {

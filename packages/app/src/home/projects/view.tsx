@@ -72,6 +72,7 @@ export type HomeProjectsViewProps = {
   onImportSession: (server: ServerConnection.Any, project: LocalProject) => void
   onEditProject: (server: ServerConnection.Any, project: LocalProject) => void
   onRevealProject: (server: ServerConnection.Any, project: LocalProject) => void
+  onMergeProject: (server: ServerConnection.Any, project: LocalProject) => void
   onClearNotifications: (server: ServerConnection.Any, project: LocalProject) => void
   onCloseProject: (server: ServerConnection.Any, directory: string) => void
   onOpenSettings: () => void
@@ -791,6 +792,14 @@ function HomeProjectRow(
               >
                 {props.language.t("sidebar.project.clearNotifications")}
               </Menu.Item>
+              {/* Whether this row can actually merge is resolved on click (a worktree row merges
+                  itself, the main row falls back to its single managed worktree); the item only
+                  needs git to be worth offering. */}
+              <Show when={props.project.vcs === "git"}>
+                <Menu.Item onSelect={() => props.onMergeProject(props.server, props.project)}>
+                  {props.language.t("home.worktree.merge")}
+                </Menu.Item>
+              </Show>
               <Menu.Separator />
               <Menu.Item onSelect={() => props.onCloseProject(props.server, props.project.worktree)}>
                 {props.language.t("common.close")}

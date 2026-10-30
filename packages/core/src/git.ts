@@ -75,10 +75,19 @@ export class OperationError extends Schema.TaggedError<OperationError>()("Git.Op
     "diff",
     "restore",
     "pack",
+    "status",
+    "add",
+    "commit",
+    "merge",
   ]),
   message: Schema.String,
   directory: Schema.optional(AbsolutePath),
   cause: Schema.optional(Schema.Defect()),
+}) {}
+
+/** A merge stopped on conflicts; the working tree has been restored to its pre-merge state. */
+export class MergeConflictError extends Schema.TaggedError<MergeConflictError>()("Git.MergeConflictError", {
+  files: Schema.Array(Schema.String),
 }) {}
 
 /** Git could not answer: the spawn failed or it exited with an unexpected status. */
@@ -156,6 +165,29 @@ export interface Interface {
       force: boolean
     }) => Effect.Effect<void, WorktreeError>
     readonly list: (repository: Repository) => Effect.Effect<readonly Worktree[], WorktreeError>
+  }
+  readonly merge: {
+    /**
+     * Whether the checkout has changes `commitAll` would pick up. Untracked files are included
+     * by default — they mirror what a snapshot commit stages — and can be narrowed to tracked
+     * changes, the condition under which git itself refuses nothing but a merge still gets risky.
+     */
+    readonly dirty: (
+      repository: Repository,
+      options?: { readonly untracked?: boolean },
+    ) => Effect.Effect<boolean, OperationError>
+    /** Stage everything and commit; undefined when there was nothing to commit. */
+    readonly commitAll: (repository: Repository, message: string) => Effect.Effect<string | undefined, OperationError>
+    /** Commits in ref missing from HEAD, and the reverse. */
+    readonly counts: (
+      repository: Repository,
+      ref: string,
+    ) => Effect.Effect<{ readonly ahead: number; readonly behind: number }, OperationError>
+    /** Merge ref into HEAD; a conflicted merge is aborted before this fails. */
+    readonly into: (
+      repository: Repository,
+      ref: string,
+    ) => Effect.Effect<{ readonly commit: string }, MergeConflictError | OperationError>
   }
   readonly index: {
     /** Refresh only the requested project-relative scope, preserving all other entries. */
@@ -1362,12 +1394,125 @@ const layer = Layer.effect(
         )
     })
 
+    const statusDirty = Effect.fn("Git.merge.dirty")(function* (
+      repository: Repository,
+      options?: { readonly untracked?: boolean },
+    ) {
+      const result = yield* run(repository.worktree, proc, [
+        "status",
+        "--porcelain",
+        ...(options?.untracked ? [] : ["--untracked-files=no"]),
+      ])
+      if (result.exitCode !== 0)
+        return yield* new OperationError({
+          operation: "status",
+          directory: repository.worktree,
+          message: result.stderr.trim() || "git status failed",
+        })
+      return result.text.trim().length > 0
+    })
+
+    const commitAll = Effect.fn("Git.merge.commitAll")(function* (repository: Repository, message: string) {
+      const commit = (args: string[]) =>
+        run(repository.worktree, proc, args).pipe(
+          Effect.flatMap((result) =>
+            result.exitCode === 0
+              ? Effect.succeed(result)
+              : Effect.fail(
+                  new OperationError({
+                    operation: args[0] === "commit" ? "commit" : "add",
+                    directory: repository.worktree,
+                    message: result.stderr.trim() || result.text.trim() || `git ${args[0]} failed`,
+                  }),
+                ),
+          ),
+        )
+      yield* commit(["add", "-A"])
+      const done = yield* commit(["commit", "-m", message]).pipe(
+        // Exit 1 with "nothing to commit" is the clean-tree outcome, not a failure.
+        Effect.catch((error) =>
+          error instanceof OperationError && /nothing to commit/i.test(error.message)
+            ? Effect.succeed(undefined)
+            : Effect.fail(error),
+        ),
+      )
+      if (!done) return undefined
+      const sha = yield* run(repository.worktree, proc, ["rev-parse", "HEAD"])
+      if (sha.exitCode !== 0)
+        return yield* new OperationError({
+          operation: "commit",
+          directory: repository.worktree,
+          message: sha.stderr.trim() || "git rev-parse HEAD failed",
+        })
+      return sha.text.trim()
+    })
+
+    const counts = Effect.fn("Git.merge.counts")(function* (repository: Repository, ref: string) {
+      const count = (spec: string) =>
+        run(repository.worktree, proc, ["rev-list", "--count", spec]).pipe(
+          Effect.flatMap((result) =>
+            result.exitCode === 0 && /^\d+$/.test(result.text.trim())
+              ? Effect.succeed(Number(result.text.trim()))
+              : Effect.fail(
+                  new OperationError({
+                    operation: "merge",
+                    directory: repository.worktree,
+                    message: result.stderr.trim() || `git rev-list --count ${spec} failed`,
+                  }),
+                ),
+          ),
+        )
+      const ahead = yield* count(`HEAD..${ref}`)
+      const behind = yield* count(`${ref}..HEAD`)
+      return { ahead, behind }
+    })
+
+    const mergeInto = Effect.fn("Git.merge.into")(function* (repository: Repository, ref: string) {
+      const result = yield* run(repository.worktree, proc, ["merge", "--no-edit", ref])
+      if (result.exitCode === 0) {
+        const sha = yield* run(repository.worktree, proc, ["rev-parse", "HEAD"])
+        if (sha.exitCode !== 0)
+          return yield* new OperationError({
+            operation: "merge",
+            directory: repository.worktree,
+            message: sha.stderr.trim() || "git rev-parse HEAD failed",
+          })
+        return { commit: sha.text.trim() }
+      }
+      // A conflicted merge leaves MERGE_HEAD behind; report the files, then back out so the
+      // checkout is exactly what it was before the attempt.
+      const inMerge = yield* run(repository.worktree, proc, ["rev-parse", "-q", "--verify", "MERGE_HEAD"])
+      if (inMerge.exitCode === 0) {
+        const unmerged = yield* run(repository.worktree, proc, ["diff", "--name-only", "--diff-filter=U"])
+        const files =
+          unmerged.exitCode === 0
+            ? unmerged.text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+            : []
+        yield* run(repository.worktree, proc, ["merge", "--abort"])
+        if (files.length > 0) return yield* new MergeConflictError({ files })
+      }
+      return yield* new OperationError({
+        operation: "merge",
+        directory: repository.worktree,
+        message: result.stderr.trim() || result.text.trim() || "git merge failed",
+      })
+    })
+
+    const mergeOps = {
+      dirty: (repository: Repository, options?: { readonly untracked?: boolean }) =>
+        locked(repository, statusDirty(repository, options)),
+      commitAll: (repository: Repository, message: string) => locked(repository, commitAll(repository, message)),
+      counts: (repository: Repository, ref: string) => locked(repository, counts(repository, ref)),
+      into: (repository: Repository, ref: string) => locked(repository, mergeInto(repository, ref)),
+    }
+
     return Service.of({
       repo: { discover, fingerprint, clone, create },
       remote: { get: remote },
       history: { head, branch, defaultRemoteBranch: remoteHead, rootCommits: roots },
       sync: { fetchRemotes: fetch, fetchBranch, checkoutRemoteBranch: checkout, resetHard: reset },
       worktree: { create: worktreeCreate, remove: worktreeRemove, list: worktreeList },
+      merge: mergeOps,
       index: { refresh, ignored },
       tree: {
         capture: captureTree,
