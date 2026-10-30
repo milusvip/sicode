@@ -137,13 +137,13 @@ export function ChromeLink(props: { model: Model; disabled?: boolean }) {
         />
       </Tooltip>
       <Popover.Portal>
-        <Popover.Content data-component="browser-chrome-link" class="flex w-72 flex-col gap-2 p-3">
-          <div class="flex items-center gap-2 text-[13px]">
-            <span class="size-2 shrink-0 rounded-full" style={{ background: DOT[phase()] }} />
+        <Popover.Content data-component="browser-chrome-link">
+          <div data-slot="chrome-link-status">
+            <span data-slot="chrome-link-dot" style={{ background: DOT[phase()] }} />
             {LABEL[phase()]}
           </div>
           <Show when={note()}>
-            <div class="text-[12px] break-all opacity-70">{note()}</div>
+            <div data-slot="chrome-link-note">{note()}</div>
           </Show>
           <Show
             when={phase() === "connected"}
@@ -160,7 +160,7 @@ export function ChromeLink(props: { model: Model; disabled?: boolean }) {
               重新安装 / 更新扩展
             </Button>
           </Show>
-          <div class="text-[11px] leading-relaxed opacity-60">
+          <div data-slot="chrome-link-hint">
             装好扩展后这里会变绿。AI 会话默认用你的浏览器（有登录态），随时可切回内置浏览器。
           </div>
         </Popover.Content>
