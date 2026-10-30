@@ -1,4 +1,5 @@
 import { candidatePorts, respondingPorts } from "./bridge-ports.js"
+import { cookieQueries, mergeCookies } from "./cookie-scope.js"
 import { loginStateDump } from "./login-dump.js"
 import { PROTOCOL_VERSION, chromeIdFromTabID, isPackageBehind, toBridgeTab } from "./protocol.js"
 import {
@@ -1057,55 +1058,25 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 })
 
 /**
- * SiCode: push the active tab's login cookies (with domains) through the bridge, so the in-app
- * browser can open the site already signed in. Cookies only — no scripting, no localStorage.
+ * SiCode: push the active tab's login cookies AND localStorage through the bridge, so the in-app
+ * browser can open the site already signed in. Reuses dumpLoginState's read + smart selection, so
+ * the in-app pane gets the same credential-first, tracker-stripped login the「复制登录态」path does.
  * Requires a live bridge connection: the desktop pane writes what arrives.
  */
 async function syncLoginState() {
-  const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0] ?? {}
-  const url = (tab.url || "").trim()
-  if (!/^https?:/i.test(url)) return { ok: false, message: "bad_url" }
-  // Waited for, not asserted: the worker may have been asleep, and a check of the dead socket alone
-  // reported "not connected" on a bridge that was up and would have answered.
   if ((await ensureConnected()) !== "connected") return { ok: false, message: "not_connected" }
 
-  /** @type {Array<object>} */
-  let cookies = []
-  try {
-    // Query by domain, not by the full URL: a site's login cookie often lives on a parent
-    // domain (`.example.com` for a `www.example.com` page), which getAll({ url }) misses and
-    // wrongly reports "empty". Filtering by host keeps out unrelated subdomains.
-    const host = new URL(url).hostname
-    // Some Chromium forks hang on getAll({ domain }); bound it and fall back to the URL query.
-    const all = await Promise.race([
-      chrome.cookies.getAll({ domain: host }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2_000)),
-    ])
-    cookies = all.filter((cookie) => {
-      const d = (cookie.domain || "").replace(/^\./, "")
-      return host === d || host.endsWith("." + d)
-    })
-  } catch {
-    // Fall back to the URL-scoped query; it misses parent-domain cookies but never hangs.
-    try {
-      cookies = await Promise.race([
-        chrome.cookies.getAll({ url }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2_000)),
-      ])
-    } catch {
-      return { ok: false, message: "cookies_failed" }
-    }
-  }
-  if (cookies.length === 0) return { ok: false, message: "empty" }
+  const dump = await dumpLoginState(undefined)
+  if (!dump.ok) return dump
 
   try {
-    // Chrome's own cookie objects are a superset of what the pane's parseCookies accepts;
-    // each entry carries its domain, so the pane writes them without the site being open.
-    send({ type: "cookies.sync", url, text: JSON.stringify(cookies) })
+    // dump.text is the { url, cookies, localStorage } wrapper the pane's parseLoginPaste already
+    // understands, so the localStorage-based sessions (most SPA sites) come across too.
+    send({ type: "cookies.sync", url: dump.url, text: dump.text })
   } catch {
     return { ok: false, message: "not_connected" }
   }
-  return { ok: true, url, cookies: cookies.length }
+  return { ok: true, url: dump.url, cookies: dump.cookies, storage: dump.storage }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
