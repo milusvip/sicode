@@ -1,18 +1,16 @@
 import { expect, test } from "bun:test"
 import { allowedDestination, destinationOrigin, fileURLWithin, localFileURL, normalizeURL, refusal } from "./policy"
 
-test("allows cross-origin HTTP navigation but rejects unsafe destinations and embedded credentials", () => {
+test("allows cross-origin HTTP navigation and credential URLs but rejects unsafe destinations", () => {
   expect(destinationOrigin("https://other.example/path")).toBe("https://other.example")
   expect(destinationOrigin("http://localhost:3000/")).toBe("http://localhost:3000")
 
-  for (const url of [
-    "file:///etc/passwd",
-    "javascript:alert(1)",
-    "data:text/html,test",
-    "https://user:pass@example.com",
-  ]) {
+  for (const url of ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,test"]) {
     expect(destinationOrigin(url)).toBeUndefined()
   }
+
+  // SiCode: user:pass@host opens (basic auth); the origin is credential-free either way.
+  expect(destinationOrigin("https://user:pass@example.com/path")).toBe("https://example.com")
 })
 
 test("file documents load only from allowed workspace roots and never from a host", () => {
@@ -61,7 +59,7 @@ test("the pane names why it refuses an address, so the window can explain it", (
     undefined,
     undefined,
     undefined,
-    "browser.address.credentials",
+    undefined,
     "browser.address.workspace",
     "browser.address.workspace",
     "browser.address.workspace",
@@ -69,7 +67,8 @@ test("the pane names why it refuses an address, so the window can explain it", (
   ])
   // Where no files open, only web pages do.
   expect(refusal("file:///home/me/repo/x.html")).toBe("browser.address.web")
-  expect(() => normalizeURL("https://user:pass@example.com")).toThrow("user name or password")
+  // SiCode: credential URLs open; normalizeURL hands the address through untouched.
+  expect(normalizeURL("https://user:pass@example.com")).toBe("https://user:pass@example.com")
 })
 
 test("windows workspace roots match drive-letter file URLs", () => {
