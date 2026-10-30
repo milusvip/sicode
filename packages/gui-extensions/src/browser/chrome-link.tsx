@@ -89,22 +89,6 @@ export function ChromeLink(props: { model: Model; disabled?: boolean }) {
     }
   }
 
-  const wake = async () => {
-    const current = client()
-    if (!current || busy()) return
-    setBusy(true)
-    setNote(undefined)
-    try {
-      const result = await current.wakeBrowser({})
-      setNote(result.ok ? "已在你的浏览器里开了一个标签页，扩展会自动重连。" : result.message)
-    } catch (error) {
-      setNote(error instanceof Error ? error.message : String(error))
-    } finally {
-      setBusy(false)
-      refresh()
-    }
-  }
-
   return (
     <Popover
       open={open()}
@@ -141,28 +125,16 @@ export function ChromeLink(props: { model: Model; disabled?: boolean }) {
           <div data-slot="chrome-link-status">
             <span data-slot="chrome-link-dot" style={{ background: DOT[phase()] }} />
             {LABEL[phase()]}
+            <Show when={phase() === "connected" && status()?.packageVersion}>
+              <span data-slot="chrome-link-version">v{status()?.packageVersion}</span>
+            </Show>
           </div>
           <Show when={note()}>
             <div data-slot="chrome-link-note">{note()}</div>
           </Show>
-          <Show
-            when={phase() === "connected"}
-            fallback={
-              <Button size="small" disabled={busy()} onClick={() => void install()}>
-                {busy() ? "正在打开浏览器…" : "连接我平时的浏览器"}
-              </Button>
-            }
-          >
-            <Button size="small" variant="ghost" disabled={busy()} onClick={() => void wake()}>
-              唤醒浏览器扩展
-            </Button>
-            <Button size="small" variant="ghost" disabled={busy()} onClick={() => void install()}>
-              重新安装 / 更新扩展
-            </Button>
-          </Show>
-          <div data-slot="chrome-link-hint">
-            装好扩展后这里会变绿。AI 会话默认用你的浏览器（有登录态），随时可切回内置浏览器。
-          </div>
+          <Button size="small" variant="ghost" disabled={busy()} onClick={() => void install()}>
+            {busy() ? "正在打开浏览器…" : phase() === "connected" ? "更新扩展" : "连接我平时的浏览器"}
+          </Button>
         </Popover.Content>
       </Popover.Portal>
     </Popover>

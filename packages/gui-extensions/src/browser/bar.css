@@ -295,10 +295,10 @@
     font-size: 12px;
   }
 
-  [data-slot="chrome-link-hint"] {
+  [data-slot="chrome-link-version"] {
     color: var(--v2-text-text-muted);
     font-size: 11px;
-    line-height: 1.5;
+    font-weight: 400;
   }
 }
 
