@@ -1,4 +1,6 @@
 import { NodeHttpClient } from "@effect/platform-node"
+// @ts-expect-error electron-log is a desktop dependency, resolved at runtime from the desktop app's node_modules
+import log from "electron-log/main.js"
 import { Browser } from "@opencode/plugin-browser/rpc"
 import { OpenCode } from "@opencode/client/effect"
 import { SessionID } from "@opencode/schema/session-id"
@@ -425,23 +427,25 @@ export function createBrowserPane(input: {
       const entry = owned(window, binding)
       const session = electron.session.fromPartition(entry.partition)
       const pasted = parseLoginPaste(text)
-      const cookies = cookiesForDomain(pasted.cookies, pasted.url)
+      // A login that lives entirely in localStorage has no cookies to write; skipping the cookie
+      // loop keeps cookiesForDomain's empty-array throw from dropping the storage half.
+      const cookies = pasted.cookies.length > 0 ? cookiesForDomain(pasted.cookies, pasted.url) : []
       let written = 0
       let rejection: string | undefined
 
       // SiCode: temporary diagnostics for the login-sync write — remove once the stay-signed-out
       // bug is pinned. Logs what the pane actually wrote, since the toast only reports counts.
-      console.log(`[sync-login] partition=${entry.partition} paste.url=${pasted.url ?? ""} drafts=${pasted.cookies.length}`)
+      log.info(`[sync-login] partition=${entry.partition} paste.url=${pasted.url ?? ""} drafts=${pasted.cookies.length}`)
 
       for (const cookie of cookies) {
         try {
           await session.cookies.set(cookie)
           written++
-          console.log(`[sync-login] wrote ${cookie.name} @ ${cookie.url} domain=${cookie.domain ?? ""} secure=${cookie.secure} httpOnly=${cookie.httpOnly} sameSite=${cookie.sameSite}`)
+          log.info(`[sync-login] wrote ${cookie.name} @ ${cookie.url} domain=${cookie.domain ?? ""} secure=${cookie.secure} httpOnly=${cookie.httpOnly} sameSite=${cookie.sameSite}`)
         } catch (cause) {
           // One cookie the site rejects (an expired paste, an insecure SameSite=None) must not drop the others.
           rejection ??= `Cookie "${cookie.name}" was rejected: ${cause instanceof Error ? cause.message : String(cause)}`
-          console.warn(`[sync-login] rejected ${cookie.name}: ${cause instanceof Error ? cause.message : String(cause)}`)
+          log.warn(`[sync-login] rejected ${cookie.name}: ${cause instanceof Error ? cause.message : String(cause)}`)
         }
       }
 
@@ -450,7 +454,7 @@ export function createBrowserPane(input: {
       // A storage-only paste is a login too: the site reads its session from there and has no cookie to write.
       if (!written && storage === 0) throw new Error(rejection ?? "No cookie or localStorage entry was written.")
 
-      console.log(`[sync-login] done written=${written} storage=${storage}`)
+      log.info(`[sync-login] done written=${written} storage=${storage}`)
       return { cookies: written, storage }
     },
     async command(window: number, binding: string, command: Browser.Action) {
