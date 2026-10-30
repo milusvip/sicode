@@ -166,6 +166,14 @@ const setup: MainSetup<typeof definition> = (ctx) => {
   )
 
   ctx.scope.addFinalizer(
+    chromeHost.onCookieSync((event) => {
+      chromeProvider.emit("cookieSync", { url: event.url, text: event.text })
+      const window = ctx.windows.focused() ?? ctx.windows.list()[0]
+      window?.focus()
+    }),
+  )
+
+  ctx.scope.addFinalizer(
     chromeHost.onTabOffer((tab) => {
       chromeProvider.emit("tabOffer", { tab })
       const window = ctx.windows.focused() ?? ctx.windows.list()[0]

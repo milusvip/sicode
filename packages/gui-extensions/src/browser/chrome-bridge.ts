@@ -151,6 +151,11 @@ export const ChromeBridge = Ipc.define({
       /** When true, renderer re-registers even if owningAttach did not change. */
       force: Schema.optional(Schema.Boolean),
     }),
+    /** SiCode: extension popup pushed the site's login cookies for the in-app pane. */
+    cookieSync: Schema.Struct({
+      url: Schema.String,
+      text: Schema.String,
+    }),
     /** Extension popup / context menu sent a page into the Composer. */
     tabOffer: Schema.Struct({
       tab: Schema.Struct({

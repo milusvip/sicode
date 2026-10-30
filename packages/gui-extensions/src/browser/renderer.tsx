@@ -1,4 +1,5 @@
 import { createMemo, createSignal, getOwner, lazy, onCleanup, runWithOwner, Show, Suspense } from "solid-js"
+import { showToast } from "@opencode/ui/toast"
 import { Command, createKeyed, LinkHandler, MenuItem, onIdle, Panel, Style, type PanelTab, type Setup } from "../sdk"
 import { Browser } from "./contract"
 import type definition from "./index"
@@ -43,6 +44,16 @@ const setup: Setup<typeof definition> = (ctx) => {
       if (ctx.signal.aborted) return
       const created = runWithOwner(owner, () => module.createModel(ctx))
       setModel(() => created)
+    })
+  })
+
+  // SiCode: the extension pushed this site's login cookies; write into the pane and open the site.
+  createKeyed(ctx.uses.chromeBridge, (client) => {
+    client.on("cookieSync", (event) => {
+      void model()
+        ?.syncLogin(event.url, event.text)
+        .then((result) => showToast({ title: result.ok ? "登录态同步" : "登录态同步失败", description: result.message }))
+        .catch(() => showToast({ title: "登录态同步失败", description: "内置浏览器面板不可用" }))
     })
   })
 

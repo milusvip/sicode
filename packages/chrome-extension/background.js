@@ -989,6 +989,36 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   })()
 })
 
+/**
+ * SiCode: push the active tab's login cookies (with domains) through the bridge, so the in-app
+ * browser can open the site already signed in. Cookies only — no scripting, no localStorage.
+ * Requires a live bridge connection: the desktop pane writes what arrives.
+ */
+async function syncLoginState() {
+  const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0] ?? {}
+  const url = (tab.url || "").trim()
+  if (!/^https?:/i.test(url)) return { ok: false, message: "bad_url" }
+  if (!liveSocket()) return { ok: false, message: "not_connected" }
+
+  /** @type {Array<object>} */
+  let cookies = []
+  try {
+    cookies = await chrome.cookies.getAll({ url })
+  } catch {
+    return { ok: false, message: "cookies_failed" }
+  }
+  if (cookies.length === 0) return { ok: false, message: "empty" }
+
+  try {
+    // Chrome's own cookie objects are a superset of what the pane's parseCookies accepts;
+    // each entry carries its domain, so the pane writes them without the site being open.
+    send({ type: "cookies.sync", url, text: JSON.stringify(cookies) })
+  } catch {
+    return { ok: false, message: "not_connected" }
+  }
+  return { ok: true, url, cookies: cookies.length }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return
 
@@ -1026,6 +1056,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "sicode.offerElement") {
     void (async () => {
       sendResponse(await offerActiveElement())
+    })()
+    return true
+  }
+
+  if (message.type === "sicode.syncLoginState") {
+    void (async () => {
+      sendResponse(await syncLoginState())
     })()
     return true
   }

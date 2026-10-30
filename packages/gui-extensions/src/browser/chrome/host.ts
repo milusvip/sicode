@@ -102,6 +102,8 @@ export type ChromeBridgeHost = {
   /** Extension pushed a page (popup / context menu) for the Composer. */
   onTabOffer: (listener: (tab: BridgeTab) => void) => () => void
   onElementOffer: (listener: (offer: BridgeElementOffer) => void) => () => void
+  /** SiCode: the extension pushed the site's login cookies for the in-app pane. */
+  onCookieSync: (listener: (event: { url: string; text: string }) => void) => () => void
   dispose: () => Promise<void>
 }
 
@@ -141,6 +143,7 @@ export function createChromeBridgeHost(stores: Stores, options: HostOptions): Ch
   const connectionListeners = new Set<(connected: boolean) => void>()
   const tabOfferListeners = new Set<(tab: BridgeTab) => void>()
   const elementOfferListeners = new Set<(offer: BridgeElementOffer) => void>()
+  const cookieSyncListeners = new Set<(event: { url: string; text: string }) => void>()
   let lastConnected = false
   let keepalive: ReturnType<typeof setInterval> | undefined
   let lastPong = 0
@@ -317,6 +320,12 @@ export function createChromeBridgeHost(stores: Stores, options: HostOptions): Ch
 
     if (message.type === "offer.tab") {
       for (const listener of tabOfferListeners) listener(message.tab)
+      return
+    }
+
+    // SiCode: login cookies travel without a tab — the pane writes them by domain, then opens the site.
+    if (message.type === "cookies.sync") {
+      for (const listener of cookieSyncListeners) listener({ url: message.url, text: message.text })
       return
     }
 
@@ -684,6 +693,12 @@ export function createChromeBridgeHost(stores: Stores, options: HostOptions): Ch
       tabOfferListeners.add(listener)
       return () => {
         tabOfferListeners.delete(listener)
+      }
+    },
+    onCookieSync: (listener) => {
+      cookieSyncListeners.add(listener)
+      return () => {
+        cookieSyncListeners.delete(listener)
       }
     },
     onElementOffer: (listener) => {

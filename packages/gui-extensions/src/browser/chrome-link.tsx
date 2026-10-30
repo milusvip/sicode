@@ -127,7 +127,7 @@ export function ChromeLink(props: { model: Model; disabled?: boolean }) {
           onClick={() => refresh()}
           icon={
             <span class="relative inline-flex">
-              <Icon name="outline-globe" />
+              <Icon name="outline-square-arrow" />
               <span
                 class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full"
                 style={{ background: DOT[phase()] }}

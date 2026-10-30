@@ -26,6 +26,13 @@ const STRINGS = {
     pick_fail_cancel: "已取消",
     pick_fail: "选元素失败",
     copy_login: "复制登录态",
+    sync_login: "同步登录态到内置浏览器",
+    sync_working: "同步中…",
+    sync_ok: "已同步 · 内置浏览器正在打开",
+    sync_fail_url: "当前页不是 http(s)，无法同步",
+    sync_fail_conn: "桌面端未连接，先连接 SiCode",
+    sync_fail_empty: "这个站点没有可同步的 Cookie",
+    sync_fail: "同步失败",
     copy_ok: "已复制 · 去内置浏览器导入",
     copy_fail_url: "无法读取此页",
     copy_fail_empty: "没有 Cookie / localStorage",
@@ -62,6 +69,13 @@ const STRINGS = {
     pick_fail_cancel: "Cancelled",
     pick_fail: "Pick failed",
     copy_login: "Copy login state",
+    sync_login: "Sync login to the in-app browser",
+    sync_working: "Syncing…",
+    sync_ok: "Synced · opening in the in-app browser",
+    sync_fail_url: "Not an http(s) page, nothing to sync",
+    sync_fail_conn: "Desktop not connected — connect SiCode first",
+    sync_fail_empty: "No cookies to sync for this site",
+    sync_fail: "Sync failed",
     copy_ok: "Copied · paste in Import session",
     copy_fail_url: "Can't read this page",
     copy_fail_empty: "No cookies / localStorage",
@@ -83,6 +97,7 @@ const updateOpen = document.getElementById("update-open")
 const pushBtn = document.getElementById("push-tab")
 const pickBtn = document.getElementById("pick-element")
 const copyLoginBtn = document.getElementById("copy-login")
+const syncLoginBtn = document.getElementById("sync-login")
 const pushFeedback = document.getElementById("push-feedback")
 
 let locale = "zh"
@@ -158,6 +173,29 @@ const refresh = async () => {
 const setFeedback = (text) => {
   pushFeedback.textContent = text
 }
+
+syncLoginBtn.addEventListener("click", () => {
+  void (async () => {
+    const table = STRINGS[locale]
+    setFeedback(table.sync_working)
+    syncLoginBtn.disabled = true
+    try {
+      const reply = await chrome.runtime.sendMessage({ type: "sicode.syncLoginState" })
+      if (!reply?.ok) {
+        if (reply?.message === "bad_url") setFeedback(table.sync_fail_url)
+        else if (reply?.message === "not_connected") setFeedback(table.sync_fail_conn)
+        else if (reply?.message === "empty") setFeedback(table.sync_fail_empty)
+        else setFeedback(table.sync_fail)
+        return
+      }
+      setFeedback(`${table.sync_ok} (Cookie ${reply.cookies})`)
+    } catch {
+      setFeedback(table.sync_fail)
+    } finally {
+      syncLoginBtn.disabled = false
+    }
+  })()
+})
 
 pushBtn.addEventListener("click", () => {
   void (async () => {

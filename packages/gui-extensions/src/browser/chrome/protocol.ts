@@ -94,6 +94,8 @@ export type BridgeClientMessage =
   | { type: "offer.tab"; tab: BridgeTab }
   /** Extension → desktop: push one or more picked elements into the Composer. */
   | { type: "offer.element"; tab: BridgeTab; element: BridgeElement; elements: BridgeElement[]; comment?: string }
+  /** SiCode: extension → desktop: the site's login cookies for the in-app pane (JSON cookie objects). */
+  | { type: "cookies.sync"; url: string; text: string }
   | { type: "tabs.list.result"; requestID: string; tabs: BridgeTab[]; focusedTabID: string | null }
   | { type: "tabs.open.result"; requestID: string; tab: BridgeTab }
   | { type: "tabs.focus.result"; requestID: string; tab: BridgeTab }
@@ -217,6 +219,15 @@ export function parseBridgeClientMessage(raw: string): BridgeClientMessage | und
   }
 
   if (type === "pong") return { type: "pong" }
+
+  // SiCode: cookies arrive as the JSON array chrome.cookies.getAll returned (each names its own
+  // domain), which the pane's parseCookies already understands; the pane need not have the site open.
+  if (type === "cookies.sync") {
+    const url = "url" in value && typeof value.url === "string" ? value.url : undefined
+    const text = "text" in value && typeof value.text === "string" ? value.text : undefined
+    if (!url || !text) return
+    return { type: "cookies.sync", url, text }
+  }
 
   if (type === "offer.tab" || type === "offer.element") {
     const tab = "tab" in value ? value.tab : undefined

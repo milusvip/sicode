@@ -445,6 +445,26 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     command(session, { type: "tabs.open", url })
   }
 
+  /** SiCode: write the system browser's synced login cookies into the pane, then open the site. */
+  const syncLogin = async (url: string, text: string): Promise<{ ok: boolean; message: string }> => {
+    const view = sessions.current()
+    if (!view) return { ok: false, message: "没有打开的会话：先打开一个会话再同步登录态。" }
+    if (!attached(view)) return { ok: false, message: "内置浏览器还没挂载：先打开内置浏览器面板。" }
+    const entry = live.get(view.key)
+    const tabs = entry ? attachment(entry.ref)?.browser?.tabs ?? [] : []
+    // The paste carries each cookie's own domain, so a blank tab is the clean target — no host check.
+    const target = tabs.find((item) => item.url === "about:blank")
+    if (!target) return { ok: false, message: "内置浏览器里没有空白标签页：先新建一个标签页再同步。" }
+    try {
+      const current = live.get(view.key)
+      await current?.connection.setCookies(target.id, text)
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+    openURL(view, url)
+    return { ok: true, message: "登录态已写入，正在内置浏览器打开。" }
+  }
+
   // Only the routed session has a file model to resolve workspace paths with: the session screen's.
   const files = (session: Session) => {
     const screen = ctx.screen.current()
@@ -497,6 +517,7 @@ export function createModel(ctx: SetupContext<typeof definition>) {
   return {
     available,
     chromeBridge,
+    syncLogin,
     attached,
     canOpen,
     openFile,
