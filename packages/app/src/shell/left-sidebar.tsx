@@ -27,7 +27,6 @@ import { useGlobal } from "@/runtime/server/runtime"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
-import { mergeWorktree } from "@/shell/worktree-merge"
 import { pathKey } from "@/workspaces/path-key"
 
 type MenuItem =
@@ -883,22 +882,6 @@ export function LeftSidebar() {
       label: language.t("dock.project.copyPath"),
       onSelect: () => void platform.writeClipboardText?.(group.directory),
     },
-    // git projects only: a non-git directory has no worktrees to merge. Resolution happens on
-    // click — a worktree row merges itself, the main row falls back to its single managed tree.
-    ...(group.project.vcs === "git"
-      ? [
-          {
-            icon: "branch-out",
-            label: language.t("home.worktree.merge"),
-            onSelect: () => {
-              const ctx = global.serverCtx(group.key)
-
-              if (!ctx) return
-              mergeWorktree({ api: ctx.sdk.api, directory: group.directory, language, dialog })
-            },
-          },
-        ]
-      : []),
     "separator",
     // Batch selection starts from here too: a project row is the handle for a folded group, and
     // right-clicking a session to find it is a detour when the whole project is what you meant.
