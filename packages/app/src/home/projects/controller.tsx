@@ -9,16 +9,14 @@ import { ServerConnection } from "@/runtime/server/registry"
 import { closeHomeProject, errorMessage, homeProjectDirectories } from "@/shell/layout/helpers"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { showToast } from "@/shell/notifications/toast"
-import { Dialog, DialogFooter, DialogHeader, DialogTitleGroup } from "@opencode/ui/dialog"
-import { Button } from "@opencode/ui/button"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { Show, createResource } from "solid-js"
-import { sameDirectory } from "@opencode/util/path"
+import { createResource } from "solid-js"
 import { Schema } from "effect"
 import { Persistence } from "@/runtime/persistence/schema"
 import type { HomeController } from "../model"
 import { useGlobal } from "@/runtime/server/runtime"
 import { useRevealProject } from "./reveal"
+import { mergeWorktree } from "@/shell/worktree-merge"
 
 export const HomeServersSchema = Schema.Struct({
   collapsed: Persistence.record(Persistence.fallback(Schema.Boolean, () => false)),
@@ -182,97 +180,12 @@ export function createHomeProjectsController(home: HomeController) {
       canReveal: revealProject.available,
       reveal: revealProject.reveal,
       merge: (conn: ServerConnection.Any, project: LocalProject) => {
-        const api = home.server.context(conn).sdk.api
-        const rowDirectory = project.worktree
-
-        const mergePreview = (projectID: string, directory: string) =>
-          api.worktree.mergePreview({ projectID, directory }).then((preview) => {
-            void dialog.show(() => (
-              <Dialog fit>
-                <DialogHeader hideClose>
-                  <DialogTitleGroup
-                    title={language.t("dialog.worktree.merge.title")}
-                    description={
-                      <div class="flex flex-col gap-2">
-                        <div>{language.t("dialog.worktree.merge.description", { branch: preview.branch })}</div>
-                        <div class="text-v2-text-text-faint">
-                          {language.plural("dialog.worktree.merge.ahead", preview.ahead)}
-                          <Show when={preview.behind > 0}>
-                            {" · "}
-                            {language.plural("dialog.worktree.merge.behind", preview.behind)}
-                          </Show>
-                        </div>
-                        <Show when={preview.dirty}>
-                          <div>{language.t("dialog.worktree.merge.dirty")}</div>
-                        </Show>
-                        <Show when={preview.sourceDirty}>
-                          <div>{language.t("dialog.worktree.merge.sourceDirty")}</div>
-                        </Show>
-                      </div>
-                    }
-                  />
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => dialog.close()}>
-                    {language.t("common.cancel")}
-                  </Button>
-                  <Button
-                    variant="contrast"
-                    disabled={preview.sourceDirty}
-                    onClick={() => {
-                      dialog.close()
-                      void api.worktree
-                        .merge({ projectID, directory })
-                        .then((result) => {
-                          showToast({
-                            title:
-                              result.ahead === 0
-                                ? language.t("home.worktree.merge.nothing")
-                                : language.t("home.worktree.merge.done", { count: result.ahead }),
-                          })
-                        })
-                        .catch((cause: unknown) =>
-                          showToast({
-                            variant: "error",
-                            title: language.t("dialog.worktree.merge.failed"),
-                            description: errorMessage(cause, language.t("dialog.worktree.merge.failed")),
-                          }),
-                        )
-                    }}
-                  >
-                    {language.t("dialog.worktree.merge.action")}
-                  </Button>
-                </DialogFooter>
-              </Dialog>
-            ))
-          })
-
-        void api.location
-          .get({ location: { directory: rowDirectory } })
-          .then((info) => {
-            // A worktree row merges itself; the main row falls back to its single managed
-            // worktree, and otherwise the user is asked to act on the specific row instead of
-            // the menu guessing which of several trees they meant.
-            if (!sameDirectory(rowDirectory, info.project.canonical))
-              return mergePreview(info.project.id, rowDirectory)
-            return api.worktree.list({ projectID: info.project.id }).then((entries) => {
-              const managed = entries.filter(
-                (entry) => entry.strategy !== undefined && !sameDirectory(entry.directory, info.project.canonical),
-              )
-              if (managed.length !== 1) {
-                showToast({ title: language.t("home.worktree.merge.noneAvailable") })
-                return
-              }
-              return mergePreview(info.project.id, managed[0].directory)
-            })
-          })
-          .catch((cause: unknown) =>
-            showToast({
-              variant: "error",
-              title: language.t("dialog.worktree.merge.failed"),
-              description: errorMessage(cause, language.t("dialog.worktree.merge.failed")),
-            }),
-          )
+        mergeWorktree({
+          api: home.server.context(conn).sdk.api,
+          directory: project.worktree,
+          language,
+          dialog,
+        })
       },
     },
     utility: {
