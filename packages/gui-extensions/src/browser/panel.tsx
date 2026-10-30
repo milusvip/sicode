@@ -20,6 +20,7 @@ import { createKeyed, useExtension, usePanel, type PanelTab, type MountedSession
 import { addressParts, connection, loopback, resolveAddress, SEARCH_ENGINES, searchQuery, searches } from "./address"
 import { commentNote, pageNote } from "./comment"
 import type { CookieLoginState } from "./connection"
+import { ChromeLink } from "./chrome-link"
 import { bare, completes, highlight, suggest, type Visit } from "./history"
 import type { Model } from "./model"
 import type { PaneElement } from "./ipc"
@@ -820,6 +821,8 @@ export default function SessionBrowserPane(props: {
           </Popover.Portal>
         </Popover>
         <div class="flex shrink-0 items-center gap-1">
+          {/* SiCode: system-Chrome bridge entry — connect / install status lives next to the page tools. */}
+          <ChromeLink model={props.model} disabled={suspended()} />
           {/* Signing in by pasted cookies sits with the page's own tools rather than in the address field, and works
               on a blank tab too: a paste that names its own domains needs no page open. */}
           <Show when={pageKey()} keyed>

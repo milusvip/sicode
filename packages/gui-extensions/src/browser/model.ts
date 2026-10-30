@@ -80,6 +80,9 @@ export function createModel(ctx: SetupContext<typeof definition>) {
   // The extension's own main entry provides the pane. `uses` declares it by reference; its full token, which this chunk
   // loads with the protocol schemas, resolves it.
   const pane = ctx.uses.pane.load(BrowserPane)
+  // SiCode: system-Chrome bridge, for the toolbar link and the per-session source switch. A provided
+  // (non-ref) Ipc resolves straight from `uses` — no `load` needed, unlike the pane's Ipc.ref.
+  const chromeBridge = ctx.uses.chromeBridge
 
   const client = () => {
     const current = pane()
@@ -493,6 +496,7 @@ export function createModel(ctx: SetupContext<typeof definition>) {
 
   return {
     available,
+    chromeBridge,
     attached,
     canOpen,
     openFile,
