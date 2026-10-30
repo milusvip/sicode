@@ -743,7 +743,6 @@ export const dict = {
   "dock.session.select": "Select sessions",
   "dock.select.exit": "Exit selection",
   "dock.select.scope": "Scope",
-  "dock.select.scope.project": "This project",
   "dock.select.scope.all": "All sessions",
   "dock.select.count.one": "{{count}} selected",
   "dock.select.count.other": "{{count}} selected",

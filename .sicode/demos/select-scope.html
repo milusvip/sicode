@@ -96,6 +96,27 @@
   .mi .lb { flex: 1; }
   .mi .num { flex: none; color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: 0.03em; font-variant-numeric: tabular-nums; }
   .sep { height: 1px; margin: 4px 8px; background: var(--border); }
+
+  /* The project header's tri-state checkbox (the WorkBuddy behaviour this mirrors). */
+  .tree { margin-top: 10px; border: 0.5px solid var(--border); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+  .prow, .srow { display: flex; align-items: center; gap: 6px; height: 28px; padding-inline: 6px; border-radius: 6px; }
+  .srow { background: var(--layer); }
+  .srow + .srow { margin-top: 2px; }
+  .pav {
+    width: 16px; height: 16px; flex: none; border-radius: 4px; background: #3b7ddd; color: #fff;
+    font-size: 9px; display: flex; align-items: center; justify-content: center;
+  }
+  .plabel { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--base); font-weight: 500; }
+  .slabel { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--base); padding-inline-start: 12px; }
+  .time { flex: none; color: var(--faint); font-size: 11px; }
+  .dot { flex: none; width: 6px; height: 6px; border-radius: 999px; background: #3b7ddd; }
+  .box, .pbox {
+    width: 14px; height: 14px; flex: none; border-radius: 3px; border: 1px solid var(--faint);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 9px; line-height: 1; font-weight: 700;
+  }
+  .box.on, .pbox.on, .pbox.ind { background: #3b7ddd; border-color: #3b7ddd; }
+  .box { margin-inline-start: 12px; }
 </style>
 </head>
 <body>
@@ -110,7 +131,6 @@
       <h4>${p.label}</h4>
       <div class="panel ${p.dark ? "dark" : ""}">
         <div class="menu">
-          <div class="mi hot"><span class="ic">▣</span><span class="lb">本项目</span><span class="num">9</span></div>
           <div class="mi"><span class="ic">▤</span><span class="lb">全部会话</span><span class="num">${p.count}</span></div>
           <div class="sep"></div>
           <div class="mi"><span class="ic">✕</span><span class="lb">取消全选</span></div>
@@ -125,6 +145,14 @@
             <button class="act archive">归档</button>
             <button class="act delete">删除</button>
           </div>
+        </div>
+        <div class="tree">
+          <div class="prow"><span class="pbox ind">−</span><span class="pav">S</span><span class="plabel">SiCode</span></div>
+          <div class="srow"><span class="box on">✓</span><span class="slabel">检查内核是否有需要升级</span><span class="time">6 小时前</span></div>
+          <div class="srow"><span class="box on">✓</span><span class="slabel">硬件结构优化 si_code</span><span class="time">6 小时前</span></div>
+          <div class="srow"><span class="box"></span><span class="slabel">排查 sicode 工具故障</span><span class="dot"></span></div>
+          <div class="prow"><span class="pbox"></span><span class="pav">9</span><span class="plabel">99-AI-Image-Gener…</span></div>
+          <div class="srow"><span class="box"></span><span class="slabel">审查贴牌大功能代码</span><span class="time">9 小时前</span></div>
         </div>
       </div>
     </div>`).join(""))

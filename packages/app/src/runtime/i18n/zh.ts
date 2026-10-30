@@ -548,7 +548,6 @@ export const dict = {
   "dock.session.select": "选择会话",
   "dock.select.exit": "退出选择",
   "dock.select.scope": "范围",
-  "dock.select.scope.project": "本项目",
   "dock.select.scope.all": "全部会话",
   "dock.select.count.one": "{{count}} 个",
   "dock.select.count.other": "{{count}} 个",

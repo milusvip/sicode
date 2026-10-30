@@ -292,13 +292,6 @@ export function LeftSidebar() {
     visibleGroups().flatMap((group) => group.sessions.map((session) => ({ key: group.key, session }))),
   )
 
-  /** The rows of the project in view: the narrow scope, and the one most clean-ups actually mean. */
-  const currentRows = createMemo<SelectedRow[]>(() => {
-    const group = current()
-
-    return group ? group.sessions.map((session) => ({ key: group.key, session })) : []
-  })
-
   /** Resolves the stored ids back to rows: deletion and archiving may have removed some of them. */
   const selectedRows = () => {
     const wanted = new Set(selection.ids)
@@ -361,33 +354,21 @@ export function LeftSidebar() {
     setSelection("ids", rows.map((row) => rowID(row.key, row.session)))
 
   /**
-   * "Select all" used to be one unparameterised click over every group in the column, and that is
-   * both the rare intent and the dangerous one: the column shows two or three projects and scrolls,
-   * so most of what it grabbed was never on screen while the delete button next to it is final.
-   * A scope menu asks the question the action actually has — *which* sessions — and carries a count
-   * per scope, so the size of the batch is known before the click instead of after the dialog.
-   *
-   * "This project" is dropped when the column holds a single project: there it would select exactly
-   * what "all" selects, and one outcome offered twice reads as two different ones.
+   * The one scope the per-project checkboxes cannot reach: every group in the column at once, with
+   * its size shown before the click. Picking a project is the headers' job — each one is a tri-state
+   * checkbox over its own rows — so this menu deliberately carries no project entry to duplicate.
    */
   const openScopeMenu = (event: MouseEvent) => {
     const all = selectable()
-    const inProject = currentRows()
-    const items: MenuItem[] = []
 
-    if (groups().length > 1 && inProject.length > 0)
-      items.push({
-        icon: "folder",
-        label: language.t("dock.select.scope.project"),
-        shortcut: String(inProject.length),
-        onSelect: () => selectRows(inProject),
-      })
-    items.push({
-      icon: "select-element",
-      label: language.t("dock.select.scope.all"),
-      shortcut: String(all.length),
-      onSelect: () => selectRows(all),
-    })
+    const items: MenuItem[] = [
+      {
+        icon: "select-element",
+        label: language.t("dock.select.scope.all"),
+        shortcut: String(all.length),
+        onSelect: () => selectRows(all),
+      },
+    ]
 
     // Clearing is its own item rather than the same entry toggling: a scope that silently means
     // "unselect" on the second press is the ambiguity this menu exists to remove.
@@ -1081,6 +1062,12 @@ export function LeftSidebar() {
                 {(group) => {
                   const id = `${group.key}:${group.directory}`
                   const active = () => isActiveProject(group.key, group.directory)
+                  // Tri-state, the way a parent checkbox has to read: all picked, some picked, none.
+                  // Two states were not enough — a half-picked group rendered as an empty box, which
+                  // is indistinguishable from "nothing chosen here" and reads as a bug mid-batch.
+                  const pickedCount = () => group.sessions.filter((session) => isSelected(group.key, session)).length
+                  const allPicked = () => pickedCount() === group.sessions.length
+                  const somePicked = () => pickedCount() > 0 && !allPicked()
                   // Collapsed by default: only the project in view opens itself, so a dozen groups
                   // do not turn the sidebar into a wall of titles.
                   const isCollapsed = () => !(openState()[id] ?? active())
@@ -1103,6 +1090,16 @@ export function LeftSidebar() {
                           // row must stop claiming it controls the disclosure. A group with nothing
                           // to pick falls back to folding: otherwise the row goes dead in this mode.
                           aria-expanded={selection.active ? undefined : !isCollapsed()}
+                          role={selection.active && group.sessions.length > 0 ? "checkbox" : undefined}
+                          aria-checked={
+                            selection.active && group.sessions.length > 0
+                              ? allPicked()
+                                ? "true"
+                                : somePicked()
+                                  ? "mixed"
+                                  : "false"
+                              : undefined
+                          }
                           onClick={() =>
                             selection.active && group.sessions.length > 0
                               ? toggleSelectedGroup(group)
@@ -1113,17 +1110,23 @@ export function LeftSidebar() {
                           {/* In batch mode the chevron's slot carries a checkbox: a folded group
                               shows no rows to click, so its header is the only handle left. A group
                               with nothing in it keeps the empty slot — a box that can never tick is
-                              a promise the column cannot keep. */}
+                              a promise the column cannot keep. The fill carries both settled states
+                              (tick and dash); only "nothing picked" renders the empty box. */}
                           <Show when={selection.active && group.sessions.length > 0}>
                             <span
                               class={`flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border-[0.5px] ${
-                                group.sessions.every((session) => isSelected(group.key, session))
+                                allPicked() || somePicked()
                                   ? "border-v2-border-border-strong bg-v2-background-bg-contrast text-v2-icon-icon-contrast"
                                   : "border-v2-border-border-strong text-transparent"
                               }`}
                               aria-hidden="true"
                             >
-                              <Icon name="check" class="size-2.5" />
+                              <Show
+                                when={allPicked()}
+                                fallback={<span class="h-[1.5px] w-2 rounded-full bg-v2-icon-icon-contrast" />}
+                              >
+                                <Icon name="check" class="size-2.5" />
+                              </Show>
                             </span>
                           </Show>
                           {/* A group with no sessions cannot open, so an arrow there is a dead
