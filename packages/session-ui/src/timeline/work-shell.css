@@ -173,3 +173,15 @@
 [data-component="work-shell-head"][data-open="true"] [data-slot="work-shell-chevron"] {
   transform: rotate(90deg);
 }
+
+/* SiCode: the placeholder that fills a running shell before the model has produced anything — its
+   first tool, thought, or word. It sits in the shell body, indented to line up under the head's
+   title (past the 19px icon and its 8px gap, plus the head's 4px start padding). */
+[data-component="waiting-for-model"] {
+  margin-inline-start: 31px;
+  padding: 4px 0 6px;
+  font-size: 12.5px;
+  line-height: var(--line-height-compact, 20px);
+  color: var(--v2-text-text-muted, var(--text-weak));
+}
+

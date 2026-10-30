@@ -443,6 +443,38 @@ describe("current session timeline rows", () => {
     expect(tags.filter((tag) => tag === "AssistantPart").length).toBeGreaterThanOrEqual(2)
   })
 
+  test("places a waiting placeholder in an empty shell before the model produces anything", () => {
+    // A busy turn whose assistant has no content yet: no tool, no text, no thought. This is the
+    // first queue wait, which otherwise leaves the work shell head sitting over an empty body.
+    const empty = storyDocument([], true)
+
+    expect(
+      createTimelineProjection({ sessionMessages: empty.messages, status: empty.status, reasoningMode: "full" }).rows.map(
+        (row) => row._tag,
+      ),
+    ).toEqual(["UserMessage", "WorkShell", "Waiting", "WorkShellEnd"])
+
+    // The placeholder is for the pre-first-output gap only; the moment a thought, tool, or word
+    // lands, the projection swaps it for the real body.
+    const thought = storyDocument([{ type: "reasoning", text: "Now thinking" }], true)
+
+    expect(
+      createTimelineProjection({ sessionMessages: thought.messages, status: thought.status, reasoningMode: "full" }).rows.map(
+        (row) => row._tag,
+      ),
+    ).toEqual(["UserMessage", "WorkShell", "Thinking", "WorkShellEnd"])
+
+    // A settled empty turn (the model produced nothing and finished) shows no shell at all — there
+    // is no running work to chrome, and no placeholder to show.
+    const settled = storyDocument([], false)
+
+    expect(
+      createTimelineProjection({ sessionMessages: settled.messages, status: settled.status, reasoningMode: "full" }).rows.map(
+        (row) => row._tag,
+      ),
+    ).toEqual(["UserMessage"])
+  })
+
   test("stops thinking on idle, message completion, errors and retries", () => {
     const document = storyDocument([{ type: "reasoning", text: "Current thought" }], true)
     expect(

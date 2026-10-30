@@ -943,8 +943,12 @@ function insertWorkShells(
         failedCount: 0,
         hasReply: false,
       })
+      // SiCode: the shell is empty until the model produces its first tool, text, or thought. Put a
+      // placeholder in the body so the first queue wait (measured at ~4.4 s on this machine) reads as
+      // "waiting on the model" instead of a blank gap below the head.
+      const waiting = new TimelineRow.Waiting({ userMessageID: input.turnID })
       const end = new TimelineRow.WorkShellEnd({ userMessageID: input.turnID })
-      return [...rows.slice(0, at), head, end, ...rows.slice(at)]
+      return [...rows.slice(0, at), head, waiting, end, ...rows.slice(at)]
     }
   } else {
     while (first > 0 && isWorkShellLead(rows[first - 1]!)) first -= 1

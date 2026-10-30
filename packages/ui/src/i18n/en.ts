@@ -278,6 +278,7 @@ const source = {
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
   "ui.message.interrupted": "Interrupted",
   "ui.workShell.status.running": "Working",
+  "ui.workShell.waiting": "Waiting for the model to respond",
   "ui.workShell.status.done": "Completed",
   "ui.workShell.status.disconnected": "Disconnected",
   "ui.workShell.status.interrupted": "Interrupted",

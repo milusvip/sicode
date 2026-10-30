@@ -41,6 +41,7 @@ import {
   type ReasoningMode,
 } from "./projection"
 import { openWorkShellOnly, WorkShellHead, workShellDefaultOpen, workShellDisclosureKey } from "./work-shell"
+import { TextShimmer } from "@opencode/ui/text-shimmer"
 
 const emptyAssistantMessages: SessionMessageAssistant[] = []
 
@@ -881,6 +882,28 @@ export function createSessionTimelineRowRenderer(input: {
                 }
               }}
             />
+          </div>
+        </Frame>
+      )
+    }
+
+    if (Predicate.isTagged(row(), "Waiting")) {
+      const current = () => {
+        const value = row()
+
+        if (!Predicate.isTagged(value, "Waiting")) throw new Error("Expected a waiting timeline row")
+
+        return value
+      }
+
+      // SiCode: placeholder shown only while the model has produced nothing at all. Once the first
+      // thought, tool, or word lands the projection drops this row and a real body takes its place.
+      return (
+        <Frame row={current()}>
+          <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
+            <div data-component="waiting-for-model">
+              <TextShimmer text={i18n.t("ui.workShell.waiting")} active />
+            </div>
           </div>
         </Frame>
       )

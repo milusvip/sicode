@@ -209,6 +209,7 @@ export const dict = {
   "ui.message.copied": "已複製！",
   "ui.message.interrupted": "已中斷",
   "ui.workShell.status.running": "工作中",
+  "ui.workShell.waiting": "正在等待模型回應",
   "ui.workShell.status.done": "已完成",
   "ui.workShell.status.disconnected": "已斷開",
   "ui.workShell.status.interrupted": "已中斷",

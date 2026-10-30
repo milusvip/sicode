@@ -131,6 +131,15 @@ export namespace TimelineRow {
     userMessageID: string
   }> {}
 
+  /**
+   * Placeholder a streaming turn shows before the model has produced anything — no tool, no text,
+   * no thought. Without it the shell head ("Working · 3s") sits above an empty body for the whole
+   * first queue wait, and the turn reads as stuck rather than as waiting on the model.
+   */
+  export class Waiting extends Data.TaggedClass("Waiting")<{
+    userMessageID: string
+  }> {}
+
   export type TimelineRow =
     | TurnGap
     | UserMessage
@@ -146,6 +155,7 @@ export namespace TimelineRow {
     | Activity
     | WorkShell
     | WorkShellEnd
+    | Waiting
 
   export const key: (row: TimelineRow) => string = Match.typeTags<TimelineRow>()({
     TurnGap: (row) => `turn-gap:${row.userMessageID}`,
@@ -166,6 +176,7 @@ export namespace TimelineRow {
     Activity: () => "activity",
     WorkShell: (row) => `work-shell:${row.userMessageID}`,
     WorkShellEnd: (row) => `work-shell-end:${row.userMessageID}`,
+    Waiting: (row) => `waiting:${row.userMessageID}`,
   })
 
   export function equals(a: TimelineRow, b: TimelineRow) {
@@ -199,4 +210,5 @@ export type TimelineRowMap = {
     toolCount: number
   }
   WorkShellEnd: { userMessageID: string }
+  Waiting: { userMessageID: string }
 }
