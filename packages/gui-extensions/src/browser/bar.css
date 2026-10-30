@@ -256,54 +256,8 @@
   }
 }
 
-/* SiCode: system-Chrome bridge link — status and one-click install beside the page tools. */
-[data-component="browser-chrome-link"] {
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 300px;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--v2-background-bg-base);
-  box-shadow: var(--v2-elevation-floating);
-  outline: none;
-  color: var(--v2-text-text-base);
-  font-size: 13px;
-  font-weight: 440;
-  line-height: var(--line-height-compact);
-  letter-spacing: -0.04px;
-  transform-origin: var(--kb-popover-content-transform-origin);
-
-  [data-slot="chrome-link-status"] {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 530;
-  }
-
-  [data-slot="chrome-link-dot"] {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 9999px;
-  }
-
-  [data-slot="chrome-link-note"] {
-    overflow-wrap: anywhere;
-    color: var(--v2-text-text-muted);
-    font-size: 12px;
-  }
-
-  [data-slot="chrome-link-version"] {
-    color: var(--v2-text-text-muted);
-    font-size: 11px;
-    font-weight: 400;
-  }
-}
-
-/* Login state pasted under the address field's key button: the site it is written for, the paste, and what it accepts. */
-[data-component="browser-cookies"] {
+/* SiCode: one login entry beside the page tools — system-browser connection above, cookie paste below. */
+[data-component="browser-login"] {
   z-index: 60;
   display: flex;
   flex-direction: column;
@@ -321,13 +275,43 @@
   letter-spacing: -0.04px;
   transform-origin: var(--kb-popover-content-transform-origin);
 
+  [data-slot="browser-login-status"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 530;
+  }
+
+  [data-slot="browser-login-dot"] {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+  }
+
+  [data-slot="browser-login-note"] {
+    overflow-wrap: anywhere;
+    color: var(--v2-text-text-muted);
+    font-size: 12px;
+  }
+
+  [data-slot="browser-login-version"] {
+    color: var(--v2-text-text-muted);
+    font-size: 11px;
+    font-weight: 400;
+  }
+
+  /* The paste is a second way in, not part of the status: a rule sets it apart without another heading. */
+  [data-slot="browser-login-divider"] {
+    margin: 4px 0;
+    border-top: 0.5px solid var(--v2-border-border-muted);
+  }
+
   [data-slot="browser-cookies-title"] {
     min-width: 0;
-    margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: inherit;
     font-weight: 530;
   }
 

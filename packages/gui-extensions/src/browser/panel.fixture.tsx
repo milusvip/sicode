@@ -352,7 +352,15 @@ export function mountBrowserPane(input: PaneHost) {
         setStore({ cookies, generation: store.generation + 1 })
         report()
 
-        return { cookies, login: { state: "likely", kept: cookies, pasted: cookies } }
+        return { cookies, storage: 0, login: { state: "likely", kept: cookies, pasted: cookies } }
+      },
+      // Main writes the paste into the attachment's cookie store; no tab is involved.
+      setDomainCookies: async (value) => {
+        const cookies = value.text.split(/[;\n]/).filter((part) => part.includes("=")).length
+        setStore({ cookies: store.cookies + cookies })
+        report()
+
+        return { cookies, storage: 0 }
       },
       close: async () => undefined,
       state: () => undefined,
@@ -367,9 +375,12 @@ export function mountBrowserPane(input: PaneHost) {
 
     const live = Live.accessor(() => ({ status: "active", generation: 1, value: pane }))
 
+    // No desktop bridge here, as on the web: the login popover offers the paste alone.
+    const chrome = Live.accessor(() => ({ status: "inactive", reason: "disabled" }))
+
     const fake = {
       ...base,
-      uses: { pane: { load: () => live } },
+      uses: { pane: { load: () => live }, chromeBridge: chrome },
       sessions: { current: session, list: () => Array.from(views.values()).filter((view) => view.key !== "Empty") },
       screen: { current: () => screen },
       layout: { narrow: () => false, stored: () => [], state: () => "visible", open() {}, close() {} },
@@ -837,7 +848,8 @@ export function mountBrowserRegion(input: RegionHost) {
       clearSite: async () => undefined,
       access: async () => ({ access: "read" as const, locked: { read: false, write: false } }),
       setAccess: async (input) => ({ access: input.access, locked: { read: false, write: false } }),
-      setCookies: async () => ({ cookies: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
+      setCookies: async () => ({ cookies: 0, storage: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
+      setDomainCookies: async () => ({ cookies: 0, storage: 0 }),
       close: async () => undefined,
       state: () => undefined,
       on: (_name, listener) => {

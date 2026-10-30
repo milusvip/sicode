@@ -536,6 +536,7 @@ story("lists recent pages on a blank tab and opens one", async ({ page }) => {
 story("adds the whole page to the session and keeps the draft when the item is picked again", async ({ page }) => {
   const root = page.getByTestId("browser-pane-fixture")
   const options = root.getByRole("button", { name: "Browser options", exact: true })
+
   const add = async () => {
     await options.click()
     await page.getByRole("menuitem", { name: "Add page to session", exact: true }).click()
@@ -569,18 +570,19 @@ story("shows the page's cookies in the site information and clears them", async 
 
 story("signs the page in by writing pasted cookies and reloading it", async ({ page }) => {
   const root = page.getByTestId("browser-pane-fixture")
-  const paste = root.getByRole("button", { name: "Paste login cookies", exact: true })
+  const login = root.getByRole("button", { name: "Your browser", exact: true })
   // The entry sits with the page's tools, not inside the address field.
-  await expect(root.locator('[data-component="browser-address"] [aria-label="Paste login cookies"]')).toHaveCount(0)
-  await paste.click()
+  await expect(root.locator('[data-component="browser-address"] [aria-label="Your browser"]')).toHaveCount(0)
+  await login.click()
   const dialog = page.getByRole("dialog")
   await expect(dialog).toContainText("Sign in with cookies")
-  // The paste names the site it is written for, and the field takes focus ready for it.
+  // The paste names the site it is written for.
   await expect(dialog).toContainText("alpha.example")
-  const input = dialog.locator('[data-slot="browser-cookies-input"]')
-  await expect(input).toBeFocused()
+  // This host has no system-browser bridge, as on the web: the paste is the only way in, so no connect button.
+  await expect(dialog).not.toContainText("Connect my everyday browser")
   await expect(dialog.getByRole("button", { name: "Write and reload", exact: true })).toBeDisabled()
 
+  const input = dialog.locator('[data-slot="browser-cookies-input"]')
   await input.fill("session=abc; token=xyz")
   await input.press("ControlOrMeta+Enter")
   await expect(dialog).toHaveCount(0)
@@ -592,15 +594,15 @@ story("signs the page in by writing pasted cookies and reloading it", async ({ p
 
 story("closes the login paste on cancel and offers it on a blank tab too", async ({ page }) => {
   const root = page.getByTestId("browser-pane-fixture")
-  const paste = root.getByRole("button", { name: "Paste login cookies", exact: true })
-  await paste.click()
+  const login = root.getByRole("button", { name: "Your browser", exact: true })
+  await login.click()
   const dialog = page.getByRole("dialog")
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(dialog).toHaveCount(0)
 
   // A blank tab has no site to name, so the paste has to carry its own domains.
   await root.getByRole("button", { name: "Blank page", exact: true }).click()
-  await paste.click()
+  await login.click()
   await expect(page.getByRole("dialog")).toContainText("No page open")
   await expect(page.getByRole("dialog")).toContainText("must name its own domain")
 })

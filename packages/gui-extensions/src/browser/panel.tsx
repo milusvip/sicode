@@ -19,19 +19,11 @@ import type { Browser } from "@opencode/plugin-browser/rpc"
 import { createKeyed, useExtension, usePanel, type PanelTab, type MountedSession, type SessionScreen } from "../sdk"
 import { addressParts, connection, loopback, resolveAddress, SEARCH_ENGINES, searchQuery, searches } from "./address"
 import { commentNote, pageNote } from "./comment"
-import type { CookieLoginState } from "./connection"
-import { ChromeLink } from "./chrome-link"
 import { bare, completes, highlight, suggest, type Visit } from "./history"
+import { LoginTools } from "./login-tools"
 import type { Model } from "./model"
 import type { PaneElement } from "./ipc"
 import { PageIcon } from "./page-icon"
-
-// SiCode: one label per login-state read, shown as the paste toast's description.
-const COOKIE_LOGIN_LABEL: Record<CookieLoginState["state"], string> = {
-  likely: "cookies.login.likely",
-  unclear: "cookies.login.unclear",
-  unlikely: "cookies.login.unlikely",
-}
 
 type PaneState = {
   /** The address field's text while the user edits it, and the submitted address it keeps afterwards. */
@@ -821,23 +813,21 @@ export default function SessionBrowserPane(props: {
           </Popover.Portal>
         </Popover>
         <div class="flex shrink-0 items-center gap-1">
-          {/* SiCode: system-Chrome bridge entry — connect / install status lives next to the page tools. */}
-          <ChromeLink model={props.model} disabled={suspended()} />
-          {/* Signing in by pasted cookies sits with the page's own tools rather than in the address field, and works
-              on a blank tab too: a paste that names its own domains needs no page open. */}
-          <Show when={pageKey()} keyed>
-            <SiteCookies
-              url={address()}
-              disabled={suspended()}
-              open={store.paste}
-              onOpenChange={(open) => setStore("paste", open)}
-              write={(text) => {
-                const tab = state()
+          {/* SiCode: one login entry beside the page tools: connect the system browser, or paste cookies when the
+              extension cannot be installed. It works on a blank tab too, where the paste names its own domains. */}
+          <LoginTools
+            model={props.model}
+            url={address()}
+            page={pageKey()}
+            disabled={suspended()}
+            open={store.paste}
+            onOpenChange={(open) => setStore("paste", open)}
+            write={(text) => {
+              const tab = state()
 
-                return tab ? props.model.setCookies(props.session, tab.id, text) : undefined
-              }}
-            />
-          </Show>
+              return tab ? props.model.setCookies(props.session, tab.id, text) : undefined
+            }}
+          />
           <Tooltip
             placement="top"
             value={
@@ -1186,145 +1176,6 @@ function Marked(props: { text: string; query: string }) {
         </Show>
       )}
     </For>
-  )
-}
-
-/**
- * Signs the pane into a site by pasting the cookies another browser holds: a `Cookie` header, one `name=value` per
- * line, a JSON map, or an exported cookie list. The pane writes them for this page's site and reloads it, so the page
- * comes back signed in. A paste is often the only way in when the site's login cannot complete in this browser (a
- * captcha, a second factor, or an SSO hop). It also works with no page open, where the paste names its own domains and
- * nothing reloads.
- */
-function SiteCookies(props: {
-  url: string
-  disabled: boolean
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  /** Writes the paste for the page's site and reloads it; undefined while the pane cannot answer. */
-  write: (text: string) => Promise<{ cookies: number; login: CookieLoginState }> | undefined
-}) {
-  const extension = useExtension()
-  const [state, setState] = createStore<{ text: string; writing: boolean; error?: string }>({ text: "", writing: false })
-  let input: HTMLTextAreaElement | undefined
-
-  // A blank tab has no site to name; the paste then has to carry its own domains.
-  const host = () => addressParts(props.url).host
-
-  // A closed popup forgets its paste: the next opening starts empty rather than offering another site's cookies.
-  const close = () => {
-    setState({ text: "", error: undefined })
-    props.onOpenChange(false)
-  }
-
-  const write = () => {
-    const text = state.text.trim()
-
-    if (state.writing || !text) return
-
-    setState({ writing: true, error: undefined })
-    void (props.write(text) ?? Promise.reject(new Error("browser.pane.unavailable")))
-      .then(
-        (value) => {
-          close()
-          // SiCode: the paste toast doubles as the login-state read — the site kept the pasted
-          // cookies, a login form is still up, or the page could not say in time.
-          showToast({
-            title: extension.plural("cookies.written", value.cookies),
-            description: extension.t(COOKIE_LOGIN_LABEL[value.login.state]),
-          })
-        },
-        // The pane refused the paste: an unknown pair, a domain that is not this site, or a cookie Chromium rejected.
-        (cause: unknown) => setState("error", cause instanceof Error ? cause.message : String(cause)),
-      )
-      .finally(() => setState("writing", false))
-  }
-
-  return (
-    <Popover
-      open={props.open}
-      placement="bottom-end"
-      gutter={8}
-      modal={false}
-      onOpenChange={(open) => (open ? props.onOpenChange(true) : close())}
-    >
-      <Tooltip placement="top" value={extension.t("cookies.action")}>
-        <Popover.Trigger
-          as={IconButton}
-          type="button"
-          variant="ghost-muted"
-          size="large"
-          disabled={props.disabled}
-          aria-label={extension.t("cookies.action")}
-          icon={<Icon name="outline-key" />}
-        />
-      </Tooltip>
-      <Popover.Portal>
-        <Popover.Content
-          data-component="browser-cookies"
-          onOpenAutoFocus={(event: Event) => {
-            // The field takes focus itself, ready for the paste.
-            event.preventDefault()
-            input?.focus()
-          }}
-        >
-          <div class="flex items-center justify-between gap-2">
-            <Popover.Title data-slot="browser-cookies-title">{extension.t("cookies.title")}</Popover.Title>
-            <IconButton
-              variant="ghost-muted"
-              size="small"
-              aria-label={extension.t("common.close")}
-              icon={<Icon name="outline-xmark" />}
-              onClick={close}
-            />
-          </div>
-          <div data-slot="browser-cookies-host" dir="ltr">
-            {host() || extension.t("cookies.noPage")}
-          </div>
-          <textarea
-            ref={input}
-            dir="ltr"
-            rows={5}
-            spellcheck={false}
-            autocomplete="off"
-            data-slot="browser-cookies-input"
-            aria-label={extension.t("cookies.title")}
-            aria-invalid={state.error ? true : undefined}
-            placeholder={extension.t("cookies.placeholder")}
-            value={state.text}
-            onInput={(event) => setState({ text: event.currentTarget.value, error: undefined })}
-            onKeyDown={(event) => {
-              // Enter in the field pastes a line; the platform's chord writes the whole paste without reaching for the
-              // button, and Escape closes as it does in every other popup here.
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault()
-
-                return write()
-              }
-
-              if (event.key !== "Escape") return
-              event.preventDefault()
-              close()
-            }}
-          ></textarea>
-          <Show when={state.error}>{(error) => <p data-slot="browser-cookies-error">{error()}</p>}</Show>
-          <p data-slot="browser-cookies-hint">{extension.t(host() ? "cookies.hint" : "cookies.hint.domain")}</p>
-          <div class="flex justify-end gap-2">
-            <Button size="small" variant="neutral" onClick={close}>
-              {extension.t("common.cancel")}
-            </Button>
-            <Button
-              size="small"
-              variant="contrast"
-              disabled={state.writing || !state.text.trim()}
-              onClick={write}
-            >
-              {extension.t(state.writing ? "cookies.writing" : "cookies.write")}
-            </Button>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover>
   )
 }
 

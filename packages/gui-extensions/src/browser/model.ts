@@ -445,24 +445,54 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     command(session, { type: "tabs.open", url })
   }
 
-  /** SiCode: write the system browser's synced login cookies into the pane, then open the site. */
+  /**
+   * SiCode: write the system browser's synced login cookies into the pane, then bring the site up. The panel need
+   * not be open and no blank tab is involved: the cookies land in the attachment's own store, and opening the tab
+   * brings the side panel forward on it.
+   */
   const syncLogin = async (url: string, text: string): Promise<{ ok: boolean; message: string }> => {
     const view = sessions.current()
-    if (!view) return { ok: false, message: "没有打开的会话：先打开一个会话再同步登录态。" }
-    if (!attached(view)) return { ok: false, message: "内置浏览器还没挂载：先打开内置浏览器面板。" }
+
+    if (!view) return { ok: false, message: ctx.t("login.sync.noSession") }
     const entry = live.get(view.key)
-    const tabs = entry ? attachment(entry.ref)?.browser?.tabs ?? [] : []
-    // The paste carries each cookie's own domain, so a blank tab is the clean target — no host check.
-    const target = tabs.find((item) => item.url === "about:blank")
-    if (!target) return { ok: false, message: "内置浏览器里没有空白标签页：先新建一个标签页再同步。" }
+
+    if (!entry) return { ok: false, message: ctx.t("login.sync.unavailable") }
+
+    // A pane that has not registered yet (the user never opened it this run) registers here, so the write has an owner.
+    entry.connection.wake()
+
     try {
-      const current = live.get(view.key)
-      await current?.connection.setCookies(target.id, text)
+      const written = await entry.connection.setDomainCookies(text)
+
+      // No registration answered, or neither half landed — which main refuses to report as success.
+      if (!written || written.cookies + written.storage === 0)
+        return { ok: false, message: ctx.t("login.sync.unavailable") }
+      const existing = attachment(view)?.browser?.tabs.find((item) => sameURL(item.url, url))
+
+      // A page already on this site reloads in place, so the login it just received shows without a second tab.
+      if (existing) {
+        command(view, { type: "reload", tabID: existing.id })
+        layout.open(key(existing.id), view, { tab: "select" })
+      } else {
+        // Selected once the desktop reports the tab, so the pane comes forward instead of appending it quietly.
+        entry.openingURL = url
+        openURL(view, url)
+      }
+
+      return { ok: true, message: writtenMessage(written) }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }
-    openURL(view, url)
-    return { ok: true, message: "登录态已写入，正在内置浏览器打开。" }
+  }
+
+  // A synced login is often both halves — a cookie for the site and a token in localStorage — so the toast reports
+  // each count it actually wrote rather than calling a storage-only paste a cookie.
+  const writtenMessage = (written: { cookies: number; storage: number }) => {
+    if (!written.cookies) return ctx.plural("login.sync.stored", written.storage)
+
+    if (!written.storage) return ctx.plural("login.sync.written", written.cookies)
+
+    return ctx.plural("login.sync.both", written.cookies, { storage: written.storage })
   }
 
   // Only the routed session has a file model to resolve workspace paths with: the session screen's.

@@ -911,8 +911,11 @@ async function dumpLoginState(tab) {
   let cookies = []
   try {
     // Chrome's own cookie objects carry domain, path, expiry and SameSite; the pane writes them as they are.
-    const raw = await chrome.cookies.getAll({ url })
-    cookies = raw.slice(0, LOGIN_DUMP_COOKIE_MAX)
+    const host = new URL(url).hostname
+    const lists = await Promise.all(
+      cookieQueries(url).map((query) => chrome.cookies.getAll(query).catch(() => [])),
+    )
+    cookies = mergeCookies(lists, host).slice(0, LOGIN_DUMP_COOKIE_MAX)
   } catch {
     return { ok: false, message: "cookies_failed" }
   }

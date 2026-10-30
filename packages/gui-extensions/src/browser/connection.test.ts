@@ -78,7 +78,8 @@ function fixture(strip: string[] = []) {
     clearSite: async () => undefined,
     access: async () => ({ access: "read" as const, locked: { read: false, write: false } }),
     setAccess: async (input) => ({ access: input.access, locked: { read: false, write: false } }),
-    setCookies: async () => ({ cookies: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
+    setCookies: async () => ({ cookies: 0, storage: 0, login: { state: "unclear", kept: 0, pasted: 0 } }),
+    setDomainCookies: async () => ({ cookies: 0, storage: 0 }),
     close: async (input) => {
       closed.push(input.binding)
     },

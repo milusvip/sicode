@@ -31,8 +31,10 @@ export type Registration = {
   clearSite(tabID: Browser.TabID): Promise<void>
   access(): Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }>
   setAccess(access: "full" | "read"): Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }>
-  /** Writes pasted login cookies for the page's site and reloads it; resolves with the count and the login-state read. */
-  setCookies(tabID: Browser.TabID, text: string): Promise<{ cookies: number; login: CookieLoginState }>
+  /** Writes pasted login cookies for the page's site and reloads it; resolves with the counts and the login-state read. */
+  setCookies(tabID: Browser.TabID, text: string): Promise<{ cookies: number; storage: number; login: CookieLoginState }>
+  /** Writes a paste into the attachment's store at the domains or page it names, with no tab open; resolves with the counts. */
+  setDomainCookies(text: string): Promise<{ cookies: number; storage: number }>
   close(): void
 }
 
@@ -315,6 +317,8 @@ export function createConnection(input: {
     },
     /** Writes pasted login cookies; undefined while no registration can answer. */
     setCookies: (tabID: Browser.TabID, text: string) => state.registration?.setCookies(tabID, text),
+    /** Writes a paste into the attachment's cookie store, no tab needed; undefined while no registration can answer. */
+    setDomainCookies: (text: string) => state.registration?.setDomainCookies(text),
     dispose() {
       disposed = true
       clearTimeout(retry)
@@ -367,6 +371,7 @@ function open(
     access: () => ready.then(() => client.access({ binding })),
     setAccess: (access) => ready.then(() => client.setAccess({ binding, access })),
     setCookies: (tabID, text) => ready.then(() => client.setCookies({ binding, tabID, text })),
+    setDomainCookies: (text) => ready.then(() => client.setDomainCookies({ binding, text })),
     close() {
       if (status.closed) return
       status.closed = true

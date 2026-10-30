@@ -152,6 +152,19 @@ const renderStatus = (status, needsUpdate = updateRequired) => {
   pickBtn.disabled = lastStatus !== "connected"
 }
 
+/**
+ * The installed version, and the desktop's when it expects a newer one.
+ *
+ * Read from this extension's own manifest rather than carried in on the status reply: the popup has
+ * to answer "which version am I on" even when the desktop does not reply at all, which is exactly
+ * when someone opens it to look.
+ */
+const renderVersion = (needsUpdate, expected) => {
+  if (!versionEl) return
+  const installed = chrome.runtime.getManifest().version
+  versionEl.textContent = needsUpdate && expected ? `v${installed} → v${expected}` : `v${installed}`
+}
+
 const refresh = async () => {
   const stored = await chrome.storage.local.get(["locale", "updateRequired", "channel"])
   applyLocale(typeof stored.locale === "string" ? stored.locale : "zh")
@@ -161,21 +174,28 @@ const refresh = async () => {
     const reply = await chrome.runtime.sendMessage({ type: "sicode.status" })
     if (reply && typeof reply.status === "string") {
       if (typeof reply.channel === "string") desktopChannel = reply.channel
-      if (versionEl) {
-        const installed = typeof reply.installedPackageVersion === "string" ? reply.installedPackageVersion : ""
-        const expected = typeof reply.expectedPackageVersion === "string" ? reply.expectedPackageVersion : ""
-        versionEl.textContent =
-          reply.updateRequired === true && expected ? `v${installed} → v${expected}` : installed ? `v${installed}` : ""
-      }
+      renderVersion(
+        reply.updateRequired === true,
+        typeof reply.expectedPackageVersion === "string" ? reply.expectedPackageVersion : "",
+      )
       renderStatus(reply.status, reply.updateRequired === true)
       return
     }
   } catch {
     // SW waking
   }
-  const fallback = await chrome.storage.local.get(["connectionStatus", "updateRequired", "channel"])
+  const fallback = await chrome.storage.local.get([
+    "connectionStatus",
+    "updateRequired",
+    "channel",
+    "expectedPackageVersion",
+  ])
   const status = typeof fallback.connectionStatus === "string" ? fallback.connectionStatus : "disconnected"
   desktopChannel = typeof fallback.channel === "string" ? fallback.channel : desktopChannel
+  renderVersion(
+    fallback.updateRequired === true,
+    typeof fallback.expectedPackageVersion === "string" ? fallback.expectedPackageVersion : "",
+  )
   renderStatus(status === "paused" ? "disconnected" : status, fallback.updateRequired === true)
 }
 
@@ -269,6 +289,10 @@ copyLoginBtn.addEventListener("click", () => {
 updateOpen.addEventListener("click", () => {
   void chrome.tabs.create({ url: "chrome://extensions" })
 })
+
+// Before any await: "which version is installed" must be readable the moment the popup opens, even
+// when the worker is asleep and the status reply never arrives.
+renderVersion(updateRequired, "")
 
 await refresh()
 

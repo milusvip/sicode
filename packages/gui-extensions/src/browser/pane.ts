@@ -1,6 +1,4 @@
 import { NodeHttpClient } from "@effect/platform-node"
-// @ts-expect-error electron-log is a desktop dependency, resolved at runtime from the desktop app's node_modules
-import log from "electron-log/main.js"
 import { Browser } from "@opencode/plugin-browser/rpc"
 import { OpenCode } from "@opencode/client/effect"
 import { SessionID } from "@opencode/schema/session-id"
@@ -16,7 +14,7 @@ import { destinationOrigin, fileURLWithin, refusal } from "./policy"
 import { createRefs } from "./refs"
 import type { PaneEvent } from "./ipc"
 import { createBrowserRestoreStore } from "./restore"
-import { createLocalStorageStore, storageOrigin } from "./local-storage"
+import { createLocalStorageStore, storageOrigin, writeScript } from "./local-storage"
 import { createSessionJar } from "./session-jar"
 
 type Target = { readonly server: string; readonly session: string; readonly restore?: Browser.State }
@@ -50,6 +48,12 @@ type Entry = {
   fileRoots: string[]
   /** The workspace this attachment keeps its login state under, known once the session is fetched. */
   jarKey?: string
+  /**
+   * SiCode: a synced login's localStorage, waiting for the first document of its origin to load and overwrite what the
+   * partition had left behind. A tab opened after the sync is a new page, so only a script handed to that page reaches
+   * its first document; the pane is where it waits, because the page does not exist yet.
+   */
+  pendingStorage?: { origin: string; entries: Readonly<Record<string, string>>; source: string }
   /**
    * Whether the connected server runs on this machine. Decides who resolves the network: a local server shares this
    * machine's OS proxy, so the pane may use it directly; a remote one must keep the attachment's tunnel, whose whole
@@ -420,8 +424,8 @@ export function createBrowserPane(input: {
      * store belongs to the partition, so an extension can hand over a login before the pane opens the site.
      *
      * A paste copied from the extension may carry the site's localStorage too — a site that keeps its session there is
-     * not signed in by cookies alone. That half is saved under the paste's own page, merged with what the workspace
-     * already keeps, so the next page of that origin opens with it.
+     * not signed in by cookies alone. That half is saved under the paste's own page, and put into any page of that
+     * origin already open, so the reload the pane does next reads it instead of waiting for a navigation of its own.
      */
     async setDomainCookies(window: number, binding: string, text: string) {
       const entry = owned(window, binding)
@@ -433,29 +437,35 @@ export function createBrowserPane(input: {
       let written = 0
       let rejection: string | undefined
 
-      // SiCode: temporary diagnostics for the login-sync write — remove once the stay-signed-out
-      // bug is pinned. Logs what the pane actually wrote, since the toast only reports counts.
-      log.info(`[sync-login] partition=${entry.partition} paste.url=${pasted.url ?? ""} drafts=${pasted.cookies.length}`)
-
       for (const cookie of cookies) {
         try {
           await session.cookies.set(cookie)
           written++
-          log.info(`[sync-login] wrote ${cookie.name} @ ${cookie.url} domain=${cookie.domain ?? ""} secure=${cookie.secure} httpOnly=${cookie.httpOnly} sameSite=${cookie.sameSite}`)
         } catch (cause) {
           // One cookie the site rejects (an expired paste, an insecure SameSite=None) must not drop the others.
           rejection ??= `Cookie "${cookie.name}" was rejected: ${cause instanceof Error ? cause.message : String(cause)}`
-          log.warn(`[sync-login] rejected ${cookie.name}: ${cause instanceof Error ? cause.message : String(cause)}`)
         }
       }
 
-      const storage = writeStorage(entry, pasted)
+      const stored = writeStorage(entry, pasted)
+
+      // SiCode: a tab already on the site is signed in by this write, not by the pane's next navigation. The page takes
+      // the entries now and replays them over what the site had left behind. A page that is elsewhere keeps its own.
+      if (stored) {
+        const applied = await Promise.all(
+          Array.from(entry.pages.values(), (page) =>
+            page.applyStorage(stored.origin, stored.entries).catch(() => false),
+          ),
+        )
+
+        // One of them took it directly, so no later tab should replay the same snapshot over what the site writes next.
+        if (applied.some(Boolean)) entry.pendingStorage = undefined
+      }
 
       // A storage-only paste is a login too: the site reads its session from there and has no cookie to write.
-      if (!written && storage === 0) throw new Error(rejection ?? "No cookie or localStorage entry was written.")
+      if (!written && !stored) throw new Error(rejection ?? "No cookie or localStorage entry was written.")
 
-      log.info(`[sync-login] done written=${written} storage=${storage}`)
-      return { cookies: written, storage }
+      return { cookies: written, storage: stored ? Object.keys(stored.entries).length : 0 }
     },
     async command(window: number, binding: string, command: Browser.Action) {
       const entry = owned(window, binding)
@@ -492,19 +502,31 @@ export function createBrowserPane(input: {
   }
 
   /**
-   * Saves a paste's localStorage half under the page it came from, merged into what the workspace already keeps.
-   * Returns how many entries it wrote. Without a page, or before the workspace key is known, there is nowhere to put
-   * them, so the paste's cookies are all that lands.
+   * Saves a paste's localStorage half under the page it came from, merged into what the workspace already keeps, and
+   * reports where it went so it can be replayed. Nothing to save — no storage in the paste, no page it names, or no
+   * workspace key yet — reports nothing rather than an empty set.
    */
   function writeStorage(entry: Entry, pasted: ReturnType<typeof parseLoginPaste>) {
     const origin = pasted.url ? storageOrigin(pasted.url) : undefined
     const jarKey = entry.jarKey
 
-    if (!pasted.storage || !origin || !jarKey) return 0
+    if (!pasted.storage || !origin || !jarKey) return
+    // Merged, because the store replaces an origin's whole set and a paste carries the login keys, not every key.
+    const merged = { ...originStorage.load(jarKey, origin), ...pasted.storage }
 
-    originStorage.save(jarKey, origin, { ...originStorage.load(jarKey, origin), ...pasted.storage })
+    originStorage.save(jarKey, origin, merged)
+    // SiCode: waiting for whichever document of this origin loads next, whether that is this attachment's open tab or a
+    // tab the sync is about to open. The paste is the login the user asked for, so it overwrites rather than fills gaps.
+    entry.pendingStorage = { origin, entries: merged, source: writeScript(origin, merged) }
 
-    return Object.keys(pasted.storage).length
+    return { origin, entries: pasted.storage }
+  }
+
+  /** Whether two entry sets hold the same keys and values, the test for "nothing was written since". */
+  function sameEntries(a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) {
+    const keys = Object.keys(a)
+
+    return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
   }
 
   function publish(entry: Entry, event: PaneEvent) {
@@ -639,6 +661,18 @@ export function createBrowserPane(input: {
               load: (origin: string) => originStorage.load(jarKey, origin),
               save: (origin: string, entries: Readonly<Record<string, string>>) =>
                 originStorage.save(jarKey, origin, entries),
+            },
+            // SiCode: a tab opened right after a sync gets the pasted values over its partition's leftovers. Taken once,
+            // and only while the store still holds what the paste wrote: once the site (or another tab) has saved a newer
+            // login, replaying this snapshot over it would sign the user back out.
+            takePendingStorage: (origin: string) => {
+              const pending = entry.pendingStorage
+
+              if (pending?.origin !== origin) return
+              entry.pendingStorage = undefined
+              const current = originStorage.load(jarKey, origin)
+
+              return current && sameEntries(current, pending.entries) ? pending.source : undefined
             },
           }
         : undefined),

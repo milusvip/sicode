@@ -52,7 +52,9 @@ const setup: Setup<typeof definition> = (ctx) => {
   createKeyed(ctx.uses.chromeBridge, (client) => {
     client.on("tabOffer", (event) => {
       const screen = ctx.screen.current()
-      if (!screen) return showToast({ title: "推送失败", description: "没有打开的会话" })
+
+      if (!screen) return showToast({ title: ctx.t("push.failed"), description: ctx.t("push.noSession") })
+
       screen.composer.attach(
         pageOfferNote({
           origin: ctx.id,
@@ -62,14 +64,19 @@ const setup: Setup<typeof definition> = (ctx) => {
           chromeTabID: event.tab.id,
         }),
       )
-      showToast({ title: "已推送到对话", description: event.tab.title || event.tab.url })
+      showToast({ title: ctx.t("push.page"), description: event.tab.title || event.tab.url })
     })
     client.on("elementOffer", (event) => {
       const screen = ctx.screen.current()
-      if (!screen) return showToast({ title: "推送失败", description: "没有打开的会话" })
+
+      if (!screen) return showToast({ title: ctx.t("push.failed"), description: ctx.t("push.noSession") })
+
       const elements = event.elements?.length ? event.elements : event.element ? [event.element] : []
+
       if (!elements.length) return
+
       const first = elements[0]!
+
       screen.composer.attach(
         elementOfferNote({
           origin: ctx.id,
@@ -79,13 +86,29 @@ const setup: Setup<typeof definition> = (ctx) => {
           comment: event.comment,
         }),
       )
-      showToast({ title: "元素已推送到对话", description: first.label || first.selector })
+      showToast({ title: ctx.t("push.element"), description: first.label || first.selector })
     })
     client.on("cookieSync", (event) => {
-      void model()
-        ?.syncLogin(event.url, event.text)
-        .then((result) => showToast({ title: result.ok ? "登录态同步" : "登录态同步失败", description: result.message }))
-        .catch(() => showToast({ title: "登录态同步失败", description: "内置浏览器面板不可用" }))
+      const current = model()
+
+      // The model loads with the first session; a click that lands before it can still answer.
+      if (!current) {
+        showToast({ title: ctx.t("login.sync.failed"), description: ctx.t("login.sync.unavailable") })
+
+        return
+      }
+
+      void current
+        .syncLogin(event.url, event.text)
+        .then((result) =>
+          showToast({
+            title: ctx.t(result.ok ? "login.sync.title" : "login.sync.failed"),
+            description: result.message,
+          }),
+        )
+        .catch(() =>
+          showToast({ title: ctx.t("login.sync.failed"), description: ctx.t("login.sync.unavailable") }),
+        )
     })
   })
 

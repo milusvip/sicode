@@ -4,10 +4,11 @@ import type { Protocol } from "devtools-protocol"
 import { Schema } from "effect"
 import type { Embeds } from "../sdk/main"
 import { createCdp, abortError, waitFor } from "./cdp"
-import { cookiesForDomain, cookiesForPage, parseCookies } from "./cookies"
+import { cookieURL, cookiesForDomain, cookiesForPage, parseLoginPaste, type LoginPaste } from "./cookies"
 import { createBrowserFiles } from "./files"
 import { createDiagnostics } from "./diagnostics"
 import { loadIcon } from "./icon"
+import { restoreScript, storageOrigin, writeScript } from "./local-storage"
 import { createProfiling, type Recording } from "./profiling"
 import type { BrowserNetwork } from "./network"
 import {
@@ -103,17 +104,6 @@ function zoomKey(input: Electron.Input) {
   if (input.key === "0") return "reset"
 }
 
-/**
- * The address a cookie is removed by: its domain without the leading dot, its path, and its scheme. An IPv6 host
- * needs its brackets in a URL.
- */
-function cookieURL(cookie: Electron.Cookie) {
-  const domain = (cookie.domain ?? "").replace(/^\./, "")
-  const host = domain.includes(":") && !domain.startsWith("[") ? `[${domain}]` : domain
-
-  return `${cookie.secure ? "https" : "http"}://${host}${cookie.path ?? "/"}`
-}
-
 /** The next preset in the direction, or 100%; the current factor at either end. */
 function zoomStep(current: number, direction: "in" | "out" | "reset") {
   if (direction === "reset") return 1
@@ -135,10 +125,12 @@ function systemProxyRules(shared: Shared) {
   shared.proxy ??= (async () => {
     try {
       const answer = await electron.session.defaultSession.resolveProxy("https://example.com")
+
       const entry = answer
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.toUpperCase().startsWith("PROXY "))
+
       const host = entry?.slice(6).trim()
 
       return host ? `http://${host}` : undefined
@@ -152,6 +144,7 @@ function systemProxyRules(shared: Shared) {
 
 async function applySystemProxy(session: Electron.Session, shared: Shared) {
   const rules = await systemProxyRules(shared)
+
   if (!rules) return
   session.setProxy({ proxyRules: rules, proxyBypassRules: "<local>,localhost,127.0.0.1,[::1]" })
 }
@@ -181,6 +174,27 @@ export function createBrowserPage(
     popupOptions?: Electron.BrowserWindowConstructorOptions
     /** Directories whose files may load as file:// documents; empty when the server is remote. */
     fileRoots?: () => ReadonlyArray<string>
+    /**
+     * Whether this page resolves its network with the OS proxy. Only when the server runs on this machine: a remote
+     * server's pages must keep the attachment's tunnel, or they would load from the desktop instead of the server.
+     */
+    systemProxy?: boolean
+    /**
+     * The workspace's localStorage, kept across attachments. Read before the page's own code runs; written back as the
+     * page leaves an origin, because a partition's storage dies with the partition.
+     */
+    localStorage?: {
+      /** What this origin saved, or nothing when it never had any. */
+      load: (origin: string) => Readonly<Record<string, string>> | undefined
+      /** Replaces what this origin keeps. */
+      save: (origin: string, entries: Readonly<Record<string, string>>) => void
+    }
+    /**
+     * SiCode: the script a paste left waiting for an origin, ready to overwrite instead of fill gaps, or nothing when
+     * no paste is pending. Called once per document the page is about to load; a tab opened after the paste is what
+     * needs it, because that tab is a new page whose own document never saw the write.
+     */
+    takePendingStorage?: (origin: string) => string | undefined
     shared: Shared
     embeds: Embeds
   },
@@ -208,7 +222,11 @@ export function createBrowserPage(
   })
 
   const contents = view.webContents
-  void applySystemProxy(contents.session, options.shared)
+
+  // SiCode: see applySystemProxy. A remote server's pages stay on the attachment's tunnel proxy, which says how the
+  // site is reached; pinning the OS proxy here would silently load them from this desktop instead.
+  if (options.systemProxy) void applySystemProxy(contents.session, options.shared)
+
   const detachNetwork = options.network?.attach(contents)
   contents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return
@@ -229,10 +247,13 @@ export function createBrowserPage(
 
     if (input.alt || !(process.platform === "darwin" ? input.meta : input.control)) return
 
-    // The same chord as Chromium DevTools' element picker.
+    // The same chord as Chromium DevTools' element picker. A held chord repeats keyDown, and a repeat that
+    // flipped the picker again would leave it on the parity of the repeats rather than on the user's press;
+    // the page keeps losing the chord to preventDefault either way.
     if (input.shift && input.code === "KeyC") {
       event.preventDefault()
-      void toggleInspect(!inspecting)
+
+      if (!input.isAutoRepeat) void toggleInspect(!inspecting)
 
       return
     }
@@ -328,6 +349,114 @@ export function createBrowserPage(
   let closed = false
   // The committed document's origin; its icon stays while navigations remain on it.
   let origin = ""
+  // The origin whose localStorage this page currently shows. Cleared once copied out, so each page copies once.
+  let storageOriginOf: string | undefined
+  // The restore script this page keeps installed, and what it was built from.
+  let storageScript: { identifier: string; origin: string; source: string } | undefined
+  // Bumped by every install, so a superseded one does not add a script for a navigation that already moved on.
+  let storageAttempt = 0
+  // SiCode: a paste the user just handed over, applied to the next document of its origin even over the values the
+  // site had already left in that partition. A restore only fills gaps; a paste is an instruction.
+  let storageOverwrite: { origin: string; source: string } | undefined
+
+  /**
+   * Copies this page's localStorage into the workspace store, then stops tracking it. Runs while the document is still
+   * alive — the page is leaving it, and a partition's storage does not outlive the pane — so a login kept only in
+   * localStorage survives the next open. Best-effort: a page whose script clears storage at unload, or whose renderer
+   * is already gone, keeps whatever it had.
+   */
+  const captureStorage = async () => {
+    const saved = storageOriginOf
+
+    if (!saved || !options.localStorage || contents.isDestroyed()) return
+    storageOriginOf = undefined
+
+    await cdp
+      .send("DOMStorage.getDOMStorageItems", { storageId: { securityOrigin: saved, isLocalStorage: true } })
+      .then(({ entries }) => options.localStorage?.save(saved, Object.fromEntries(entries)))
+      .catch(() => undefined)
+  }
+
+  /** Drops the restore script, so a later document of that origin does not get the values it carries put back. */
+  const dropStorageScript = async () => {
+    const script = storageScript
+
+    if (!script) return
+    storageScript = undefined
+
+    if (script.identifier)
+      await cdp
+        .send("Page.removeScriptToEvaluateOnNewDocument", { identifier: script.identifier })
+        .catch(() => undefined)
+  }
+
+  /**
+   * Keeps a script installed that gives this origin's saved localStorage back to every document of it that loads next.
+   *
+   * A site that keeps its login in localStorage reads it from `<head>`, so writing it after the document commits is too
+   * late — Chromium has to run this before the page's own code. The script only fills in entries the document is
+   * missing, so a value the site or another tab of this partition has written since stays as it is, and a script that
+   * Chromium ends up applying to a later document cannot undo anything.
+   */
+  const installStorage = async (url: string) => {
+    const next = storageOrigin(url)
+
+    if (closed || !next || !options.localStorage) return
+    const pending = options.takePendingStorage?.(next)
+    const overwrite = pending ?? (storageOverwrite?.origin === next ? storageOverwrite.source : undefined)
+
+    if (overwrite) storageOverwrite = undefined
+    const entries = options.localStorage.load(next)
+
+    // Nothing saved for this origin — or nothing left after signing out — means no script, and no stale one either.
+    // A paste wins over both: it is the login the user asked to carry across, not a snapshot to merge.
+    const source = overwrite ?? (entries && Object.keys(entries).length ? restoreScript(next, entries) : "")
+    const script = storageScript
+
+    if (script?.origin === next && script.source === source) return
+    const attempt = ++storageAttempt
+
+    await dropStorageScript()
+
+    if (closed || attempt !== storageAttempt || !source) return
+    const installed = { identifier: "", origin: next, source }
+
+    storageScript = installed
+    await cdp
+      .send("Page.addScriptToEvaluateOnNewDocument", { source })
+      .then(({ identifier }) => {
+        if (storageScript === installed) installed.identifier = identifier
+      })
+      .catch(() => {
+        if (storageScript === installed) storageScript = undefined
+      })
+  }
+
+  /**
+   * Puts a paste's localStorage into the open document and saves it for the origin's next open. Returns how many
+   * entries it wrote. A paste arrives while the page is up, so unlike {@link installStorage} — which fills gaps before
+   * a later document's own script runs — this overwrites: the entries are the login the user just handed over, and the
+   * page picks them up when the paste's cookies reload it.
+   */
+  const writeStorage = async (pasted: LoginPaste) => {
+    const origin = storageOrigin(contents.getURL()) ?? (pasted.url ? storageOrigin(pasted.url) : undefined)
+    const entries = pasted.storage
+
+    if (closed || !entries || !origin || !options.localStorage) return 0
+    // Merged, because save() replaces the origin's whole set: a paste carries the login keys, not every key the site had.
+    const merged = { ...options.localStorage.load(origin), ...entries }
+
+    options.localStorage.save(origin, merged)
+    // The next document of this origin gets the same entries even where the site already had a value: a paste is the
+    // login the user handed over, and the reload that follows this write is what a site reads its session from.
+    storageOverwrite = { origin, source: writeScript(origin, merged) }
+    await cdp
+      .send("Runtime.evaluate", { expression: writeScript(origin, entries), returnByValue: true })
+      .catch(() => undefined)
+
+    return Object.keys(entries).length
+  }
+
   // Whether the native surface holds a real document worth showing. Chromium keeps the
   // previous document painted until the next one renders, so a shown page stays shown
   // through later navigations; blank and failed documents hide until a real one is ready.
@@ -373,6 +502,14 @@ export function createBrowserPage(
     updateVisibility()
   }
 
+  contents.on("did-start-navigation", (event) => {
+    if (!event.isMainFrame || event.isSameDocument) return
+    void captureStorage()
+    // SiCode: a programmatic navigation — loadURL, reload, back and forward — raises neither will-frame-navigate
+    // nor will-redirect, so this is the last moment to register a script for the document it loads. Without it a
+    // login kept only in localStorage came back solely on a navigation the site itself started.
+    void installStorage(event.url)
+  })
   contents.on("did-start-navigation", reset)
   contents.on("did-navigate", (_event, url, status, statusText) => {
     // The server-network proxy answers an unreachable HTTP target with an empty 502. Other
@@ -389,6 +526,9 @@ export function createBrowserPage(
     }
 
     origin = next
+
+    // What this document's localStorage is, for the copy taken when it is left.
+    if (!failure) storageOriginOf = storageOrigin(url)
 
     // A blank or failed document paints at commit; a real one waits for dom-ready.
     if (url === "about:blank" || failure) settle()
@@ -427,7 +567,12 @@ export function createBrowserPage(
   const guard = (event: Electron.Event<{ url: string; isMainFrame: boolean }>) => {
     if (event.url === "about:blank") return
 
-    if (event.isMainFrame ? allowedDestination(event.url, policy) : !localFileURL(event.url)) return
+    if (event.isMainFrame ? allowedDestination(event.url, policy) : !localFileURL(event.url)) {
+      // Still before this navigation commits: the only moment a script can be registered for the document it loads.
+      if (event.isMainFrame) void installStorage(event.url)
+
+      return
+    }
 
     if (!event.isMainFrame && fileURLWithin(event.url, policy.fileRoots ?? [])) return
     event.preventDefault()
@@ -631,8 +776,13 @@ export function createBrowserPage(
         origin,
         storages: ["localstorage", "indexdb", "serviceworkers", "cachestorage", "filesystem", "shadercache"],
       })
+      // The store is the second copy: leaving it in place would sign the user back in on the next open.
+      options.localStorage?.save(origin, {})
+      await dropStorageScript()
 
       if (closed) return
+      // Nothing left to copy out: this document's storage was just deleted on purpose.
+      storageOriginOf = undefined
       contents.reload()
       // A slow page still cleared; the count then reads what it set so far.
       await waitFor(() => closed || !contents.isLoading(), new AbortController().signal, 30_000).catch(() => undefined)
@@ -641,14 +791,18 @@ export function createBrowserPage(
      * Writes pasted login cookies, then reloads the page that has one so its site sees them. On a web page the paste is
      * scoped to that page; on a blank tab it names its own domains and nothing reloads. Resolves with the count written
      * rather than waiting for the page: the reload may redirect or be slow.
+     *
+     * A paste copied from the extension also carries the site's localStorage. It is written into the live document
+     * (localStorage survives a reload) and saved for the next open, because a site that keeps its session there is not
+     * signed in by cookies alone.
      */
     async setCookies(text: string) {
       if (closed) throw new Error("Browser tab was closed. Open the page again to write cookies.")
       const url = contents.getURL()
-      const drafts = parseCookies(text)
+      const pasted = parseLoginPaste(text)
       // Scoped to the open page: a paste for another host is a mistake, not a way to seed an unrelated site.
       const page = !!destinationOrigin(url)
-      const cookies = page ? cookiesForPage(url, drafts) : cookiesForDomain(drafts)
+      const cookies = page ? cookiesForPage(url, pasted.cookies) : cookiesForDomain(pasted.cookies, pasted.url)
 
       await Promise.all(
         cookies.map((cookie) =>
@@ -662,14 +816,17 @@ export function createBrowserPage(
 
       if (closed) throw new Error("Browser tab was closed. Open the page again to write cookies.")
 
-      if (page) contents.reload()
+      const storage = await writeStorage(pasted)
+
+      // A storage-only paste is a login too; a page has to reload for either half to take effect.
+      if (page && (cookies.length || storage)) contents.reload()
 
       // SiCode: whether the site accepted the session is otherwise invisible. Read the two signals
       // this pane can see: a paste the site rejected is usually cleared or expired by the reload,
       // so pasted names staying readable for the address means the session likely landed, and a
       // login form still on screen is the strongest "not signed in" signal. Best-effort with a
       // short bound: a slow or redirecting page reports "unclear" instead of holding the answer.
-      if (!page) return { cookies: cookies.length, login: { state: "unclear" as const, kept: 0, pasted: 0 } }
+      if (!page) return { cookies: cookies.length, storage, login: { state: "unclear" as const, kept: 0, pasted: 0 } }
 
       await waitFor(() => closed || !contents.isLoading(), new AbortController().signal, 10_000).catch(() => undefined)
       const names = new Set(cookies.map((cookie) => cookie.name))
@@ -685,12 +842,30 @@ export function createBrowserPage(
 
       return {
         cookies: cookies.length,
+        storage,
         login: {
           state: form?.result.value === true ? ("unlikely" as const) : kept > 0 ? ("likely" as const) : ("unclear" as const),
           kept,
           pasted: names.size,
         },
       }
+    },
+    /**
+     * SiCode: puts a login's localStorage into this open document now and keeps it for the origin's next document even
+     * over values the site already had. `setDomainCookies` writes with no tab needed, so a page that was already up
+     * never saw the pasted half; this closes that gap. Resolves with whether the document was the paste's origin.
+     */
+    async applyStorage(origin: string, entries: Readonly<Record<string, string>>) {
+      if (closed || !options.localStorage || storageOrigin(contents.getURL()) !== origin) return false
+      const merged = { ...options.localStorage.load(origin), ...entries }
+
+      options.localStorage.save(origin, merged)
+      storageOverwrite = { origin, source: writeScript(origin, merged) }
+      await cdp
+        .send("Runtime.evaluate", { expression: writeScript(origin, entries), returnByValue: true })
+        .catch(() => undefined)
+
+      return true
     },
     /** Reports the page's icon and zoom when either changed since the last report. */
     detail,
@@ -768,10 +943,17 @@ export function createBrowserPage(
     },
     async dispose() {
       if (closed) return
+      // Before anything is torn down: this is the last moment the page's own storage exists.
+      const captured = captureStorage()
       closed = true
       clearTimeout(flash)
       detachNetwork?.()
       contents.session.off("will-download", download)
+
+      // The script strips itself from later documents, so an open tab does not replay what is about to be saved. The
+      // capture above reads the partition, which no tab of it writes between here and there.
+      await Promise.all([captured, dropStorageScript()])
+
       await profiling.dispose()
       cdp.dispose()
       refs.clear()

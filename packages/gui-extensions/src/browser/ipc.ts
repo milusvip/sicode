@@ -118,11 +118,22 @@ export const BrowserPane = Ipc.define({
       input: Schema.Struct({ binding, tabID: Browser.TabID, text: text(MAX_COOKIE_TEXT) }),
       output: Schema.Struct({
         cookies: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+        storage: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
         login: Schema.Struct({
           state: Schema.Literals(["likely", "unclear", "unlikely"]),
           kept: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
           pasted: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
         }),
+      }),
+    },
+    // Writes a paste into the attachment's cookie store, each cookie at the domain or page it names, plus the
+    // localStorage the paste carries; no tab has to be open, so an extension hands over a login before the pane opens
+    // the site. Fails when neither half landed.
+    setDomainCookies: {
+      input: Schema.Struct({ binding, text: text(MAX_COOKIE_TEXT) }),
+      output: Schema.Struct({
+        cookies: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+        storage: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
       }),
     },
     close: { input: Schema.Struct({ binding }) },

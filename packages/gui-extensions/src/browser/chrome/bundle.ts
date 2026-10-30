@@ -6,7 +6,10 @@ import { app } from "electron"
 const FILES = [
   "manifest.json",
   "background.js",
+  "bridge-ports.js",
+  "cookie-scope.js",
   "debugger-buffer.js",
+  "login-dump.js",
   "page.js",
   "pick-element.js",
   "popup.html",

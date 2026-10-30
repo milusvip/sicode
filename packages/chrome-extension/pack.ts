@@ -16,6 +16,8 @@ const outCrx = path.join(root, "SiCode-Browser-Bridge.crx")
 const FILES = [
   "manifest.json",
   "background.js",
+  "bridge-ports.js",
+  "cookie-scope.js",
   "debugger-buffer.js",
   "login-dump.js",
   "page.js",

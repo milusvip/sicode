@@ -150,6 +150,8 @@
 
       .status-version {
         margin-left: auto;
+        /* The version is the one thing in this row that must never be squeezed away. */
+        flex: none;
         color: var(--muted, #8b8b8b);
         font: 500 10px/1.3 var(--font);
       }
