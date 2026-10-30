@@ -92,6 +92,7 @@ const langEn = document.getElementById("lang-en")
 const statusEl = document.getElementById("status")
 const statusText = document.getElementById("status-text")
 const statusDetail = document.getElementById("status-detail")
+const versionEl = document.getElementById("version")
 const updateEl = document.getElementById("update")
 const updateOpen = document.getElementById("update-open")
 const pushBtn = document.getElementById("push-tab")
@@ -158,6 +159,12 @@ const refresh = async () => {
     const reply = await chrome.runtime.sendMessage({ type: "sicode.status" })
     if (reply && typeof reply.status === "string") {
       if (typeof reply.channel === "string") desktopChannel = reply.channel
+      if (versionEl) {
+        const installed = typeof reply.installedPackageVersion === "string" ? reply.installedPackageVersion : ""
+        const expected = typeof reply.expectedPackageVersion === "string" ? reply.expectedPackageVersion : ""
+        versionEl.textContent =
+          reply.updateRequired === true && expected ? `v${installed} → v${expected}` : installed ? `v${installed}` : ""
+      }
       renderStatus(reply.status, reply.updateRequired === true)
       return
     }

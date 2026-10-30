@@ -148,6 +148,12 @@
         font-weight: 600;
       }
 
+      .status-version {
+        margin-left: auto;
+        color: var(--muted, #8b8b8b);
+        font: 500 10px/1.3 var(--font);
+      }
+
       .status-detail {
         margin-left: auto;
         color: var(--weak);
@@ -265,6 +271,7 @@
         <span class="dot" aria-hidden="true"></span>
         <span class="status-text" id="status-text">未连接</span>
         <span class="status-detail" id="status-detail"></span>
+        <span class="status-version" id="version" dir="ltr"></span>
       </div>
 
       <div class="update" id="update" data-show="false" role="status">
