@@ -1,0 +1,1053 @@
+import { PROTOCOL_VERSION, chromeIdFromTabID, isPackageBehind, toBridgeTab } from "./protocol.js"
+import {
+  captureScreenshot,
+  detachDebugger,
+  getNetwork,
+  listNetwork,
+  readConsole,
+} from "./debugger-buffer.js"
+
+/** Prod formal desktop. Extension tries these in order so push prefers the packaged prod app. */
+const DISCOVERY_PORTS = [17891, 17892, 17893]
+const DEFAULT_PORT = DISCOVERY_PORTS[0]
+/** @type {WebSocket | undefined} */
+let socket
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let reconnectTimer
+let intentionalClose = false
+let connectGeneration = 0
+/** @type {Set<number>} */
+const ownedTabs = new Set()
+
+/** @type {Record<string, Record<number, ImageData>>} */
+const iconCache = {}
+
+/** Dot color for toolbar icon (top-right). */
+const STATUS_DOT = {
+  connected: "#2dba26",
+  connecting: "#e6a700",
+  pairing: "#e6a700",
+  paused: "#8b8b8b",
+  disconnected: "#8b8b8b",
+}
+
+/**
+ * @param {number} size
+ * @param {string} color
+ */
+async function iconWithDot(size, color) {
+  const key = `${size}:${color}`
+  const cached = iconCache[key]
+  if (cached) return cached
+
+  const url = chrome.runtime.getURL(`icons/icon${size}.png`)
+  const response = await fetch(url)
+  const bitmap = await createImageBitmap(await response.blob())
+  const canvas = new OffscreenCanvas(size, size)
+  const ctx = canvas.getContext("2d")
+  if (!ctx) throw new Error("2d unavailable")
+  ctx.drawImage(bitmap, 0, 0, size, size)
+
+  // Keep the full disc + white ring inside the bitmap (toolbar clips overflow).
+  const ring = Math.max(1.2, size * 0.035)
+  const r = Math.max(3.2, size * 0.2)
+  const margin = ring + 1
+  const cx = size - margin - r
+  const cy = margin + r
+  ctx.beginPath()
+  ctx.arc(cx, cy, r + ring, 0, Math.PI * 2)
+  ctx.fillStyle = "#ffffff"
+  ctx.fill()
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fillStyle = color
+  ctx.fill()
+
+  const imageData = ctx.getImageData(0, 0, size, size)
+  iconCache[key] = { [size]: imageData }
+  return iconCache[key]
+}
+
+/** @param {"connecting" | "connected" | "disconnected" | "paused" | "pairing"} status */
+async function applyStatusIcon(status) {
+  const stored = await chrome.storage.local.get(["updateRequired"])
+  // Stale extension while still connected → warn yellow, not “healthy” green.
+  const color =
+    status === "connected" && stored.updateRequired === true
+      ? STATUS_DOT.connecting
+      : (STATUS_DOT[status] ?? STATUS_DOT.disconnected)
+  try {
+    const sizes = [16, 32, 48]
+    /** @type {Record<number, ImageData>} */
+    const imageData = {}
+    for (const size of sizes) {
+      Object.assign(imageData, await iconWithDot(size, color))
+    }
+    await chrome.action.setIcon({ imageData })
+    await chrome.action.setBadgeText({ text: "" })
+  } catch {
+    // Fallback if OffscreenCanvas/icons fail: tiny colored badge, no "ON" text.
+    await chrome.action.setBadgeText({ text: " " })
+    await chrome.action.setBadgeBackgroundColor({ color })
+  }
+}
+
+/** @param {"connecting" | "connected" | "disconnected" | "paused"} status */
+async function setConnectionStatus(status) {
+  await chrome.storage.local.set({ connectionStatus: status })
+  await applyStatusIcon(status)
+}
+
+async function loadOwned() {
+  try {
+    const stored = await chrome.storage.session.get(["ownedTabs"])
+    if (Array.isArray(stored.ownedTabs)) {
+      ownedTabs.clear()
+      for (const id of stored.ownedTabs) if (typeof id === "number") ownedTabs.add(id)
+    }
+  } catch {
+    // session storage unavailable — memory only
+  }
+}
+
+async function saveOwned() {
+  try {
+    await chrome.storage.session.set({ ownedTabs: [...ownedTabs] })
+  } catch {
+    // ignore
+  }
+}
+
+function trackTab(tabId) {
+  if (typeof tabId !== "number") return
+  ownedTabs.add(tabId)
+  void saveOwned()
+}
+
+function untrackTab(tabId) {
+  ownedTabs.delete(tabId)
+  void detachDebugger(tabId)
+  void saveOwned()
+}
+
+function liveSocket() {
+  return !!socket && socket.readyState === WebSocket.OPEN
+}
+
+/** UI/status must follow the real socket — storage alone goes stale when the SW sleeps. */
+async function syncLiveStatus() {
+  if (liveSocket()) {
+    await setConnectionStatus("connected")
+    return "connected"
+  }
+  const stored = await chrome.storage.local.get(["connectionStatus"])
+  if (stored.connectionStatus === "connected" || stored.connectionStatus === "connecting") {
+    await setConnectionStatus("disconnected")
+  }
+  return "disconnected"
+}
+
+async function hostListening(port) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/status`, { cache: "no-store" })
+    if (!response.ok) return false
+    const body = await response.json()
+    return !!body?.ok && !!body?.enabled
+  } catch {
+    return false
+  }
+}
+
+function scheduleReconnect() {
+  if (intentionalClose) return
+  if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined
+    void connect()
+  }, 800)
+  // MV3 service workers sleep and drop setTimeout — alarms keep retrying while Chrome is open.
+  void chrome.alarms.create("sicode-bridge-reconnect", { delayInMinutes: 0.5, periodInMinutes: 1 })
+}
+
+/** Reconnect when the desktop bridge is up but our socket is dead (stale "已连接"). */
+async function ensureConnected() {
+  const storedStatus = await chrome.storage.local.get(["connectionStatus"])
+  if (liveSocket() && storedStatus.connectionStatus === "connected") return "connected"
+  if (!liveSocket()) await syncLiveStatus()
+
+  const stored = await chrome.storage.local.get(["port"])
+  const portHint = typeof stored.port === "number" ? stored.port : DEFAULT_PORT
+  // Probe every channel port — prod may be free while a leftover hint still points at dead 17891.
+  const candidates = [...new Set([portHint, ...DISCOVERY_PORTS, DEFAULT_PORT])]
+  let listening = false
+  for (const port of candidates) {
+    if (await hostListening(port)) {
+      listening = true
+      break
+    }
+  }
+  if (!listening) {
+    scheduleReconnect()
+    return "disconnected"
+  }
+
+  if (!liveSocket()) await connect()
+
+  // Wait briefly for hello.ok so popup/desktop don't race a half-open socket.
+  for (let i = 0; i < 25; i++) {
+    if (!liveSocket()) return "disconnected"
+    const next = await chrome.storage.local.get(["connectionStatus"])
+    if (next.connectionStatus === "connected") return "connected"
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return liveSocket() ? "connecting" : "disconnected"
+}
+
+async function connect() {
+  // Clear legacy pause flag from older extension builds.
+  void chrome.storage.local.remove(["bridgePaused"])
+
+  const generation = ++connectGeneration
+  await loadOwned()
+  const stored = await chrome.storage.local.get(["port"])
+  const portHint = typeof stored.port === "number" ? stored.port : DEFAULT_PORT
+
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    intentionalClose = true
+    socket.close()
+    intentionalClose = false
+    socket = undefined
+  }
+
+  await setConnectionStatus("connecting")
+
+  // Prod (17891) first, then beta / dev — never let a leftover `bun dev` steal push when prod is up.
+  for (const port of [...new Set([...DISCOVERY_PORTS, portHint, DEFAULT_PORT])]) {
+    if (generation !== connectGeneration) return
+
+    try {
+      socket = new WebSocket(`ws://127.0.0.1:${port}`)
+    } catch {
+      continue
+    }
+
+    const opened = await new Promise((resolve) => {
+      let done = false
+      const finish = (ok) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        resolve(ok)
+      }
+      const timer = setTimeout(() => {
+        try {
+          socket?.close()
+        } catch {
+          // ignore
+        }
+        finish(false)
+      }, 2500)
+
+      socket.addEventListener("open", () => {
+        socket?.send(JSON.stringify({ type: "hello", version: PROTOCOL_VERSION }))
+        finish(true)
+      })
+      socket.addEventListener("error", () => finish(false))
+      socket.addEventListener("close", () => finish(false))
+    })
+
+    if (!opened || !socket || socket.readyState !== WebSocket.OPEN) continue
+
+    socket.addEventListener("message", (event) => {
+      void onMessage(String(event.data), port)
+    })
+    socket.addEventListener("close", () => {
+      if (generation !== connectGeneration) return
+      socket = undefined
+      void setConnectionStatus("disconnected")
+      scheduleReconnect()
+    })
+    socket.addEventListener("error", () => {
+      socket?.close()
+    })
+    return
+  }
+
+  await setConnectionStatus("disconnected")
+  scheduleReconnect()
+}
+
+function send(message) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return
+  socket.send(JSON.stringify(message))
+}
+
+function fail(requestID, error) {
+  send({
+    type: "error",
+    requestID,
+    message: error instanceof Error ? error.message : String(error),
+  })
+}
+
+function isScriptableUrl(url) {
+  if (!url) return false
+  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("file://")
+}
+
+async function requireTab(tabID) {
+  const chromeId = chromeIdFromTabID(tabID)
+  if (chromeId === undefined) throw new Error(`Unknown tabID ${tabID}`)
+  const tab = await chrome.tabs.get(chromeId)
+  if (typeof tab.id !== "number") throw new Error(`Unknown tabID ${tabID}`)
+  trackTab(tab.id)
+  return tab
+}
+
+function waitLoaded(tabId, timeoutMs = 20_000) {
+  return new Promise((resolve) => {
+    let seenLoading = false
+    const finish = () => {
+      clearTimeout(timer)
+      clearTimeout(settle)
+      chrome.tabs.onUpdated.removeListener(listener)
+      resolve()
+    }
+    const timer = setTimeout(finish, timeoutMs)
+    const listener = (id, info) => {
+      if (id !== tabId) return
+      if (info.status === "loading") seenLoading = true
+      if (info.status === "complete" && seenLoading) finish()
+    }
+    chrome.tabs.onUpdated.addListener(listener)
+    const settle = setTimeout(() => {
+      void chrome.tabs.get(tabId).then((tab) => {
+        if (tab.status === "complete" && !seenLoading) finish()
+      })
+    }, 400)
+  })
+}
+
+async function ensurePageApi(tabId) {
+  const tab = await chrome.tabs.get(tabId)
+  if (!isScriptableUrl(tab.url ?? "")) {
+    throw new Error(
+      `Cannot inject into this page (${tab.url || "unknown"}). Open an http(s) page with browser.tabs.open or browser.navigate first.`,
+    )
+  }
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    files: ["page.js"],
+  })
+}
+
+const normalizeRef = (ref) => (typeof ref === "string" ? ref.replace(/^@/, "") : ref)
+
+async function callPage(tabId, method, args = []) {
+  await ensurePageApi(tabId)
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: (name, values) => {
+      const api = globalThis.__sicodeBridgeAPI
+      if (!api || typeof api[name] !== "function") throw new Error("SiCode page bridge missing")
+      return api[name](...values)
+    },
+    args: [method, args],
+  })
+  const first = results[0]
+  if (!first) throw new Error("Script injection returned no result")
+  return first.result
+}
+
+async function listMapped() {
+  // Prune closed ids from the session cache (used when Agent opens/focuses tabs).
+  for (const id of [...ownedTabs]) {
+    try {
+      await chrome.tabs.get(id)
+    } catch {
+      ownedTabs.delete(id)
+    }
+  }
+  await saveOwned()
+
+  // List the real browser inventory — not only tabs SiCode opened — so Agent matches what the user sees.
+  const tabs = await chrome.tabs.query({})
+  const mapped = tabs
+    .filter((tab) => typeof tab.id === "number")
+    .filter((tab) => {
+      const url = tab.url ?? ""
+      // Loading tabs often have an empty url briefly — keep them visible.
+      if (!url) return true
+      // chrome:// / edge:// / extension pages are not injectable; still show http(s)/file/about.
+      return isScriptableUrl(url) || url === "about:blank" || url.startsWith("about:")
+    })
+    .map(toBridgeTab)
+  const focused = mapped.find((tab) => tab.active)?.id ?? mapped[0]?.id ?? null
+  return { tabs: mapped, focusedTabID: focused }
+}
+
+async function onMessage(raw, port) {
+  let message
+  try {
+    message = JSON.parse(raw)
+  } catch {
+    return
+  }
+
+  if (!message || typeof message !== "object" || typeof message.type !== "string") return
+
+  if (message.type === "hello.ok") {
+    const nextPort = typeof message.port === "number" && message.port > 0 ? message.port : port
+    const expected = typeof message.packageVersion === "string" ? message.packageVersion : ""
+    const channel =
+      message.channel === "prod" ||
+      message.channel === "beta" ||
+      message.channel === "dev" ||
+      message.channel === "local"
+        ? message.channel
+        : ""
+    const installed = chrome.runtime.getManifest().version
+    const updateRequired = expected ? isPackageBehind(installed, expected) : false
+    await chrome.storage.local.set({
+      port: nextPort,
+      channel,
+      updateRequired,
+      expectedPackageVersion: expected,
+      installedPackageVersion: installed,
+    })
+    await setConnectionStatus("connected")
+    void chrome.alarms.clear("sicode-bridge-reconnect")
+    return
+  }
+
+  if (message.type === "hello.reject") {
+    await setConnectionStatus("disconnected")
+    intentionalClose = true
+    socket?.close()
+    intentionalClose = false
+    scheduleReconnect()
+    return
+  }
+
+  if (message.type === "ping") {
+    send({ type: "pong" })
+    return
+  }
+
+  const requestID = message.requestID
+  if (typeof requestID !== "string") return
+
+  try {
+    if (message.type === "tabs.list") {
+      send({ type: "tabs.list.result", requestID, ...(await listMapped()) })
+      return
+    }
+
+    if (message.type === "tabs.open") {
+      const tab = await chrome.tabs.create({ url: message.url || "about:blank", active: true })
+      if (typeof tab.id === "number") trackTab(tab.id)
+      send({ type: "tabs.open.result", requestID, tab: toBridgeTab(tab) })
+      return
+    }
+
+    if (message.type === "tabs.focus") {
+      const tab = await requireTab(message.tabID)
+      const updated = await chrome.tabs.update(tab.id, { active: true })
+      if (updated.windowId !== undefined) await chrome.windows.update(updated.windowId, { focused: true })
+      send({ type: "tabs.focus.result", requestID, tab: toBridgeTab(updated) })
+      return
+    }
+
+    if (message.type === "tabs.close") {
+      const tab = await requireTab(message.tabID)
+      untrackTab(tab.id)
+      await chrome.tabs.remove(tab.id)
+      send({ type: "tabs.close.result", requestID, ...(await listMapped()) })
+      return
+    }
+
+    if (message.type === "navigate") {
+      const tab = await requireTab(message.tabID)
+      await chrome.tabs.update(tab.id, { url: message.url })
+      await waitLoaded(tab.id)
+      send({ type: "navigate.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "reload") {
+      const tab = await requireTab(message.tabID)
+      await chrome.tabs.reload(tab.id, { bypassCache: !!message.ignoreCache })
+      await waitLoaded(tab.id)
+      send({ type: "reload.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "back" || message.type === "forward") {
+      const tab = await requireTab(message.tabID)
+      if (message.type === "back") await chrome.tabs.goBack(tab.id)
+      else await chrome.tabs.goForward(tab.id)
+      await waitLoaded(tab.id)
+      send({
+        type: message.type === "back" ? "back.result" : "forward.result",
+        requestID,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "snapshot") {
+      const tab = await requireTab(message.tabID)
+      const snapshot = await callPage(tab.id, "snapshot", [message.depth ?? 8])
+      send({
+        type: "snapshot.result",
+        requestID,
+        snapshot,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "evaluate") {
+      const tab = await requireTab(message.tabID)
+      const value = await callPage(tab.id, "evaluate", [
+        message.script,
+        message.ref ? normalizeRef(message.ref) : null,
+        message.allowDestructive === true,
+      ])
+      send({
+        type: "evaluate.result",
+        requestID,
+        value,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "click") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "click", [
+        normalizeRef(message.ref),
+        message.button ?? "left",
+        message.count ?? 1,
+        message.allowDestructive === true,
+      ])
+      send({ type: "click.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "fill") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "fill", [normalizeRef(message.ref), message.text])
+      send({ type: "fill.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "press") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "press", [message.key])
+      send({ type: "press.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "scroll") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "scroll", [message.deltaX ?? 0, message.deltaY])
+      send({ type: "scroll.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "screenshot") {
+      const tab = await requireTab(message.tabID)
+      const errors = []
+      let screenshot
+
+      // Visible-tab first: fast when `<all_urls>`/`activeTab` are present. CDP can hang on heavy pages.
+      try {
+        await chrome.tabs.update(tab.id, { active: true })
+        if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true })
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        const dataUrl = await Promise.race([
+          chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("captureVisibleTab_timeout")), 8_000)),
+        ])
+        const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl)
+        if (!match) throw new Error("Screenshot capture failed")
+        screenshot = { mime: match[1], dataBase64: match[2] }
+      } catch (error) {
+        errors.push(String(error?.message || error))
+      }
+
+      if (!screenshot) {
+        try {
+          screenshot = await captureScreenshot(tab.id)
+        } catch (error) {
+          errors.push(String(error?.message || error))
+        }
+      }
+
+      if (!screenshot) throw new Error(`Screenshot failed: ${errors.join("; ")}`)
+
+      send({
+        type: "screenshot.result",
+        requestID,
+        screenshot,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "console") {
+      const tab = await requireTab(message.tabID)
+      const result = await readConsole(tab.id, { level: message.level, limit: message.limit })
+      send({
+        type: "console.result",
+        requestID,
+        ...result,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "network.list") {
+      const tab = await requireTab(message.tabID)
+      const result = await listNetwork(tab.id, {
+        urlContains: message.urlContains,
+        resourceType: message.resourceType,
+        limit: message.limit,
+      })
+      send({
+        type: "network.list.result",
+        requestID,
+        ...result,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "network.get") {
+      const tab = await requireTab(message.tabID)
+      const result = await getNetwork(tab.id, {
+        id: message.id,
+        includeBody: message.includeBody,
+        maxBodyChars: message.maxBodyChars,
+      })
+      send({
+        type: "network.get.result",
+        requestID,
+        ...result,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+    }
+  } catch (error) {
+    fail(requestID, error)
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (ownedTabs.has(tabId)) untrackTab(tabId)
+})
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== "sicode-bridge-reconnect") return
+  void ensureConnected()
+})
+
+/**
+ * Push a page into SiCode Composer (popup / context menu).
+ * @param {{ id?: number; url?: string; title?: string; active?: boolean; windowId?: number }} tab
+ * @param {{ url?: string; title?: string }} [override]
+ */
+async function offerTab(tab, override = {}) {
+  const status = await ensureConnected()
+  if (status !== "connected") {
+    return { ok: false, message: "not_connected" }
+  }
+
+  const url = (override.url || tab?.url || "").trim()
+  if (!isScriptableUrl(url)) {
+    return { ok: false, message: "bad_url" }
+  }
+
+  if (typeof tab?.id === "number") trackTab(tab.id)
+
+  const payload =
+    typeof tab?.id === "number"
+      ? {
+          ...toBridgeTab(tab),
+          url,
+          title: (override.title || tab.title || url).slice(0, 512),
+        }
+      : {
+          id: "chrome_tab_0",
+          chromeTabId: 0,
+          url,
+          title: (override.title || url).slice(0, 512),
+          active: true,
+          windowId: 0,
+        }
+
+  send({ type: "offer.tab", tab: payload })
+  return { ok: true, url: payload.url, title: payload.title }
+}
+
+async function offerActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  return offerTab(tab ?? {})
+}
+
+/**
+ * Normalize picker result: array of elements, or legacy single object.
+ * @param {unknown} raw
+ * @returns {Array<{ selector: string; label: string; role?: string; name?: string; text?: string }>}
+ */
+function normalizePickedElements(raw) {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : []
+  /** @type {Array<{ selector: string; label: string; role?: string; name?: string; text?: string }>} */
+  const out = []
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue
+    const selector = typeof item.selector === "string" ? item.selector.trim() : ""
+    const label = typeof item.label === "string" ? item.label.trim() : ""
+    if (!selector || !label) continue
+    out.push({
+      selector: selector.slice(0, 2_048),
+      label: label.slice(0, 512),
+      ...(typeof item.role === "string" ? { role: item.role.slice(0, 128) } : {}),
+      ...(typeof item.name === "string" ? { name: item.name.slice(0, 512) } : {}),
+      ...(typeof item.text === "string" ? { text: item.text.slice(0, 512) } : {}),
+    })
+    if (out.length >= 40) break
+  }
+  return out
+}
+
+/**
+ * Inject the page picker, wait for click / drag-box (or Esc), then push offer.element.
+ * @param {{ id?: number; url?: string; title?: string; active?: boolean; windowId?: number }} [tab]
+ */
+async function offerElementFromTab(tab) {
+  const status = await ensureConnected()
+  if (status !== "connected") {
+    return { ok: false, message: "not_connected" }
+  }
+
+  const resolved =
+    tab && typeof tab.id === "number"
+      ? tab
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0] ?? {}
+  const url = (resolved.url || "").trim()
+  if (!isScriptableUrl(url) || typeof resolved.id !== "number") {
+    return { ok: false, message: "bad_url" }
+  }
+
+  trackTab(resolved.id)
+
+  try {
+    await chrome.tabs.update(resolved.id, { active: true })
+    if (typeof resolved.windowId === "number") {
+      await chrome.windows.update(resolved.windowId, { focused: true })
+    }
+  } catch {
+    // Best-effort focus before picking.
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: resolved.id },
+      files: ["pick-element.js"],
+    })
+  } catch {
+    return { ok: false, message: "inject_failed" }
+  }
+
+  let results
+  try {
+    results = await chrome.scripting.executeScript({
+      target: { tabId: resolved.id },
+      func: () => globalThis.__sicodePickElement?.(),
+    })
+  } catch {
+    return { ok: false, message: "pick_failed" }
+  }
+
+  const elements = normalizePickedElements(results?.[0]?.result)
+  if (!elements.length) {
+    return { ok: false, message: "cancelled" }
+  }
+
+  const payload = {
+    ...toBridgeTab(resolved),
+    url,
+    title: (resolved.title || url).slice(0, 512),
+  }
+
+  send({
+    type: "offer.element",
+    tab: payload,
+    // First element kept for older hosts; `elements` is the full multi-select set.
+    element: elements[0],
+    elements,
+  })
+
+  const label =
+    elements.length > 1 ? `${elements[0].label} +${elements.length - 1}` : elements[0].label
+  return { ok: true, url: payload.url, title: payload.title, label, count: elements.length }
+}
+
+async function offerActiveElement() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  return offerElementFromTab(tab ?? {})
+}
+
+const LOGIN_DUMP_COOKIE_MAX = 100
+const LOGIN_DUMP_STORAGE_MAX = 100
+
+/**
+ * Format cookies + localStorage into the paste dump expected by in-app「导入会话」.
+ * @param {string} url
+ * @param {Array<{ name: string; value: string }>} cookies
+ * @param {Array<{ key: string; value: string }>} storage
+ */
+function formatLoginStateDump(url, cookies, storage) {
+  const lines = [`网址：${url}`]
+  if (cookies.length > 0) {
+    lines.push("cookie：")
+    for (const cookie of cookies) lines.push(`${cookie.name}=${cookie.value}`)
+  }
+  if (storage.length > 0) {
+    lines.push("Token：")
+    for (const entry of storage) lines.push(`${entry.key}=${entry.value}（localStorage）`)
+  }
+  return lines.join("\n")
+}
+
+/**
+ * Read cookies (incl. HttpOnly) + page localStorage for the active/scriptable tab.
+ * Does not require bridge connection — dump is for pasting into the in-app browser import dialog.
+ * @param {{ id?: number; url?: string }} [tab]
+ */
+async function dumpLoginState(tab) {
+  const resolved =
+    tab && typeof tab.id === "number"
+      ? tab
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0] ?? {}
+  const url = (resolved.url || "").trim()
+  if (!isScriptableUrl(url) || url.startsWith("file://")) {
+    return { ok: false, message: "bad_url" }
+  }
+  if (typeof resolved.id !== "number") {
+    return { ok: false, message: "no_tab" }
+  }
+
+  /** @type {Array<{ name: string; value: string }>} */
+  let cookies = []
+  try {
+    const raw = await chrome.cookies.getAll({ url })
+    cookies = raw
+      .slice(0, LOGIN_DUMP_COOKIE_MAX)
+      .map((cookie) => ({ name: cookie.name, value: cookie.value }))
+  } catch {
+    return { ok: false, message: "cookies_failed" }
+  }
+
+  /** @type {Array<{ key: string; value: string }>} */
+  let storage = []
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: resolved.id },
+      func: () => {
+        /** @type {Array<{ key: string; value: string }>} */
+        const rows = []
+        for (let index = 0; index < localStorage.length; index++) {
+          const key = localStorage.key(index)
+          if (key == null) continue
+          rows.push({ key, value: localStorage.getItem(key) ?? "" })
+        }
+        return rows
+      },
+    })
+    const first = results?.[0]?.result
+    if (Array.isArray(first)) {
+      storage = first
+        .filter(
+          (row) =>
+            row &&
+            typeof row === "object" &&
+            typeof row.key === "string" &&
+            typeof row.value === "string",
+        )
+        .slice(0, LOGIN_DUMP_STORAGE_MAX)
+    }
+  } catch {
+    // Restricted pages may block storage access; cookies alone are still useful.
+  }
+
+  if (cookies.length === 0 && storage.length === 0) {
+    return { ok: false, message: "empty" }
+  }
+
+  return {
+    ok: true,
+    text: formatLoginStateDump(url, cookies, storage),
+    url,
+    cookies: cookies.length,
+    storage: storage.length,
+  }
+}
+
+/**
+ * Write dump text to the clipboard from the page context (works from SW / context menu).
+ * @param {number} tabId
+ * @param {string} text
+ */
+async function copyTextInTab(tabId, text) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    args: [text],
+    func: async (value) => {
+      try {
+        await navigator.clipboard.writeText(value)
+        return true
+      } catch {
+        const area = document.createElement("textarea")
+        area.value = value
+        area.style.position = "fixed"
+        area.style.left = "-9999px"
+        document.body.appendChild(area)
+        area.select()
+        const ok = document.execCommand("copy")
+        area.remove()
+        return ok
+      }
+    },
+  })
+  return results?.[0]?.result === true
+}
+
+async function copyLoginStateForTab(tab) {
+  const dump = await dumpLoginState(tab)
+  if (!dump.ok) return dump
+
+  const tabId =
+    typeof tab?.id === "number"
+      ? tab.id
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id
+  if (typeof tabId !== "number") return { ...dump, copied: false }
+
+  try {
+    const copied = await copyTextInTab(tabId, dump.text)
+    return { ...dump, copied }
+  } catch {
+    return { ...dump, copied: false }
+  }
+}
+
+function installContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "sicode-send-page",
+      title: chrome.i18n.getMessage("contextSendPage") || "Send page to SiCode",
+      contexts: ["page", "frame", "selection", "editable", "image", "video", "audio"],
+    })
+    chrome.contextMenus.create({
+      id: "sicode-send-element",
+      title: chrome.i18n.getMessage("contextSendElement") || "Pick element for SiCode",
+      contexts: ["page", "frame", "selection", "editable", "image", "video", "audio"],
+    })
+    chrome.contextMenus.create({
+      id: "sicode-send-link",
+      title: chrome.i18n.getMessage("contextSendLink") || "Send link to SiCode",
+      contexts: ["link"],
+    })
+    chrome.contextMenus.create({
+      id: "sicode-copy-login",
+      title: chrome.i18n.getMessage("contextCopyLogin") || "Copy login state for SiCode",
+      contexts: ["page", "frame"],
+    })
+  })
+}
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  void (async () => {
+    if (info.menuItemId === "sicode-send-link" && info.linkUrl) {
+      await offerTab(tab ?? {}, { url: info.linkUrl, title: info.linkUrl })
+      return
+    }
+    if (info.menuItemId === "sicode-send-page") {
+      await offerTab(tab ?? {}, { url: info.pageUrl || tab?.url })
+      return
+    }
+    if (info.menuItemId === "sicode-send-element") {
+      await offerElementFromTab(tab ?? {})
+      return
+    }
+    if (info.menuItemId === "sicode-copy-login") {
+      await copyLoginStateForTab(tab ?? {})
+    }
+  })()
+})
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || typeof message.type !== "string") return
+
+  if (message.type === "sicode.status") {
+    void (async () => {
+      const status = await ensureConnected()
+      const stored = await chrome.storage.local.get([
+        "updateRequired",
+        "expectedPackageVersion",
+        "installedPackageVersion",
+        "channel",
+      ])
+      sendResponse({
+        status,
+        live: liveSocket(),
+        channel: typeof stored.channel === "string" ? stored.channel : "",
+        updateRequired: stored.updateRequired === true,
+        expectedPackageVersion: typeof stored.expectedPackageVersion === "string" ? stored.expectedPackageVersion : "",
+        installedPackageVersion:
+          typeof stored.installedPackageVersion === "string"
+            ? stored.installedPackageVersion
+            : chrome.runtime.getManifest().version,
+      })
+    })()
+    return true
+  }
+
+  if (message.type === "sicode.offerTab") {
+    void (async () => {
+      sendResponse(await offerActiveTab())
+    })()
+    return true
+  }
+
+  if (message.type === "sicode.offerElement") {
+    void (async () => {
+      sendResponse(await offerActiveElement())
+    })()
+    return true
+  }
+
+  if (message.type === "sicode.copyLoginState") {
+    void (async () => {
+      // Popup writes the clipboard; SW only gathers the dump (no bridge required).
+      sendResponse(await dumpLoginState())
+    })()
+    return true
+  }
+})
+
+chrome.runtime.onInstalled.addListener(() => {
+  installContextMenus()
+  void ensureConnected()
+})
+
+chrome.runtime.onStartup.addListener(() => {
+  void ensureConnected()
+})
+
+installContextMenus()
+void chrome.alarms.create("sicode-bridge-reconnect", { delayInMinutes: 0.5, periodInMinutes: 1 })
+void ensureConnected()

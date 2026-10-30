@@ -1,0 +1,23 @@
+{
+  "extName": {
+    "message": "SiCode 浏览器桥接"
+  },
+  "extDescription": {
+    "message": "连接 SiCode，操作系统浏览器。"
+  },
+  "extActionTitle": {
+    "message": "SiCode 浏览器桥接"
+  },
+  "contextSendPage": {
+    "message": "推送到 SiCode 对话"
+  },
+  "contextSendElement": {
+    "message": "选元素推送到 SiCode"
+  },
+  "contextSendLink": {
+    "message": "推送链接到 SiCode"
+  },
+  "contextCopyLogin": {
+    "message": "复制登录态（导入内置浏览器）"
+  }
+}

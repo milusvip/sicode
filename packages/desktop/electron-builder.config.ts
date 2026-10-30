@@ -128,6 +128,24 @@ const getBase = (appId: string): Configuration => {
         to: "",
         filter: ["opencode-cli", "opencode-cli.exe", "opencode-cli.version"],
       },
+      {
+        // SiCode: built-in Chromium MV3 bridge + packed .crx (open in browser to trigger the add dialog).
+        from: "../chrome-extension",
+        to: "chrome-extension",
+        filter: [
+          "manifest.json",
+          "background.js",
+          "debugger-buffer.js",
+          "page.js",
+          "pick-element.js",
+          "popup.html",
+          "popup.js",
+          "protocol.js",
+          "SiCode-Browser-Bridge.crx",
+          "icons/**/*",
+          "_locales/**/*",
+        ],
+      },
     ],
     afterPack: async (context) => {
       const arch = Arch[context.arch]

@@ -1,0 +1,23 @@
+{
+  "extName": {
+    "message": "SiCode Browser Bridge"
+  },
+  "extDescription": {
+    "message": "Connect SiCode to this browser."
+  },
+  "extActionTitle": {
+    "message": "SiCode Browser Bridge"
+  },
+  "contextSendPage": {
+    "message": "Send page to SiCode"
+  },
+  "contextSendElement": {
+    "message": "Pick element for SiCode"
+  },
+  "contextSendLink": {
+    "message": "Send link to SiCode"
+  },
+  "contextCopyLogin": {
+    "message": "Copy login state (for in-app browser)"
+  }
+}
