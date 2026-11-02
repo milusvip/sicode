@@ -13,7 +13,7 @@
     gap: 6px;
     border-radius: 6px;
     font-style: normal;
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     font-size: 13px;
     line-height: 20px;
     color: var(--v2-text-text-base);
@@ -248,7 +248,7 @@
   [data-component="button-v2"][data-variant="ghost-muted"] {
     background-color: transparent;
     color: var(--v2-text-text-muted);
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
   }
 
   [data-component="button-v2"][data-variant="ghost-muted"] [data-slot="icon-svg"] {

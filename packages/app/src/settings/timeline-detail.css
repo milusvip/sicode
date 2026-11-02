@@ -140,7 +140,7 @@
     align-self: flex-start;
     gap: 6px;
     font-size: inherit;
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-height-compact);
     letter-spacing: inherit;
     color: var(--v2-text-text-base);

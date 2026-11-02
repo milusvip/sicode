@@ -172,7 +172,7 @@ function SessionQueueRow(props: { queue: SessionQueueView; id: string; index: nu
                   variant="ghost-muted"
                   icon="arrow-up"
                   disabled={props.queue.busy()}
-                  class="![font-weight:530]"
+                  class="![font-weight:var(--font-weight-medium)]"
                   onClick={() => void props.queue.steer(props.id)}
                 >
                   {props.queue.working() ? language.t("session.queue.steer") : language.t("session.queue.send")}

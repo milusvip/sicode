@@ -31,7 +31,7 @@
   h1 {
     font-size: 20px;
     line-height: 28px;
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     margin-block-end: 8px;
   }
 
@@ -56,7 +56,7 @@
   label {
     font-size: 13px;
     line-height: var(--line-height-compact);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
   }
 
   [data-component="text-input-v2"] {

@@ -48,7 +48,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
   color: var(--v2-text-text-base);

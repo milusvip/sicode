@@ -23,7 +23,7 @@ Values shared by `packages/ui`, `packages/session-ui`, and `packages/app`. Each 
 
 Earlier the regular token was `460`. That only worked because variable installs interpolate; a truly static family jumps to 500 (for a target between 400 and 500 the browser searches upward before going below), so the same token produced different weights per machine. Verify a machine's row by its font file, not its registry entries — Windows lists named instances of one variable file as separate `Noto Sans SC` / `Medium` / `Bold` entries, which reads like three static weights.
 
-`--font-weight-regular` only governs declarations that reference the token. The upstream CSS also hardcodes `440` (secondary text) and `530` (titles, labels) in a few hundred places; those are upstream values and were left alone, and they remain distinct from 400 on a variable install. Weight steps below about one hundred units do not survive a family that only ships 400/700: separate hierarchy with 400 against 700, or with size and color.
+Every weight in the CSS goes through a token. The old literals (`440` secondary text, `530` titles and labels, plus a tail of `520`-`640`) were collapsed onto the three tokens: `400`/`440` became `regular`, `500`-`560` became `medium`, and `600`-`670` became `bold`. That is the only mapping that matches what Windows actually rendered — the `520`-`640` half-steps all resolved upward to 700, so labels meant to sit a hair above body copy were shipping as full bold. Weight steps below about one hundred units do not survive a family that only ships 400/700: separate hierarchy with 400 against 700, or with size and color.
 
 ## Type scale
 
@@ -81,4 +81,4 @@ Recorded so nobody copies the leftovers as precedent.
 - `font-size` still appears as a literal in roughly 75 places across 10 distinct values. `12.5px`, `11.5px`, and `10.5px` are hand-tuning residue and should collapse into the scale.
 - `13px` and `11px` are the two most common literal sizes and have no token. 13px is legitimate — it has its own line-height rule in all three packages — the gap is that it was never tokenized.
 - `--radius-*` is referenced about 20 times against ~100 literals; the ladder exists but is not the default path yet.
-- `--font-weight-regular: 460` predates the switch to a system font stack and no longer earns its keep on Windows. `--font-weight-bold: 600` was chosen for the static MiSans cuts (400/500/600) and went back to `670` with the system stack.
+- `--font-weight-bold: 600` was chosen for the static MiSans cuts (400/500/600) and went back to `670` with the system stack; the half-step literals that outlived it are gone.

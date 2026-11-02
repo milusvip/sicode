@@ -14,7 +14,7 @@
   [data-slot="basic-tool-tool-title"] {
     font-family: var(--v2-font-family-sans);
     font-size: var(--font-size-small);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
     color: var(--v2-text-text-base);

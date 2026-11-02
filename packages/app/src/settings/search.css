@@ -136,7 +136,7 @@
   padding: 16px 6px 4px;
   padding-inline-start: 8px;
   overflow-wrap: anywhere;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-search-category:first-child {
@@ -147,7 +147,7 @@
   padding: 8px 6px 4px;
   padding-inline-start: 8px;
   overflow-wrap: anywhere;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
 }
 
 .settings-search-result,
@@ -185,7 +185,7 @@
 .settings-search-empty,
 .settings-search-empty-measure {
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
 }

@@ -94,7 +94,7 @@
     background: transparent;
     outline: none;
     font-style: normal;
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     font-size: 13px;
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;

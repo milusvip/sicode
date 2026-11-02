@@ -197,7 +197,7 @@
   [data-slot="basic-tool-tool-title"] {
     font-family: var(--v2-font-family-sans);
     font-size: var(--font-size-small);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     /* Keep compact text on the shared metric; solid 13px line boxes clip Inter descenders. */
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;
@@ -362,7 +362,7 @@
       height: 20px;
       font-family: var(--v2-font-family-sans, "Inter", sans-serif);
       font-style: normal;
-      font-weight: 530;
+      font-weight: var(--font-weight-medium);
       font-size: var(--font-size-small);
       line-height: 20px;
       letter-spacing: -0.04px;
@@ -415,7 +415,7 @@
   font-variant-numeric: tabular-nums;
   font-size: inherit;
   font-style: normal;
-  font-weight: var(--font-weight-regular, 440);
+  font-weight: var(--font-weight-regular);
   line-height: inherit;
   letter-spacing: var(--letter-spacing-normal);
 

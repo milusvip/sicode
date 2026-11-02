@@ -84,7 +84,7 @@
 
   font-family: var(--v2-font-family-sans);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 
@@ -148,7 +148,7 @@
   color: var(--v2-text-text-faint);
   font-family: var(--v2-font-family-sans);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
 }

@@ -58,7 +58,7 @@
   width: 100%;
   font-size: 13px;
   font-style: normal;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
   color: var(--v2-text-text-base);
@@ -70,7 +70,7 @@
 [data-component="line-comment-v2"][data-variant="display"] [data-slot="line-comment-v2-meta"] {
   font-size: 11px;
   font-style: normal;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-tight);
   letter-spacing: 0.05px;
   color: var(--v2-text-text-faint);
@@ -153,7 +153,7 @@
   background: transparent;
   font-size: 13px;
   font-style: normal;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
   color: var(--v2-text-text-base);
@@ -180,7 +180,7 @@
   min-width: 0;
   font-size: 11px;
   font-style: normal;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: 1;
   letter-spacing: 0.05px;
   color: var(--v2-text-text-faint);

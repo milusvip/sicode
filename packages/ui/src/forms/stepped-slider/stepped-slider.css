@@ -48,7 +48,7 @@
 
   [data-slot="stepped-slider-value"] {
     color: var(--v2-text-text-base);
-    font-weight: 520;
+    font-weight: var(--font-weight-medium);
     text-transform: capitalize;
   }
 }
@@ -89,7 +89,7 @@
     min-width: 2em;
     font-size: 12px;
     line-height: var(--line-height-compact);
-    font-weight: 560;
+    font-weight: var(--font-weight-medium);
     letter-spacing: 0.2px;
     text-align: right;
     text-transform: capitalize;
@@ -245,7 +245,7 @@
 
       &[data-active] {
         color: var(--v2-text-text-base);
-        font-weight: 520;
+        font-weight: var(--font-weight-medium);
       }
     }
   }

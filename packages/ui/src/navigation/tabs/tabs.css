@@ -304,7 +304,7 @@
       /* SiCode: was hardcoded to `Inter, sans-serif`, which opted this label out of the unified UI face. */
       font-family: var(--font-family-sans);
       font-style: normal;
-      font-weight: 440;
+      font-weight: var(--font-weight-regular);
       font-size: 13px;
       line-height: 16px;
       letter-spacing: -0.04px;
@@ -557,7 +557,7 @@
     /* SiCode: was hardcoded to `Inter, sans-serif`, which opted tab labels out of the unified UI face. */
     font-family: var(--font-family-sans);
     font-style: normal;
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     font-size: 13px;
     line-height: 16px;
     letter-spacing: -0.04px;

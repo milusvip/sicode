@@ -20,7 +20,7 @@
   border-radius: 4px;
 
   font-style: normal;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   font-size: 11px;
   line-height: 12px;
   letter-spacing: 0.05px;

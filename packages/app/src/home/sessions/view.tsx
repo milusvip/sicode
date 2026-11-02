@@ -27,7 +27,7 @@ import {
 
 const SHOW_HOME_SESSION_ARCHIVE = false
 
-const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"
+const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:var(--font-weight-regular)]"
 
 const HOME_SESSION_SEARCH_RESULTS_ID = "home-session-search-results"
 
@@ -237,7 +237,7 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
               variant="ghost-muted"
               size="normal"
               icon="check"
-              class="pointer-events-auto h-7 px-2 [font-weight:530]"
+              class="pointer-events-auto h-7 px-2 [font-weight:var(--font-weight-medium)]"
               onClick={enterSelection}
             >
               {props.language.t("home.sessions.select")}
@@ -248,7 +248,7 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
                 variant="ghost-muted"
                 size="normal"
                 icon="edit"
-                class="pointer-events-auto h-7 px-2 [font-weight:530]"
+                class="pointer-events-auto h-7 px-2 [font-weight:var(--font-weight-medium)]"
                 onClick={props.onCreateSession}
               >
                 {props.language.t("command.session.new")}
@@ -356,7 +356,7 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
               aria-live="polite"
               class={`
                 me-1.5 ms-2 shrink-0 text-[13px] leading-text-compact tabular-nums
-                text-v2-text-text-base [font-weight:530]
+                text-v2-text-text-base [font-weight:var(--font-weight-medium)]
               `}
             >
               {props.language.plural("home.sessions.select.count", selection.ids.length)}
@@ -470,7 +470,7 @@ function HomeSessionSearch(
                 <Show
                   when={!props.searchLoading}
                   fallback={
-                    <div class="flex items-center justify-center px-4 py-3 text-v2-text-text-muted [font-weight:440]">
+                    <div class="flex items-center justify-center px-4 py-3 text-v2-text-text-muted [font-weight:var(--font-weight-regular)]">
                       <Spinner class="size-4" />
                     </div>
                   }
@@ -481,7 +481,7 @@ function HomeSessionSearch(
                       <p
                         class={`
                           my-1.5 px-4 pb-2 text-[13px] leading-4 tracking-[-0.04px]
-                          text-v2-text-text-muted [font-weight:440]
+                          text-v2-text-text-muted [font-weight:var(--font-weight-regular)]
                         `}
                       >
                         {props.searchNoResultsLabel}
@@ -492,7 +492,7 @@ function HomeSessionSearch(
                       <p
                         class={`
                           my-1.5 pl-[18px] pr-6 text-[13px] leading-4 tracking-[-0.04px]
-                          text-v2-text-text-muted [font-weight:440]
+                          text-v2-text-text-muted [font-weight:var(--font-weight-regular)]
                         `}
                       >
                         {props.language.t("home.sessions.search.sessions")}
@@ -529,7 +529,7 @@ function HomeSessionSearch(
             ref={props.onSetSearchInput}
             class={`
               relative z-20 min-w-0 flex-1 border-0 bg-transparent outline-0
-              text-v2-text-text-base [font-weight:440] placeholder:text-v2-text-text-faint
+              text-v2-text-text-base [font-weight:var(--font-weight-regular)] placeholder:text-v2-text-text-faint
             `}
             value={props.searchValue}
             placeholder={props.searchPlaceholder}
@@ -837,7 +837,7 @@ function HomeSessionRow(
                 disabled={editor()?.renaming ?? false}
                 class={`
                 block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base
-                [font-weight:530] field-sizing-content outline-none focus:outline-none focus-visible:outline-none
+                [font-weight:var(--font-weight-medium)] field-sizing-content outline-none focus:outline-none focus-visible:outline-none
                  ${showProjectName() ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}
               `}
                 style={{ "--inline-input-shadow": "none", "text-align": "start" }}
@@ -883,7 +883,7 @@ function HomeSessionRow(
           aria-pressed={props.selection.active ? selected() : undefined}
           class={`
             flex h-10 min-w-0 w-full flex-1 shrink-0 cursor-default items-center rounded-[6px] border-0
-            bg-transparent py-3 ps-1.5 pe-3 md:ps-3 md:pe-10 text-start text-v2-text-text-muted [font-weight:530]
+            bg-transparent py-3 ps-1.5 pe-3 md:ps-3 md:pe-10 text-start text-v2-text-text-muted [font-weight:var(--font-weight-medium)]
             transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out
             hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none
           `}
@@ -1088,7 +1088,7 @@ function HomeSessionTitle(props: { title: string; showProjectName: boolean; sear
     <span
       data-component="home-session-title"
       dir="auto"
-      class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530]"
+      class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:var(--font-weight-medium)]"
       classList={{
         "text-[13px] leading-4 tracking-[-0.04px]": !!props.search,
         "max-w-[min(70%,480px)] flex-[0_1_auto]": props.showProjectName,
@@ -1121,12 +1121,12 @@ function HomeSessionLocation(props: {
       }}
     >
       <Icon name="outline-worktree" class="shrink-0 text-v2-icon-icon-muted" />
-      <span class="min-w-0 overflow-hidden text-ellipsis [font-weight:440]">{props.location.worktree}</span>
+      <span class="min-w-0 overflow-hidden text-ellipsis [font-weight:var(--font-weight-regular)]">{props.location.worktree}</span>
       <Show when={props.location.branch}>
         {(branch) => (
           <>
             <Icon name="branch" class="shrink-0 text-v2-icon-icon-muted" />
-            <span class="min-w-0 overflow-hidden text-ellipsis [font-weight:440]">{branch()}</span>
+            <span class="min-w-0 overflow-hidden text-ellipsis [font-weight:var(--font-weight-regular)]">{branch()}</span>
           </>
         )}
       </Show>
@@ -1139,7 +1139,7 @@ function HomeSessionProjectName(props: { name: string; search?: boolean; trailin
     <span
       data-component="home-session-project-name"
       dir="auto"
-      class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]"
+      class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:var(--font-weight-regular)]"
       classList={{
         "flex-[0_1_auto]": !!props.trailing,
         "flex-[1_1_auto]": !props.trailing,
@@ -1157,7 +1157,7 @@ function HomeSessionsEmpty(props: { onNewSession?: () => void; language: ReturnT
       <div
         class={`
           shrink-0 text-[13px] leading-text-compact tracking-[-0.04px]
-          text-v2-text-text-base [font-weight:530]
+          text-v2-text-text-base [font-weight:var(--font-weight-medium)]
         `}
       >
         {props.language.t("home.sessions.empty")}
@@ -1165,7 +1165,7 @@ function HomeSessionsEmpty(props: { onNewSession?: () => void; language: ReturnT
       <p
         class={`
           mb-1 text-center text-[13px] leading-5 tracking-[-0.04px]
-          text-v2-text-text-muted [font-weight:440]
+          text-v2-text-text-muted [font-weight:var(--font-weight-regular)]
         `}
       >
         {props.language.t("home.sessions.empty.description")}

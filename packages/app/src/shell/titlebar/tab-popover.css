@@ -53,7 +53,7 @@
   }
 
   [data-slot="project"] {
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     font-size: 13px;
     line-height: 1.5;
     letter-spacing: -0.04px;
@@ -61,7 +61,7 @@
   }
 
   [data-slot="title"] {
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     font-size: 13px;
     line-height: 1.5;
     letter-spacing: -0.04px;
@@ -80,7 +80,7 @@
     min-width: 0;
     /* Wrap the full path onto the next line instead of clipping the end. */
     overflow-wrap: anywhere;
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     font-size: 13px;
     line-height: 1.5;
     letter-spacing: -0.04px;
@@ -88,7 +88,7 @@
   }
 
   [data-slot="server"] {
-    font-weight: 440;
+    font-weight: var(--font-weight-regular);
     font-size: 13px;
     line-height: var(--line-height-compact);
     letter-spacing: -0.04px;

@@ -58,7 +58,7 @@
   user-select: none;
   -webkit-user-select: none;
   font-style: normal;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   font-size: 13px;
   line-height: 100%;
   letter-spacing: -0.04px;

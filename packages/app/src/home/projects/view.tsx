@@ -189,7 +189,7 @@ function HomeProjectsPanel(props: HomeProjectsViewProps) {
     >
       <Show when={!props.dropdown}>
         <div class="flex h-7 min-w-0 shrink-0 items-center justify-between pl-1.5 pr-3">
-          <div class="text-v2-text-text-muted [font-weight:530]">{props.language.t("home.projects")}</div>
+          <div class="text-v2-text-text-muted [font-weight:var(--font-weight-medium)]">{props.language.t("home.projects")}</div>
           <Show when={props.servers.length === 1 && !(props.projects.length === 0 && props.recentlyClosed.length > 0)}>
             <Tooltip placement="bottom" value={props.language.t("home.project.add")}>
               <IconButton
@@ -602,7 +602,7 @@ function HomeProjectEmpty(
       </HomeProjectNavButton>
       <Show when={props.items.length > 0}>
         <div class="mt-3 flex h-7 min-w-0 shrink-0 items-center pl-1.5 pr-3">
-          <div class="text-v2-text-text-faint [font-weight:530]">{props.language.t("home.recentlyClosed")}</div>
+          <div class="text-v2-text-text-faint [font-weight:var(--font-weight-medium)]">{props.language.t("home.recentlyClosed")}</div>
         </div>
         <For each={props.items}>
           {(project) => <HomeRecentlyClosedRow {...props} project={project} server={props.server} />}
@@ -819,7 +819,7 @@ function HomeProjectNavButton(props: JSX.ButtonHTMLAttributes<HTMLButtonElement>
       {...rest}
       class={`
         flex h-7 min-w-0 w-full shrink-0 cursor-default items-center gap-2 rounded-[6px] bg-transparent px-1.5 text-left
-        text-v2-text-text-muted [font-weight:440] transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out
+        text-v2-text-text-muted [font-weight:var(--font-weight-regular)] transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out
         hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base
         data-[selected]:bg-v2-background-bg-layer-03 data-[selected]:text-v2-text-text-base
         data-[selected]:hover:bg-v2-background-bg-layer-03

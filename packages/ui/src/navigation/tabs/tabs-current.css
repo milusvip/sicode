@@ -54,7 +54,7 @@
   user-select: none;
 
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
 }
@@ -196,7 +196,7 @@
   padding-inline-start: 4px;
   color: var(--v2-text-text-muted);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   user-select: none;
 }
 

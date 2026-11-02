@@ -79,7 +79,7 @@
 
   [data-slot="question-text"] {
     font-size: var(--font-size-small);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-height-base);
     color: var(--v2-text-text-base);
     overflow-wrap: anywhere;
@@ -285,7 +285,7 @@
   [data-slot="option-label"] {
     font-family: var(--v2-font-family-sans);
     font-size: var(--font-size-small);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-height-base);
     color: var(--v2-text-text-base);
     overflow-wrap: anywhere;
@@ -311,7 +311,7 @@
     padding-inline: 12px;
 
     &:not([data-editing="true"]) [data-slot="text-input-v2-input"] {
-      font-weight: 530;
+      font-weight: var(--font-weight-medium);
     }
 
     &[data-editing="true"] .question-custom-field[data-component="text-input-v2"] {

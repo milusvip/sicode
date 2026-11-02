@@ -42,7 +42,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--v2-text-text-base);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
   }
 
   [data-slot="upload-row-percent"] {

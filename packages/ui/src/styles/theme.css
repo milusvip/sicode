@@ -27,11 +27,12 @@
   --font-size-base: 15px;
   --font-size-large: 16px;
   --font-size-x-large: 20px;
-  /* SiCode: 460 — the regular weight the workbuddy alignment pass (32fe8f6869) shipped with this
-     type scale, restored with the stack. Microsoft YaHei ships only 400/700, so on Windows
-     Chromium this snaps to 400 and body copy reads the same either way; it only diverges on a
-     face with an intermediate cut (a variable font, or PingFang's Medium). */
-  --font-weight-regular: 460;
+  /* SiCode: 400 — the face's own default, not a tuned number. Microsoft YaHei ships only 400/700,
+     and CSS searches upward once the request is over 500, so the 520-640 range this repo used to
+     spell out by hand all rendered as full bold on Windows. Body and secondary text are the same
+     400 now; hierarchy comes from size and color, and 700 is reserved for markdown headings and
+     tab titles where a real step is wanted. */
+  --font-weight-regular: 400;
   --font-weight-medium: 500;
   /* SiCode: 670 — the softened bold from the original design pass. Microsoft YaHei ships only
      400/700, so on Windows this snaps up to 700 and bold CJK reads heavier there than on mac. */

@@ -51,7 +51,7 @@
 
 [data-slot="artifact-drawer-label"] {
   color: var(--v2-text-text-muted, #a8a8a3);
-  font-weight: var(--font-weight-medium, 500);
+  font-weight: var(--font-weight-medium);
 }
 
 [data-slot="artifact-drawer-path"] {
