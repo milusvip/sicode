@@ -54,6 +54,12 @@ export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.No
 const EXITED_LIMIT = 25
 export const RETENTION = Duration.days(7)
 export const DIRECTORY = "shell"
+// SiCode: the bounded tail a finished shell returns to the model. The shared tool-output cap is
+// sized to keep a payload from overflowing, not to keep it from costing more than it earns: 16% of
+// recorded shell calls returned over 2 KB and carried 76% of the tool's real cost, because every
+// later step of the session reads them back. 8 KiB still holds a build log or both ends of a stack
+// trace, and every byte stays in the capture file named in the truncation notice.
+export const MAX_CAPTURE_BYTES = 8 * 1024
 
 type Info = Shell.Info
 type CreateInput = Shell.CreateInput & {
@@ -283,7 +289,7 @@ const layer = () =>
         const capture = yield* Effect.gen(function* () {
           const limits = Config.latest(yield* config.entries(), "tool_output")
           const maxLines = limits?.max_lines ?? ToolOutput.MAX_LINES
-          const maxBytes = limits?.max_bytes ?? ToolOutput.MAX_BYTES
+          const maxBytes = limits?.max_bytes ?? MAX_CAPTURE_BYTES
           const latest = yield* output(info.id, { cursor: Number.MAX_SAFE_INTEGER })
           const page = yield* output(info.id, { cursor: Math.max(0, latest.size - maxBytes), limit: maxBytes })
           const lines = page.output.split("\n")
