@@ -47,7 +47,11 @@ type Frame = {
 
 type Chunk = string | { raw: string }
 
-export const MAX_MARKDOWN_BYTES = 5 * 1024 * 1024
+// SiCode: was 5 MiB, which bounded nothing. The tool-output layer already stops the model at 24 KiB,
+// so a multi-megabyte page was downloaded, parsed and converted in full before being thrown away.
+// 256 KiB is far past any page whose text still fits that cap; the margin below it stays for the
+// markup that the conversion drops.
+export const MAX_MARKDOWN_BYTES = 256 * 1024
 const CONTENT_BYTES = MAX_MARKDOWN_BYTES - 64 * 1024
 
 export function convertHTMLToMarkdown(html: string) {
