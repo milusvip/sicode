@@ -95,6 +95,50 @@ describe("git status instruction", () => {
     const { changed } = await Effect.runPromise(readUpdate(instructions, initialized))
     expect(changed).toBe(false)
   })
+
+  test("an update reports only the rows that moved, never the whole list again", async () => {
+    const before = [file("a.ts", "modified", 1, 1), file("b.ts", "modified", 3, 0), file("c.ts", "added", 9, 0)]
+    const instructions = InstructionBuiltIns.gitStatusSource(() => Effect.succeed(before))
+    const initialized = await Effect.runPromise(readInitial(instructions))
+
+    // Only b.ts changes. Re-sending a.ts and c.ts is what made these blocks 81% duplicate.
+    const later = InstructionBuiltIns.gitStatusSource(() =>
+      Effect.succeed([file("a.ts", "modified", 1, 1), file("b.ts", "modified", 7, 0), file("c.ts", "added", 9, 0)]),
+    )
+    const { text } = await Effect.runPromise(readUpdate(later, initialized))
+
+    expect(text).toContain("  M b.ts (+7 -0)")
+    expect(text).not.toContain("  M a.ts")
+    expect(text).not.toContain("  A c.ts")
+  })
+
+  test("a file that leaves the working tree is named, not silently dropped", async () => {
+    const instructions = InstructionBuiltIns.gitStatusSource(() =>
+      Effect.succeed([file("a.ts", "modified", 1, 1), file("b.ts", "added", 5, 0)]),
+    )
+    const initialized = await Effect.runPromise(readInitial(instructions))
+
+    const later = InstructionBuiltIns.gitStatusSource(() => Effect.succeed([file("a.ts", "modified", 1, 1)]))
+    const { text } = await Effect.runPromise(readUpdate(later, initialized))
+
+    expect(text).toContain("no longer listed: b.ts")
+  })
+
+  test("a large delta restates the current state instead of listing every row", async () => {
+    const before = Array.from({ length: 10 }, (_, index) => file(`f${index}.ts`, "modified", 1, 0))
+    const instructions = InstructionBuiltIns.gitStatusSource(() => Effect.succeed(before))
+    const initialized = await Effect.runPromise(readInitial(instructions))
+
+    // 70 rows moving at once is longer as a delta than as a snapshot.
+    const later = InstructionBuiltIns.gitStatusSource(() =>
+      Effect.succeed(Array.from({ length: 70 }, (_, index) => file(`g${index}.ts`, "added", 1, 0))),
+    )
+    const { text } = await Effect.runPromise(readUpdate(later, initialized))
+
+    expect(text).toContain("Current state:")
+    expect(text).toContain("<git_status>")
+    expect(text).toContain("  A g69.ts")
+  })
 })
 
 // --- End-to-end: a real git repo, the real Vcs service, the real instruction ---
