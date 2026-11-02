@@ -203,6 +203,51 @@ describe("WebSearchTool registration", () => {
     }),
   )
 
+  it.effect("clips a long provider snippet and keeps the URL to fetch the rest", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup
+      yield* fixture.websearch.select(WebSearch.ID.make("exa"))
+      const long = "x".repeat(WebSearchTool.RESULT_CONTENT_CHARS + 500)
+      fixture.results = [{ url: "https://example.com/long", title: "Long", content: long, time: {} }]
+      const registry = fixture.registry
+
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-long", name: "websearch", input: { query: "long" } },
+      })
+
+      expect(result.status).toBe("completed")
+      const text = result.content?.[0]
+      if (!text || text.type !== "text") throw new Error("Expected text content")
+      expect(text.text).toStartWith("## [Long](https://example.com/long)\n\n")
+      expect(text.text).toContain("snippet truncated; webfetch the URL")
+      // The URL stays the recovery path; the structured output still carries the whole snippet.
+      expect(text.text.length).toBeLessThan(long.length)
+      expect(result.output).toMatchObject({ results: [{ content: long }] })
+    }),
+  )
+
+  it.effect("leaves a short provider snippet untouched", () =>
+    Effect.gen(function* () {
+      const fixture = yield* setup
+      yield* fixture.websearch.select(WebSearch.ID.make("exa"))
+      fixture.results = [{ url: "https://example.com", title: "Short", content: "short snippet", time: {} }]
+      const registry = fixture.registry
+
+      expect(
+        yield* executeTool(registry, {
+          sessionID,
+          ...toolIdentity,
+          call: { type: "tool-call", id: "call-short", name: "websearch", input: { query: "short" } },
+        }),
+      ).toMatchObject({
+        status: "completed",
+        content: [{ type: "text", text: "## [Short](https://example.com)\n\nshort snippet" }],
+      })
+    }),
+  )
+
   it.effect("asks once and uses the default provider when web search is first enabled", () =>
     Effect.gen(function* () {
       const fixture = yield* setup

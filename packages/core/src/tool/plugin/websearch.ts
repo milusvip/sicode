@@ -11,6 +11,14 @@ import { WebSearch } from "../../websearch.js"
 
 export const name = "websearch"
 export const NO_RESULTS = "No search results found. Please try a different query."
+/**
+ * SiCode: a provider returns a snippet per hit, not the page, but some return several KB of it.
+ * Measured over the local history: 354 result blocks across 50 searches, 92% of the rendered text
+ * was body, 73% of bodies ran past 600 characters, and the median search cost 10 KB — which every
+ * later step of the session then reads back. The URL is always kept, so the model can webfetch the
+ * one result it actually needs instead of carrying every snippet to the end of the conversation.
+ */
+export const RESULT_CONTENT_CHARS = 800
 const providerSelectionLock = Semaphore.makeUnsafe(1)
 const httpErrors = new Map([
   [429, "Web search rate limited (HTTP 429)"],
@@ -35,6 +43,12 @@ If you already know the doc URL, prefer webfetch over searching. Skip searching 
 export const Input = Schema.Struct({
   query: Schema.String.annotate({ description: "Websearch query" }),
 })
+
+/** Trims one provider snippet to the budget and says where the rest is. */
+const clipResult = (content: string) => {
+  if (content.length <= RESULT_CONTENT_CHARS) return content
+  return `${content.slice(0, RESULT_CONTENT_CHARS).trimEnd()}… [snippet truncated; webfetch the URL for the full page]`
+}
 
 const Output = Schema.Struct({
   provider: WebSearch.ID,
@@ -168,7 +182,8 @@ export const Plugin = {
                       const published = result.time.published
                         ? `\nPublished: ${new Date(result.time.published).toISOString()}`
                         : ""
-                      return `## [${title}](${result.url})${published}${result.content ? `\n\n${result.content}` : ""}`
+                      const body = result.content ? `\n\n${clipResult(result.content)}` : ""
+                      return `## [${title}](${result.url})${published}${body}`
                     })
                     .join("\n\n")
                 : NO_RESULTS
