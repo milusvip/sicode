@@ -73,8 +73,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 侧边栏浏览器
 
-
-
 - UI：`gui-extensions/src/browser/panel.tsx`；地址栏回车按钮 `type="submit"` + `enter` 图标，走同一条 `onSubmit`
 - 粘贴登录：`SiteCookies` → Ipc `BrowserPane.setCookies` → `chromium.ts`；Cookie 在 pane 内存分区，重开即失效
 - 系统浏览器打开、添加到会话在 ⋯ 菜单；搜索引擎在 `address.ts` 的 `SEARCH_ENGINES`
@@ -84,6 +82,10 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 截图不再要求标签可见/窗口前台：`chromium.ts:995` 的 `case "screenshot"` 用 `content`（`settle()` 里 = 非 about:blank 且未失败）作为「有可拍文档」的门槛，不再等 `view.getVisible()`/`isVisible`/`isMinimized`。about:blank 与失败页必须继续拒绝，否则会返回白图让 agent 误判成功
 - 隐藏标签的截图在 `Page.captureScreenshot` 前补一次 `contents.capturePage(undefined, { stayHidden: false, stayAwake: true })` 强制合成（`chromium.ts:1050`），与 `rect()` 的 `:1357` 同一手法。`stayHidden` 语义见 `node_modules/electron/electron.d.ts:23769`：默认 false = 允许页面在捕获期间被视作 visible，不是「把页面显示出来」，所以不会让隐藏视图闪出来，也不会抬窗口
 - 隐藏标签的视口固定是 `view.setBounds({ width: 1000, height: 700 })`（`chromium.ts:521`），所以后台截视口和 fullPage 都按 1000px 宽排版，与用户实际看到的侧栏宽度不同；这是已知差异，不是 bug
+- 元素身份是通用结构修复，不是特判某个按钮：点选时采集最近的 `data-slot` / `data-component` / `data-action`（自身没有就沿祖先向上找），写进 note subject，CSS nth-of-type 只作最后定位器。
+- 覆盖面：`packages/app/src/shell/ui-inspect/describe.ts`（SiCode 内点选）、`chrome-extension/pick-element.js` + `background.js` normalize、`gui-extensions` 的 BridgeElement / chrome-bridge schema / `comment.ts` subject / `chromium.ts` CDP describe / `ipc.PaneElement`。
+- 无 hook 的裸标签（svg/path）chip 标题改成 `svg · {slot}`，避免模型只看到「svg」。
+- 扩展路径改完后要重装/重打包 CRX 才生效；ui-inspect 热更新即可。
 
 ## 过程壳与时间线
 
@@ -274,10 +276,13 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 视觉待用户在 dev 里确认（HMR 已生效、bundle 已含新选择器），没走 CDP 截图（触发 live-thinking 状态要真实会话）。
 - **不要给 live thought 再套一层过程壳**：`AssistantReasoningContent`（`packages/session-ui/src/message/message-content.tsx:693`）内部已经自带 `BasicTool`（brain/flask 图标 + Thinking/Thought 标题 + collapsible + 边框），它本身就是完整的过程壳。`session-timeline-row.tsx` 的 Thinking 分支（`Predicate.isTagged(row(), "Thinking")`）就该裸渲染它，不要再包 `<div data-component="collapsed-tool-group" data-process-shell>`。今天 13:36 提交 `422cbea7af` 试过一次（外层空壳套内层 BasicTool），结果双重壳打架、live thought 反而丢了头部/边框，已 revert（`b9458119dd`）。CSS 里 `[data-process-shell]` 的边框/头部规则全部锚定 `> [data-component="collapsible"].tool-collapsible` 结构，而 Thinking 分支没有那个结构，套壳等于只套了个空 div。
 - **流式思考（Thinking 行）不要用 `SessionContextToolGroup` 渲染**：那个组件就是过程壳本体（`CurrentContextToolGroup`，带 `data-process-shell` 边框 + spinner 头部 + 「过程·N工具」标题），传 `busy` 会让 `pending()` 恒真、头部永远转圈显示成「正在运行的过程壳」。曾有个并行 agent 把 Thinking 行改成 `SessionContextToolGroup` 渲染想「对齐过程壳形态」，结果把流式思考变成了一个持续转圈的假过程壳，用户报「过程壳也被改坏了、变成流式了」。正确基线是 HEAD（`3cb5ee8c73`）的裸渲染：`AssistantReasoningContent`（`streaming` + `defaultOpen`/`open` 走 `disclosure`），包在 `data-slot="session-turn-thinking-row"` 里（对应 `session-turn.css` 里 `[data-slot="session-turn-thinking-row"] { width:100
+- 实时思考拆出过程壳：`projection.ts` 的 `thinking` 原先只要末尾 reasoning 未完成就抽成独立 `Thinking` 行。过程工具已出现后，壳内已有「思考」链项，再拆会在灰框外多一条「思考中」。现改为 `hasProcessWork`（回合内已有 tool）时不抽，留给 context 组；仅无工具的首段思考仍用独立 `Thinking` 行撑住总壳。
+- 壳内 streaming 标记：`session-timeline-row.tsx` 在 context 组里对末尾未完成 reasoning 已设 `streaming`，所以留在链上会显示「思考中」+ 实时摘要，不必再靠独立行。
+- 独立 Thinking 行已取消：`projection.ts` 不再把实时 reasoning 抽成 `Thinking`，一律留在 context 组里，由 `CurrentContextToolGroup`（过程壳）渲染；`streaming` 仍在 `session-timeline-row` 标给末尾未完成 thought。
+- `isProcessGroup` 仍只认带工具的组（避免「只有已完成思考」的空闲回合被套上零工具 WorkShell）。纯思考链靠 `isReasoningWork` 进 `lastProcessGroupKey`，工作中默认展开 + busy。
+- `CurrentContextToolGroup.pending` 额外认 `reasoning.streaming`，无工具时过程壳也保持转圈。
 
 ## 字体与排版
-
-
 
 - 2026-10-29：曾试过把会话正文 markdown 改成 `--font-family-mono` 去跟右侧代码面板对齐，用户反馈中文被改坏、整页混成好几套字——已回滚。正文继续 `--font-family-sans`（MiSans 中英一体）。
 - 2026-10-29 续：混套的真因是两处——① `--font-weight-bold: 670` 对不上 MiSans 静态档（只有 400/500/600），加粗中文落到思源黑体；已改为 `600`。② 行内 `` `code` `` 强制 IBM Plex Mono，中文句里夹等宽英文像两套字；`markdown.css` 的 `:not(pre) > code` 改为 `font-family: inherit`，灰底芯片保留，整块 `pre > code` 仍用 mono。
@@ -324,6 +329,14 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 2026-10-29 再改：MiSans 方案整体撤销，回落到 WorkBuddy 那种系统优先栈（即提交 32fe8f6869 的版本）——sans 为 -apple-system / BlinkMacSystemFont / PingFang SC / Microsoft YaHei UI / Microsoft YaHei 前置，思源黑体 + Noto 系（含 @fontsource-variable 的 Noto Sans SC Variable）兜底；`--font-weight-bold` 同时回到 670。依据：用户实测 Windows Chromium 下思源黑体比 WorkBuddy 发虚。代价是 Windows 上 670 被向上取到 700（微软雅黑只有 400/700），加粗中文比 mac 上重。
 - 撤销 MiSans 要同时改的四处，漏一处就会出现「半套字」：`theme.css` 的 --font-family-sans/--font-family-mono 与 `settings/model.tsx` 的 sansFallback/monoFallback 必须逐字节一致（后者在设置加载时内联写到 :root，不一致的那份就是死 CSS）；`packages/app/package.json` 依赖与 `src/index.css` 的 @import 要一起换；`sansDefault`（设置页 placeholder）和 model.test.ts 的期望值跟着改。
 - `packages/app/src/index.css` 里 Noto 的注册只靠 `@import "@fontsource-variable/noto-sans-sc"` 这一行；删掉它，兜底链里的 "Noto Sans SC Variable" 永远匹配不到。
+- **字重全部变量化**（2026-11-02，commit `7f6c7db688`）：CSS 字面量 178 处 + TSX `[font-weight:N]` 28 处，共 206 处、57 个文件，全部归并到三个 token。归并依据是**实际渲染结果**而不是数字接近：`400/440 → regular`、`500/520/530/540/560 → medium`、`600/640/670 → bold`。
+- **根因**：`Microsoft YaHei` 字族只有 400/700（`msyh.ttc` / `msyhbd.ttc`），`msyhl.ttc` 是**独立字族名**，`font-weight` 选不中。CSS 字重匹配规则是**请求 >500 时向上找**，所以 `520/530/540/560/600/640` 在 Windows 上一律渲染成 700 真粗体 —— 这就是「界面字重偏粗」的唯一来源。`440` 则落到 400。
+- `--font-weight-regular` 由 **460 改为 400**（`packages/ui/src/styles/theme.css:34`）。460 只在有中间字重的字体（可变字体 / PingFang Medium）上有区别，雅黑上一直就是 400，所以这个改动**在 Windows 上没有视觉变化**，只是让 token 与真实渲染一致、不再依赖向上取整。
+- 连带清理：`--process-shell-weight: 440` 改为 `var(--font-weight-regular)`（`message-part.css` 2 处定义 + 14 处 fallback）；`var(--font-weight-regular, 440)` / `var(--font-weight-medium, 500)` 三处死 fallback 去掉数字。`packages/app/src/index.css` 的两处 `@font-face { font-weight: 100 900 }` 是字重**范围**，必须保持字面量，不在本次范围内。
+- 保留真粗体的只有 markdown 标题（`h1`-`h4`）和 tab 标题（原 600/640 → bold）。层级改为靠字号和颜色，符合 `packages/ui/AGENTS.md`「用 400 对 700 表达层级」那条。
+- `packages/ui/DESIGN.md` 第 26 行（原文说「440/530 是上游值，留着没动」）与第 84 行（说 460 已不值得保留）已同步成新事实。
+- 验证：`packages/ui` 172 文件、`packages/session-ui` 246 文件、`packages/app` 1632 文件、`packages/gui-extensions` 1149 文件 typecheck 全部 0 错误；`.sicode/scratch/font-weight-audit.ts` 复查字面量 0 处。
+- **提交时的坑**：`.sicode/scratch/font-weight-classify.ts` 按「diff 的 +/- 行是否都含 `font-weight`」分类，只把纯字重文件加进暂存区（54 个），混有并行会话改动的 107 个文件一律不碰；`theme.css` 的注释行和 `DESIGN.md`（`.md`）不匹配那个规则，需显式补进清单。`git diff --stat` 会显示整文件 `+2676 -2676`，那是行尾符快照造成的假象，`--ignore-all-space` 下实际只有 42 行。
 
 ## 全局右键菜单
 
@@ -692,7 +705,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - callee 取「叶子名」（`c.d()`→`d`、`X::new`→`new`、`\Bar\Baz`→`Baz`），匹配符号按 bare name 存储的约定。
 - `repo-map/cache.ts` 的 `Stored` 加 `calls?` 字段，VERSION 1→2（旧缓存整体失效重建），并导出 VERSION 让 index.ts 写缓存用常量（原来硬编码 `version:1` 会导致版本永远对不上、每次重建）。
 - `repo-map/call-graph.ts` 新增纯函数 `build(state)` → `callers`/`callees`/`impact`，impact 是传递闭包（走「谁调用了这些文件里定义的符号」层层外扩）。`index.ts` 加 `query()`（refresh 后 read cache + build + render）。
-- 新工具 `tool/plugin/callgraph.ts`：`callers`/`callees`/`impact` 三合一，注册在 `plugin/internal.ts`（grep 之后），system.txt 的 `# Parallelizing search` 段加「结构问题用 callgraph 别 grep」。
+- 新工具 `tool/plugin/callgraph.ts`：`callers`/`callees`/`impact` 三合一，注册在 `packages/core/src/plugin/internal.ts`（grep 之后），system.txt 的 `# Parallelizing search` 段加「结构问题用 callgraph 别 grep」。
 - 实测（本仓）：`callers makeLocationNode` → 30+ 文件命中；`callers searchGuidance` → system-prompt.ts；冷查询 450~570ms（含 refresh）。首次 query 会遇到 v1→v2 缓存迁移的一次性空结果，属预期。
 - 诚实登记：调用边是「按符号名」的近似（overload/动态分发会错），工具描述和 render 文案都写明「确认前先 read」。
 - callgraph impact 曾雪崩（已修）：原实现走「谁调用了定义文件里的**所有**符号」传递闭包，`makeLocationNode` 定义在 app-node.ts（同文件还导出 tags/makeGlobalNode 等），结果 impact 返回 2767 个文件（连 .mjs 探针都算进去）。根因是按 bare name 匹配时传递闭包本身无定义。修法：impact 降级为「直接 callers」（一跳），render/工具描述都写明「direct callers, re-run for next hop」。修后 `impact makeLocationNode` = 59 个真实调用文件，与 callers 一致。
@@ -956,8 +969,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 设置
 
-
-
 - 设置页 TRAE 风格改版（2026-10-26）：结构不变（左竖导航+右内容），纯视觉重排。settings.css：侧栏面板化（bg-layer-01 + 右 0.5px 分隔线，padding 20/16/24，原 50/24/64）；back 键整行+底部细线；新增 .settings-account 品牌卡（navigation.tsx，仅根设置页 searchable() 显示，Mark 头像+SiCode/Desktop 占位，无账号体系）；导航项 28→30px 高、radius 6、gap 10；组标签 12px faint。内容：settings-tab-title 15→18px；settings-section gap 16→10、标题 12.5px/560 带 2px 左缩进；settings-list radius 10、padding-inline 16；行 padding 20→14（catalog 变体仍 16）。general.tsx 偏好设置页拆三卡：常规(语言/标签页/默认环境+扩展段)/权限(自动接受)/输入(智能体/终端位置/后续消息/双指缩放/移动端标题栏)；i18n 加 settings.general.section.permissions、.input（en/zh，其余语言回退 en）。验证：CDP 实截 偏好设置/外观 两页正常；tsc -b 通过（bun check 报 artifact-card.tsx:81 Accessor 索引错误是 oxc 误报，真 tsc 无错）。
 - 侧栏大空隙：设置布局原来是 `justify-content: center` 整体居中，窗口一宽工具栏和侧栏面板之间就空出一大块（实测 95px）。修复：`.settings-screen > .settings` 加 `margin-inline-end: auto` 贴左，侧栏紧贴工具栏（x=68）。
 - 权限卡补第二行：演示稿承诺的「破坏性命令确认」开关此前没落地（拦截逻辑写死在 auto-approve.ts）。现已做成真设置 `settings.general.destructiveConfirm`（默认开）：关掉后 rm/del 等删除命令跟随自动接受。改 model.tsx（schema+default+context）、auto-approve.ts、requests/model.ts（弹窗显示同步）、general.tsx、i18n en/zh、search-catalog、model.test.ts。
@@ -980,6 +991,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 取舍：默认系统浏览器。理由是链接的语义是「去别处」，用户要的是自己的登录态与扩展；侧边面板适合不想离开应用的少数场景。`⌘/Ctrl/Shift/Alt + 点击` 始终交给平台（不拦截）。
 - 验证：app tsc 干净、`vite build` 通过（产物 `shell-*.js` 含 `settings-link-target`）、单测 779 pass / 3 fail（与改动前基线一致：settings search ×2 + visibleTimelineMessages ×1）。
 - 侧栏底部大片留白（2026-10-29 修）：`.settings-nav` 是 100% 高的 flex 列，但 `.settings-nav-groups` 只有内容高、没有吃剩余空间，导航组（含「关于」）因此全堆在顶部，下面空一块。改版演示稿 `.sicode/demos/settings-trae-demo.html` 里是用 `margin-top:auto` 把「关于」压在底部的，实装时漏了这一步。修于 `packages/app/src/settings/settings.css`：`.settings-nav-groups` 加 `flex:1`（超长时这一层自己滚）、`.settings-nav-group:last-child` 加 `margin-top:auto`、`.settings-nav-group` 加 `flex-shrink:0`（防止溢出时被压扁）。移动端断点 `.settings-nav { height:auto }`，auto 外边距退化为 0，不受影响。
+- 外链点击反馈（2026-10-31 加）：`shell.openExternal` 的 Promise 要等 Windows `ShellExecute` 结束才 settle，而渲染层是 fire-and-forget，所以点击后界面上没有任何痕迹——冷启实测 `ShellExecuteExW` 380ms（热态 ~40ms），这段时间读者只能干等。改成点击即在 `<a class="external-link">` 上打 `data-opening`，CSS 降到 `opacity:.55` + `cursor:progress`（paint-only，不触发重排）。清除时机二选一：窗口 `blur`（系统浏览器抢焦点 = 真开出来了）或 700ms 兜底（`OPENING_HOLD_MS`，走侧边浏览器时窗口不失焦，只能靠计时）。同一次点击先 `settle()` 再标记新链接，避免连点时两条链接同时变暗。`prefers-reduced-motion` 下关掉过渡，状态本身保留。单测新增「marks the clicked link until the browser takes focus」，覆盖只标记被点的那条、blur 清除、dispose 清除。
+- 注意 `markdown.css` 在本机工作区是 CRLF（仓库 `core.autocrlf=true`），`git diff --numstat` 报 16/0 正常；git status 摘要里那种 `+940 -924` 只是行尾统计噪声，不是整文件重写。
 
 ## artifact 侧边预览
 
@@ -1035,6 +1048,44 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **demo 页面不再起 localhost server（2026-10-29 落地）**：真实会话里模型亲口说「本地文件不能直接用浏览器标签打开，我起一个临时静态服务来渲染验证」，然后 `python -m http.server 8722 --bind 127.0.0.1` 后台起服务（数据：`browser.preview` 调用 0 次、`browser.openFile` 0 次、起 server 1 次——模型根本不知道 preview 存在）。而 `browser.preview`（rpc.ts:204，HTML/图片/SVG/PDF 都支持）和 desktop 侧 `openFile`（contract.ts，file:// 标签）一直都有，chromium.ts 的 `fileRoots` 就是放行 file:// 文档的。修法两层：① `system.txt` 的 Communication 区加静态禁令（所有模型都读得到，不起 server 展示静态页面，server 只留给真需要后端的）；② `system-prompt.ts` 的 `render` 按 `tools.includes("browser.preview")` 注入三条指引（用 preview 展示 / 自验渲染先 preview 再 screenshot / 同一文件只 preview 一次别开第二个标签）——沿用该文件既有的「按工具存在性注入」模式，web 模式没有 browser 工具就不注入。测试 `test/system-prompt.test.ts` 5 条锁住两边行为。
 - **中文请求拿不到任何线索（2026-10-31 实测）**：`hintTerms` 的四条正则全是 ASCII——反引号内容、`FILE_WITH_EXTENSION`、`PATH`、`IDENTIFIER: /\b[A-Za-z_][A-Za-z0-9_]{5,}\b/`。中文 prompt 只有反引号那条可能命中。实测 `上下文压缩什么时候触发`、`为什么压缩之后模型变笨了`、`grep 的搜索结果排序怎么实现的` 三项全部返回 `[]`，`修一下 session-header-actions.tsx 的布局` 才返回 1 项。所以这个「自动注入」对中文用户基本只在点名文件时生效，而点名文件恰好是模型本来就不需要帮助的场景。
 - **它是纯名字查找，不是语义**：底层是 `FileSystem.Search.find`（过路径的 fuzzysort 内存索引），`type: "file"` 只比路径名，不碰内容也不碰符号表。文件名里没有这个词就是零命中，和 grep 猜错词是同一个病，只是换了个入口。
+- context-hints 中文口语基线（20 条，.sicode/scratch/hints-queries-zh.json）：纯 fuzzysort 时 recall@6 口语 0%（14/14 零命中）、点名 100%；总 30%。
+- 接 SearchRanked.suggest（整句 + 路径初筛读内容，无内容缓存）后口语仍 0%——结果全是 i18n/zh.ts 字符重叠，概念缺口未补。
+- 加 concepts 表（压缩→compaction 等）+ 概念路径优先 / 精确 stem 排序后：口语 100%（14/14）、点名 100%、总 100%。表留着；裸 permission 会淹没 permission-dock，已收成 permission-dock。
+- 开关仍 OPENCODE_RANKED=0；hints 点名路径保留 fuzzysort，意图路径合并 ranked。
+- 权限 dock：sessionPermissionRequests + sessionPermissionBatch，同 action 一次呈现并一次 reply，避免 N 个并发 edit 串行弹窗。
+- 复查修复（2026-10-31）：① 权限 dock 批量 decide：reject 按 sessionID 各回一条（服务端级联），always/once 仍逐条但 allSettled 并忽略 PermissionNotFoundError，避免假失败 toast。② hints ranked 仅在 hintTerms 为空且 concepts 命中时注入；无概念保持沉默，避免 i18n 噪声。③ 概念表去掉裸 压缩/排序/推荐 等宽词，改短语（上下文压缩、搜索结果排序、最接近的文件、markdown 表格）。
+- 本机 opencode-local.db 实测 814 步 / 6075 万 token：整体缓存命中 90.5%，DeepInfer 线上是 96%。非缓存输入 578 万 token。
+- 低命中主因不是前缀结构而是并发请求：13.9% 的步骤在同一会话内 <5s 相邻，provider 来不及写缓存，改前缀无用。典型 ses_e6a265 连续 6 步 read=0、模型与 agent 全程未变。
+- 真正可修的是跨回合：71 个「上一回合有历史」的回合首步里 39% 命中 <50%（前缀整段作废），平均 58.9%。
+- 根因：project-memory-inject 把按最新用户消息 BM25 排序的 belief 块 push 进 system，位于整段对话之前，query 一变整个前缀失效。
+- 修法：persona（importance×recency 排序，跨回合稳定）留 system；project facts 改走 event.messages.push(Message.system(...))，与 context-hints / steer 同一位置，只有该块自身 token 未命中。
+- 预期体感：回合首步快 0.3-1.3 秒（91 个样本平均可省 1.9 万 token prefill，按 10-20K tok/s 折算）。受益最大的是 20-100K 上下文区间；>100K 时命中已 87%，可省量反而小。
+- 注意 PromptPrefix.observe（runner/llm.ts:376）在 context.request.primary（382）之前执行，看不到插件注入，所以这次改动不会被 prompt_prefix_rebuilt 指标记录。它只 hash 工具名、不 hash 定义内容，也是度量盲区，但按数据工具集在会话内基本不变，不值得为它加复杂度。
+- DeepInfer 开源代码不可迁移：README 明写基于 vLLM，且 KV cache 系统与 E/P/D 分离「not included in this release」。笔记里「DSpark 让单用户生成速度 +60~85%」应更正为官方 Q&A 的动态验证收益：每步验证草稿 5.00->3.2-4.4，接受长度 3.29->3.20，生产工作点 +5.4%，96 并发才 +11%，16 并发是 -1.5%。
+- 缓存回退实测（942 步 / 72.74M token）：前缀回退造成的未命中合计 4.80M token，占总输入 6.6%。按 provider：m-c-api 4.8%、bulaapi 6.9%、opencode 19.6%、lianyi 44.2%、deepseek1 54.3%。
+- 按位置拆：78% 的损失在**回合首步**（3.80M），中途步骤只占 3.9%（0.19M），synthetic 后 9.5%、instruction 注入后 8.6%。结论：跨回合的前缀稳定性才是主要矛盾，上一轮把 memory 的 query 排序块挪出 system 方向正确。
+- 时间间隔：gap 5-60s 占 66.4% 损失、gap>60s 占 28.6%、gap<5s 只占 5.0%。所以「并发请求来不及写缓存」不是主因，隔几十秒的回合首步才是。
+- `core/src/instructions/builtins.ts` 的 `gitStatusSource`：`changed` 原来完全忽略 `previous`，工作区改一个文件就重发 200 行完整快照。全库 48 次注入 274,656 字符，去重后只有 52,637 字符——**81% 是逐字重复**。
+- 已修：`changed` 改为按文件路径差分（`statusRows` 建 path→行 映射），只输出变动的行，新增/变化的用 `<git_status_changes>` 包裹，消失的文件写 `no longer listed: <path>`；变动行超过 `GIT_STATUS_MAX_CHANGED=60` 时回退成完整快照（delta 比快照还长就没意义）。
+- 实测收益：44 次相邻更新 272,095 → 13,692 字符，**减少 95%**。典型情况（工作区只改 1-2 个文件）从 9,691 字符降到 223 字符。
+- 边界：只有 cap 外的文件变化时，列出的行仍然准确，此时输出一句话说明而不是空串——`requireText` 会拒绝空字符串，`changed` 不能返回 ""。
+- `core/src/codemode/instructions.ts` 的 `update` **已经做了差分**（diffByKey + `delta.length < replacement.length` 回退），不是同类问题；库里 7 次注入共 61,350 字符是因为那几次目录整体变化（MCP 服务器启停），属正常。
+- 测试：`test/instructions/git-status.test.ts` 新增 3 个用例（只报变动行 / 消失文件具名 / 大 delta 回退成快照）；instructions + codemode 共 50 pass。
+- 真实成本口径 = 内容字符数 × 之后还会被重读的步数。全库 198.5M 字符·步（早期快照 213.3M）。排序：shell 59.1M(29.8%) > read 45.5M(22.9%) > webfetch 20.5M(10.3%) > grep 18.4M(9.3%) > system 13.7M(6.9%) > websearch 13.3M(6.7%)。
+- **修正**：上一轮说「重复读取 31.6M，14.8%」是把 shell 命令重复也算进去了。按工具拆：read 重复 41 次 11.6M(占 read 22%)、grep 重复 50 次 9.7M(占 grep 42%)、shell 重复仅 3 次。再按可拦性切 read：真正「两次都完整读取、中间没改过该文件」只有 **4 次、566K，占全库 0.3%**；其余 37 次是分页读不同行范围，本就不该拦。**重复读取拦截没有收益，不做。**
+- shell 长输出是最大单项。16% 的调用超过 2 KiB，却占该工具 76% 的真实成本（2-10 KiB 占 44%、>10 KiB 占 32%）。
+- 已修：`core/src/shell.ts` 新增 `MAX_CAPTURE_BYTES = 8 * 1024`，`Shell.result` 的默认 tail 预算从 `ToolOutput.MAX_BYTES`(24 KiB) 改成它。截断本来就发生在这一层（带 `[showing lines X-Y of N; full output saved to <file>]`），所以不要再在 shell 工具里套第二层——试过，会把已规整的 tail 又切成纯头部，`tool-shell.test.ts` 的 overflow 用例直接失败。配置项 `tool_output.max_bytes` 仍然覆盖它。
+- 实测收益：shell 59.1M → 50.1M，省 9.0M，占全库 4.5%。受影响调用 16 次（共 594 次），都是 `Get-Process`、`Get-ChildItem -Depth 1`、内联 python 脚本这类本来就该改用专门工具的形态。
+- 已修：`core/src/tool/html-markdown.ts` 的 `MAX_MARKDOWN_BYTES` 5 MiB → 256 KiB（`CONTENT_BYTES` 同步为 192 KiB，仍为正）。`MAX_RESPONSE_BYTES` 复用它，所以下载上限一起降。历史数据里 31 次 webfetch 最大只有 46,439 字符，**这项不省 token**，省的是「下载并解析 5MB 页面再被 24 KiB 截断丢弃」的 CPU 与内存，属防御性改动。
+- `tool-output.ts` 的 `MAX_LINES=400 / MAX_BYTES=24KiB` 是全局兜底，对所有工具生效，保持不动。
+- 测试：`bun test test/tool-output.test.ts test/tool-shell.test.ts` 64 pass / 0 fail；`bun run typecheck` 1802 文件 0 错误。
+- 下一步候选（已量化未做）：websearch 50 次 13.3M(6.7%)，`websearch.ts:165-173` 把结果直接 `join("\n\n")`，没有自己的上限，只靠 tool-output 的 24 KiB 兜底。
+- **grep 重复拦截：不做。** 上一轮说 grep 重复 50 次 9.7M，那是「同 pattern」口径。按检索身份拆开：同 pattern 重复只有 10 次，其中 **path + mode 完全相同的 0 次**——8 次只是换了 path（合理收窄范围），2 次 path 和 mode 都不同。完全相同的重复为 0，没有可拦的东西。改动前先按 `pattern + patterns + path + include + mode + literal` 建 key 验证过。
+- **websearch 结果正文上限：已修。** `core/src/tool/plugin/websearch.ts` 新增 `RESULT_CONTENT_CHARS = 800` 与 `clipResult()`，只截 `result.content`，标题/URL/日期一律保留，截断处写明 `webfetch the URL for the full page`；结构化 `output.results` 仍是完整内容，只影响给模型看的 `content`。
+- 依据：全库 52 次 websearch / 374 个结果块，92% 的渲染字符是正文，68% 的正文超过 800 字符，中位单次 10 KB。改后 579K → 301K 字符（-48%），真实成本 17.0M → 10.9M 字符·步，省 6.0M，占全库 2.8%。
+- 阈值定 800 而不是 600：正文中位 1306、p75 2355，800 能砍掉长尾又不切掉正常摘要的开头结论。
+- 测试：`test/tool-websearch.test.ts` 新增 2 个用例（长正文被截且保留 URL / 短正文不动）；该文件 13 pass，`test/tool-websearch.test.ts test/websearch.test.ts` 44 pass，typecheck 1802 文件 0 错误。
+- **websearch 的剩余空间已很小**：改后单次中位约 5 KB，再往下压就要丢检索结果的区分度，不建议继续。
 
 ## 会话时间线 / 回合产出
 
@@ -1327,7 +1378,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - demo `.sicode/demos/select-scope.html` 补了树形区（三态表头 + 勾选行 + 未选项目），对照 WorkBuddy 截图。
 - **「范围」菜单撤回为全选按钮**（提交 3c76873cc9，用户拍板）：2841887770/b63171f9a6 两轮把批量条入口做成「范围 ▾」下拉，用户实际用下来还是想要原来那颗直接的全选。已还原为 toggle（`allSelected()` 时显示「取消全选」），三态项目复选框保留。`openScopeMenu`/`selectRows` 删除，`dock.select.scope` / `dock.select.scope.all` 键从 en/zh/zht 删除。结论：项目级全选靠表头三态框（b63171f9a6 保留），列级全选靠按钮，菜单是多余的一层。
 - **typecheck 现有 2 个错**：`gui-extensions/src/browser/chrome-bridge.ts:6-7` 用了 `Schema.isStartsWith`（effect 4.x 里叫 `isStartingWith`），来自 3498757e56（MV3 bridge 移植），与侧栏无关，待修。
-- worktree 合并入口在**侧栏项目右键菜单**（`packages/app/src/shell/left-sidebar.tsx` 的 `projectMenu`，git 项目才显示，图标 branch-out）；流程本体抽成了共享模块 `packages/app/src/shell/worktree-merge.tsx`（location.get 解析项目 → worktree 行合并自己 / 主行回落到唯一受管 worktree → mergePreview 弹窗 → merge），home 页控制器（`home/projects/controller.tsx` 的 `project.merge`）与侧栏共用。原来只挂在 home 右键上，而主页鼠标入口已撤（只剩 Ctrl+B/Alt+Home），等于不可达——放侧栏才是用户真正在的地方。
+- worktree 合并入口在**侧栏项目右键菜单**（`packages/app/src/shell/left-sidebar.tsx` 的 `projectMenu`，git 项目才显示，图标 branch-out）；流程本体抽成了共享模块 worktree-merge.tsx（location.get 解析项目 → worktree 行合并自己 / 主行回落到唯一受管 worktree → mergePreview 弹窗 → merge），home 页控制器（`home/projects/controller.tsx` 的 `project.merge`）与侧栏共用。原来只挂在 home 右键上，而主页鼠标入口已撤（只剩 Ctrl+B/Alt+Home），等于不可达——放侧栏才是用户真正在的地方。
 - （反转）上一条说的 worktree 合并链路已**整体撤除**（revert 2b040e7e1f + b863ed1635，用户拍板不要这个手动工作流）：`git.ts` 的 merge 段、`worktree.ts` 的 merge/mergePreview、protocol `worktree.merge*` 端点、生成的 client、侧栏与 home 菜单入口、`worktree-merge.tsx`、i18n `*.worktree.merge.*`、`test/worktree-merge.test.ts` 全部不存在了，不要再去找。上游自带的「创建隔离检出」选择器未动。
 
 ## harness 止损机制
@@ -1530,7 +1581,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 
 
-- **第一手逆向材料在本机（2026-10-29 接入方案讨论）**：`D:/软件丨工具/cursor逆向专区/文档/`（38 篇，@verified 2026-10-24）——《Cursor-本地Trigram索引存储结构》《Cursor-本地检索与索引全链路》是方案级第一手材料（真实仓库 + crepectl 实测，非博客）。关键实测（SiCode 仓库 8654 文件）：稀有符号 indexed grep ~14ms vs 全库 rg 内容搜索 ~1000ms = 50~70×，Agent 每轮 5~10 次 grep → 每轮省秒级——**推翻「trigram 仅 1万+文件仓库才显著」的旧判断**（250ms 是 rg --files 的速度，内容搜索恒定 ~1s）。全量建索引 ~7s/8019 docs/87MB（源码 97MB）。机制：Crepe 倒排 `.git/cursor/crepe/<commit>/`（CRP2 格式，Rust 原生 file-service，非 SQLite）；更新=事件+防抖合并、commit 锚定、unsaved buffer 由工具层并搜；候选集无相关性排序（doc_id 序）；head_limit 无默认 + 2000 行/15k 字符硬帽；语义与正则分工具不混排，语义失败明确引导 grep/glob/read。抄能力最小清单：commit 级倒排（可选）+ ripgrep 并搜 unsaved（必须）+ path/line/text 返回（必须）+ 不为 grep 做 Merkle/向量合并。SiCode 检索实施方案在 `.sicode/plans/retrieval-implementation.html`（v6）。
+- **第一手逆向材料在本机（2026-10-29 接入方案讨论）**：`D:/软件丨工具/cursor逆向专区/文档/`（38 篇，@verified 2026-10-24）——《Cursor-本地Trigram索引存储结构》《Cursor-本地检索与索引全链路》是方案级第一手材料（真实仓库 + crepectl 实测，非博客）。关键实测（SiCode 仓库 8654 文件）：稀有符号 indexed grep ~14ms vs 全库 rg 内容搜索 ~1000ms = 50~70×，Agent 每轮 5~10 次 grep → 每轮省秒级——**推翻「trigram 仅 1万+文件仓库才显著」的旧判断**（250ms 是 rg --files 的速度，内容搜索恒定 ~1s）。全量建索引 ~7s/8019 docs/87MB（源码 97MB）。机制：Crepe 倒排 `.git/cursor/crepe/<commit>/`（CRP2 格式，Rust 原生 file-service，非 SQLite）；更新=事件+防抖合并、commit 锚定、unsaved buffer 由工具层并搜；候选集无相关性排序（doc_id 序）；head_limit 无默认 + 2000 行/15k 字符硬帽；语义与正则分工具不混排，语义失败明确引导 grep/glob/read。抄能力最小清单：commit 级倒排（可选）+ ripgrep 并搜 unsaved（必须）+ path/line/text 返回（必须）+ 不为 grep 做 Merkle/向量合并。SiCode 检索实施方案在 retrieval-implementation.html（v6）。
 
 ## 长会话与压缩
 
@@ -1625,7 +1676,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - dirty 两种口径：worktree 侧 untracked 算脏（镜像 commitAll 会收编什么），source 侧只看 tracked（`--untracked-files=no`）。`git.merge.dirty(repo, {untracked})`。
 - UI：菜单项对 `vcs==="git"` 的项目显示；点击后 `location.get` 动态判定——工作树行合并自己；主检出行若恰好有一个受管 worktree（`worktree.list` 里 strategy 非 undefined 且 ≠ canonical）就对它操作，0 个或多个则 toast 提示去具体行操作。确认框显示分支/领先落后/两侧 dirty；主检出脏时合并按钮禁用。
 - effect 4 坑：`Effect.synchronize` 不存在（用 Effect.succeed）；instanceof 窄化——union 里没有的类 `error instanceof X` 真分支收窄成 never，别写 `A || B` 双检查。
-- 测试 `packages/core/test/worktree-merge.test.ts` 6 条（快照合并/已提交合并/主检出脏拒绝/冲突回滚/无操作/preview），41/41 与既有 worktree 测试同跑全绿；worktree 要建在仓库外的临时目录，否则在 source status 里表现为 untracked 噪声。
+- 测试 worktree-merge.test.ts 6 条（快照合并/已提交合并/主检出脏拒绝/冲突回滚/无操作/preview），41/41 与既有 worktree 测试同跑全绿；worktree 要建在仓库外的临时目录，否则在 source status 里表现为 untracked 噪声。
 
 ## Edit 能力与编辑节奏
 
@@ -1689,3 +1740,103 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - `test/max-steps.test.ts`：+5 条。
 - **语义**：真长任务（写了多条目 todo）拿到 50 步 headroom 干完；失控螺旋（无 plan）仍 25 步封顶。用户显式配 `agent.steps` 仍优先。
 - **验证**：max-steps/steer/explore-budget 31 pass；typecheck 1755 文件绿。
+
+## flash-dual-track
+
+- Persona inject: PERSONA_PROJECT_KEY=\"\" + loadForInject(directory, OPENCODE_PERSONA); render splits Project / Persona sections sharing MAX_BELIEFS=8.
+- Flash golden hard pins in packages/core/test/flash-golden.test.ts (concepts, patterns, usablePrefilter, search-miss, inject+BM25); live Flash session medians still deferred.
+- M4 vectors still paused; A-C + persona + hard golden closed in flash-dual-track.md.
+- Inject now BM25-ranks project beliefs against latest user text (queryFromMessages); persona keeps PERSONA_RESERVE=2 slots first.
+- Persona default id is local (OPENCODE_PERSONA=0/off disables). Prompt hook + compaction Requirements → recordPersona via preference.ts.
+- Session ses_e6d429... showed cookies noise crowding inject and prefs not persisting; these two close that gap.
+- Grep: expandPatternAlternation turns Flash's plain a|b|c into multi-pattern batches; real regex left alone.
+- Search-miss: CJK empty grep sets early=true → nudge on streak 1; English still needs 2. concepts: 线索码头.
+- Flash trajectory golden: flash-trajectory.ts scores search median/p90/expectHit; baseline fixture from ses_e6d429 (6 retrieval turns, median 4 / p90 7); re-export via .sicode/scratch/export-flash-trajectory.ts.
+- Only optional dual-track remainder: M4 local HNSW.
+- M4: local feat-hash-v1 embed + cosine scan + RRF with BM25 in searchBeliefs; OPENCODE_MEMORY_VECTOR=0 disables. Inject filters to lexical why so weak vector neighbors do not crowd the budget.
+- M5: graph.ts derives entities from paths/pieces/CamelCase; buildAdjacency + expandHop from lexical seeds only; RRF third list; OPENCODE_MEMORY_GRAPH=0 disables.
+- M6: remember tool (project/persona admit); recall searches loadForInject + conflicts flag; linkContradicts; inject marks conflicting bullets.
+- Consolidation mechanics: mergeBeliefs auto-links prose contradicts (Jaccard topic overlap); verifyBeliefs/verifyPaths path miss→invalidate at MISS_LIMIT; recall runs verifyPaths before search.
+
+## codemode-session-tools
+
+- Flash 把 Code Mode 文案「They cannot be called directly」误读成 grep/edit 也只能进 execute；ses_e6d0c4 浪费约 1 分钟在 tools.grep / tools.edit / search(browser)。
+- 已改：instructions + execute description 明示 session 工具保持顶层；Unknown tool 'grep'|edit|… 时替换「Use search…」为「call it directly」提示（core/codemode/tool.ts formatError）。
+- 验证：packages/core 下 tool-execute / codemode catalog+instructions 30 测全绿。
+
+## memory-local-embed
+
+- M4 optional local MiniLM via OPENCODE_MEMORY_EMBED=local (@huggingface/transformers, Xenova/all-MiniLM-L6-v2); default remains feat-hash-v1
+- memory_entity / memory_edge / memory_vector tables; syncGraph+syncVectors on SessionMemoryStore.replace; recall loads adjacency+vectors with empty-table fallback
+- Withdrew local MiniLM / @huggingface/transformers path: OPENCODE_MEMORY_EMBED gone; embed is feat-hash-v1 only
+- Kept memory_entity / memory_edge / memory_vector persist + sync on replace (no model download)
+
+## harness-act-now
+
+- ses_e6ce 同 Flash：t+55 已知 cover=images[0] 根因，t+177 才 edit；差在 harness 收束，非模型不会。
+- 已落地：grep \patterns\ 可单独用（不再 Missing key pattern）；EXPLORE_SOFT_STEPS 12→6，soft prompt 首条改为「已知根因就 edit，别继续验证」。
+- 验证：grep-patterns / explore-budget / steer / tool-search / search-miss 76 测绿。
+
+## tool-output-cap
+
+- read 设 truncated:false 会整份绕过 ToolOutput，ses_e6ce 的 80KB+ form.js 因此进下一轮；已改为超预算一律 head+tail+spill。
+- 默认 ToolOutput：2000行/50KB → 400行/24KB；MAX_READ_BYTES：128KB → 64KB（行上限仍 3000，避免小 limit 狂分页）。
+- shell 描述改为短预览 + 勿重复 dump；相关 tool-output / read-filesystem 测全绿。
+
+## settle-shell-bound
+
+- soft 提示要改：不另开 steer；把「用户已点名路径/答案就收束」并进 EXPLORE_SOFT_PROMPT 首条；用户点名后 soft 周期 6→2（exploreSoftEvery）。
+- shell 硬边界：Get-ChildItem -Recurse 无 -Depth、find 无 -maxdepth → 直接 fail（对齐 detectPollingWait）；覆盖 ses_e6cda 全盘扫。
+- 验证：explore-budget / shell-unbounded-recurse / poll / steer 48 测绿。
+
+## instant-grep-shell-redirect
+
+- shell content-search hard-block: `detectContentSearch` in `packages/core/src/tool/plugin/shell.ts` rejects bare `rg`/`ripgrep`, `Select-String`, `findstr /s`, and recursive `grep`/`egrep` (`-r`/`-R`/`--recursive`) before spawn; same boundary pattern as `detectPollingWait` / unbounded recurse. Allows `rg --version/--help`, pipe filters (`ps | grep`), and non-recursive single-file grep/findstr.
+- Evidence target: `ses_e77146` spent ~7.7 min on bare `rg` over `D:\` via shell (no deadline / no trigram). Words in Prefer-dedicated-tools were insufficient.
+- Soft guidance layered on top: shell tool description + system-prompt shell bullet both say use the grep tool, not shell content search.
+- Tests: `packages/core/test/shell-content-search.test.ts` (8 pass).
+- Browser depth (Flash adoption, not new CDP surface): system-prompt now injects live-tab debug loop when `browser.console` / `browser.network.list` / `browser.screenshot` are present; tool descriptions nudged toward screenshot/console/network before guessing from source. Pinned in `system-prompt.test.ts`.
+- Still out of Instant Grep hard path: unsaved-buffer merge; dirty content-hash beyond mtime/size+commit (mtime/size+HEAD already in trigram-search).
+
+## package-rules-ondemand
+
+- Nested package `AGENTS.md` (packages/ui, packages/app, packages/core/src/tool, …) was never injected when the session starts at repo root — only root AGENTS.md is discovered via fs.up. Models are told to read them and do not (same failure mode as DESIGN.md).
+- Added `SessionPackageRules` (`packages/core/src/session/package-rules.ts`): request-only inject when the current user text or the prior assistant turn names/touches paths under packages/ or services/. Walks ancestors, skips root AGENTS.md, deepest file first, ~3k budget / ~1.8k per file. Kill switch `OPENCODE_PACKAGE_RULES=0`.
+- Wired in `session/context.ts` after design-hint. Tests in `test/package-rules.test.ts` (9 pass).
+
+## topic-switch
+
+- Mid-session topic stickiness: Flash keeps walking the prior tool trajectory after the user changes ask. Cursor feels free in one chat because re-home is cheap and old tool noise is compressed; SiCode needed an explicit reorient signal first (full auto-compact-on-switch deferred).
+- Added `SessionTopicSwitch` (`packages/core/src/session/topic-switch.ts`): request-only synthetic hint when the new user message diverges from the previous tool-using turn (different package/path, low anchor Jaccard, or explicit 换题 phrases). Skips continuations (`继续`/`然后`/…) and first turns / text-only prior turns. Kill switch `OPENCODE_TOPIC_SWITCH=0`.
+- Wired in `session/context.ts` before clarify/ui-behavior. Tests: `test/topic-switch.test.ts` 8 pass.
+
+## topic-switch-compact
+
+- Topic-switch soft compact: when structural locus moves and context estimate ≥ 12k (`COMPACT_MIN_ESTIMATE`), runner forces `compaction.compact({ reason: "topic-switch" })` before auto compact — bypasses size ceiling, keeps from latest user message (`splitAtLatestUser`), summarizes prior locus so Flash drops old tool traces. Hint-only below the floor. Kill switches: `OPENCODE_TOPIC_SWITCH=0` or `OPENCODE_TOPIC_COMPACT=0`. Event still published as `auto` (schema).
+- Wired in `runner/llm.ts`; Trigger + skip/keep logic in `compaction.ts`; `pending`/`shouldCompact` in `topic-switch.ts`. Tests cover helpers (12 pass).
+
+## 跨会话 chats
+
+- `chats` tool: same-directory peer sessions only (exclude current id); omit query → newest peers with last-exchange preview; with query → history.search half-term match, clipped slices labeled by session title+id.
+- Scope vs siblings: `history` = this session pre-compaction archive; `recall` = short durable beliefs; `chats` = other chats' transcripts on demand (no auto-inject).
+- Wired: plugin/internal beside HistoryTool; codemode allowlist; explore-budget read-only set. Pure searchSessions/exchangesOf for unit tests.
+- Directory comes from Session.Info.location.directory (not a top-level field). UI @Chats picker still optional later.
+
+## 体检
+
+- ## 体检结论
+- 类型检查 `bun run check`: 34/34 包通过
+- session-ui: 305/305 通过
+- gui-extensions 浏览器相关: 22/22 通过
+- app unit: 783/786，剩余 3 个失败（settings search x2、timeline controller-projection x1）
+- core 全量测试卡住（database/runner 相关），建议分包运行
+- ## 剩余失败
+- `packages/app/src/settings/search-results.test.ts` x2
+- `packages/app/src/session/timeline/controller-projection.test.ts` x1（jsxDEV 环境问题）
+
+## 意图冻结
+
+- 弱模型会把「效果还可以/别动」忘掉后继续 edit：`decision-freeze.ts` 用封闭词表 fold 用户消息 → session metadata `sicode.decisionFreeze` + 进程热缓存；`edit`/`write`/`patch` 在 mutate 前 `blocked()` 硬拒。`OPENCODE_DECISION_FREEZE=0` 关。
+- 「是 bug 那你改」被答成「设计如此」：`obey-fix-hint.ts` request-only 注入，要求改或问一个参数；`OPENCODE_OBEY_FIX=0` 关。
+- Windows PowerShell 上 bash 形（`tail`/`for x in`/`sed`/`ls -`/`cat`/`<<`）exit 1 红壳：`detectBashOnPowerShell` 在 spawn 前拒；system-prompt win32 加一行；`OPENCODE` 无单独开关。
+- 单测：`decision-freeze.test.ts` / `obey-fix-hint.test.ts` / `shell-bash-on-ps.test.ts`。
