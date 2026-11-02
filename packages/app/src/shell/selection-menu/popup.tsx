@@ -18,6 +18,23 @@ export function SelectionMenu() {
   const language = useLanguage()
 
   onMount(() => {
+    // A press outside the bar dismisses it. Waiting for the selection to collapse is not enough: a
+    // press on chrome (`user-select: none`) or on a control that calls preventDefault on mousedown
+    // — every copy button in a reply does — leaves the selection intact, so the bar stayed afloat
+    // with no way out short of scrolling or Esc. Clearing the selection matters as much as hiding:
+    // otherwise the next mouseup sees a live selection and puts the bar straight back.
+    makeEventListener(
+      document,
+      "pointerdown",
+      (event) => {
+        if (event.button !== 0 || event.shiftKey || !selectionMenu()) return
+        const node = event.target instanceof Element ? event.target : null
+        if (node?.closest('[data-component="selection-menu"]')) return
+        window.getSelection()?.removeAllRanges()
+        hideSelectionMenu()
+      },
+      { capture: true },
+    )
     makeEventListener(document, "mouseup", (event) => {
       // Right-click keeps the selection for the context menu; presses on the bar are handled there.
       if (event.button !== 0) return
