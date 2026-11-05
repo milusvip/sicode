@@ -45,7 +45,7 @@ type ConnectionState = {
   embeds: Readonly<Record<string, string>>
   suspended: boolean
   error?: string
-  /** Agent write access for this attachment; default read. */
+  /** Agent write access for this attachment; default full (click/fill/upload). */
   access: "full" | "read"
   /** Config-file denies for the session agent; write locked disables the panel switch. */
   locked: { read: boolean; write: boolean }
@@ -81,7 +81,8 @@ export function createConnection(input: {
     browser: null,
     embeds: {},
     suspended: false,
-    access: "read",
+    // SiCode: default full so publish/fill/click work without a manual grant; user can still lock to read.
+    access: "full",
     locked: { read: false, write: false },
   }
 
@@ -240,16 +241,36 @@ export function createConnection(input: {
     state.error = undefined
     publish()
     // After attach, pane has the config-locked flags; pull them before the panel opens.
-    void registration.access().then((status) => {
-      if (state.registration !== registration) return
-      state.access = status.access
-      state.locked = status.locked
-      publish()
-    })
+    void registration
+      .access()
+      .then((status) => {
+        if (state.registration !== registration) return
+        state.access = status.access
+        state.locked = status.locked
+        publish()
+      })
+      // A rejected register already reaches its owner through `failed`; this read must not escape as unhandled.
+      .catch(() => undefined)
   }
 
   return {
     wake: register,
+    /**
+     * SiCode: tear down the current binding and register again — used when preferSystem /
+     * owningAttach flips so main can route the next register to chrome vs Electron.
+     */
+    reattach() {
+      if (disposed) return
+      clearTimeout(retry)
+      const previous = state.registration
+      if (previous) {
+        state.registration = undefined
+        previous.close()
+      }
+      lost = false
+      blocked = false
+      register()
+    },
     /** Follows the pane's Ipc going away and coming back. */
     refresh() {
       if (!input.client()) {

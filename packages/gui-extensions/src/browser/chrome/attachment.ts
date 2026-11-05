@@ -123,7 +123,7 @@ export function createChromeAttachment(input: {
     if (tabID) entry.touchedTabIDs.add(tabID)
   }
 
-  /** Cursor browser_tabs parity — agent list is session pane, not full Chrome. UI still gets `inventory`. */
+  /** Cursor browser_tabs parity — agent list is session pane, not full Chrome. */
   const agentInventory = (entry: Entry): Browser.State => {
     const full = inventory(entry)
     const tabs = selectAgentInventoryTabs({
@@ -138,8 +138,10 @@ export function createChromeAttachment(input: {
     return { tabs, focusedTabID }
   }
 
+  // Publish the agent working set only — full Chrome stays internal for same-URL reuse.
+  // Publishing ambient tabs would mirror every OS tab into the in-app strip on attach.
   const publishState = (entry: Entry, error?: string) => {
-    const state = inventory(entry)
+    const state = agentInventory(entry)
     const event: PaneEvent =
       error === undefined ? { type: "state", state } : { type: "state", state, error }
     const next = JSON.stringify(event)
@@ -206,8 +208,8 @@ export function createChromeAttachment(input: {
     code: "unsupported",
     message:
       `browser.${action.type} is not supported on the system Chrome bridge yet. ` +
-      "Supported: tabs.* (all http(s)/file tabs), navigate, reload, back, forward, snapshot, find, evaluate, click, fill, press, scroll, screenshot, console, network.list, network.get. " +
-      "Disconnect the system browser bridge (Settings → Browser) for the in-app pane for the rest.",
+      "Supported: tabs.*, navigate, reload, back, forward, snapshot, find, evaluate, click, fill, fill_form, select, check, hover, press, scroll, wait, dialog, files.upload, screenshot, console, network.list, network.get. " +
+      "Disconnect the system browser bridge (Settings → Browser) to use the in-app pane for the rest (trace, lighthouse, files.drop, …). Do not suggest Chrome remote debugging or external CDP.",
   })
 
   const denyBlocked = (url: string): Extract<Browser.Outcome, { type: "failure" }> | undefined => {
@@ -324,7 +326,10 @@ export function createChromeAttachment(input: {
         const bridge = await input.host.navigateTab(mapped.chromeTabId, action.url)
         applyBridge(entry, bridge, true)
         touch(entry, mapped.tabID)
+        entry.focusedTabID = mapped.tabID
         publishState(entry)
+        // SiCode: same as the in-app pane — agent navigate must open the Review side region.
+        publish(entry, { type: "focus", tabID: mapped.tabID })
         return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
       }
 
@@ -385,9 +390,20 @@ export function createChromeAttachment(input: {
         if ("type" in mapped) return mapped
         const blocked = denyBlocked(mapped.url)
         if (blocked) return blocked
+        // SiCode: plugin-browser maps CDP `expression` → `script`; accept either here too so an
+        // older plugin/desktop pair does not fail after the schema started allowing the alias.
+        const script = action.script ?? action.expression ?? ""
+        if (!script) {
+          return {
+            type: "failure" as const,
+            code: "operation_failed",
+            message:
+              "browser.evaluate requires `script` (the JavaScript to run). Chrome CDP's `expression` is accepted as an alias.",
+          }
+        }
         const allowDestructive = destructiveWebUiAllowedByEnv()
         try {
-          assertSafeWebUiScript(action.script)
+          assertSafeWebUiScript(script)
         } catch (error) {
           return {
             type: "failure" as const,
@@ -397,7 +413,7 @@ export function createChromeAttachment(input: {
         }
         const { value, tab } = await input.host.evaluateTab(
           mapped.chromeTabId,
-          action.script,
+          script,
           action.ref,
           allowDestructive,
         )
@@ -441,6 +457,104 @@ export function createChromeAttachment(input: {
         const blocked = denyBlocked(mapped.url)
         if (blocked) return blocked
         const bridge = await input.host.fillTab(mapped.chromeTabId, action.ref, action.text)
+        applyBridge(entry, bridge, true)
+        publishState(entry)
+        return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
+      }
+
+      if (action.type === "select") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        const bridge = await input.host.selectTab(mapped.chromeTabId, action.ref, action.values)
+        applyBridge(entry, bridge, true)
+        publishState(entry)
+        return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
+      }
+
+      if (action.type === "check") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        const bridge = await input.host.checkTab(mapped.chromeTabId, action.ref, action.checked)
+        applyBridge(entry, bridge, true)
+        publishState(entry)
+        return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
+      }
+
+      if (action.type === "hover") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        const bridge = await input.host.hoverTab(mapped.chromeTabId, action.ref)
+        applyBridge(entry, bridge)
+        publishState(entry)
+        return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
+      }
+
+      if (action.type === "fill_form") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        const bridge = await input.host.fillFormTab(mapped.chromeTabId, action.fields)
+        applyBridge(entry, bridge, true)
+        publishState(entry)
+        return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
+      }
+
+      if (action.type === "wait") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        const bridge = await input.host.waitTab(mapped.chromeTabId, {
+          condition: action.condition,
+          text: action.text,
+          timeoutMs: action.timeoutMs,
+        })
+        applyBridge(entry, bridge)
+        publishState(entry)
+        return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
+      }
+
+      if (action.type === "dialog") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        const { dialog, tab } = await input.host.dialogTab(mapped.chromeTabId, {
+          action: action.action,
+          promptText: action.promptText,
+        })
+        applyBridge(entry, tab)
+        publishState(entry)
+        return {
+          type: "success",
+          result: { value: { tab: asTab(mapped, tab), dialog }, files: [] },
+        }
+      }
+
+      if (action.type === "files.upload") {
+        const mapped = requireMapped(entry, action.tabID)
+        if ("type" in mapped) return mapped
+        const blocked = denyBlocked(mapped.url)
+        if (blocked) return blocked
+        if (!command.files.length) {
+          return {
+            type: "failure",
+            code: "operation_failed",
+            message:
+              "Upload command has no file bytes. Supply server-local paths to browser.files.upload; do not call the desktop RPC directly with desktop paths.",
+          }
+        }
+        const local = await Promise.all(
+          command.files.map(async (file) => files.get(await files.save(file.name, file.mime, file.data)).path),
+        )
+        const bridge = await input.host.uploadTab(mapped.chromeTabId, action.ref, local)
         applyBridge(entry, bridge, true)
         publishState(entry)
         return { type: "success", result: { value: asTab(mapped, bridge), files: [] } }
@@ -818,6 +932,21 @@ export function createChromeAttachment(input: {
       if (entries.get(binding) !== entry) throw new Error("browser.pane.registration.closed")
       await syncInventory(entry)
       publishState(entry)
+    },
+
+    /** UI/agent commands routed through BrowserPane IPC when this binding owns the session. */
+    async command(window: number, binding: string, action: Browser.Action) {
+      const entry = entries.get(binding)
+      if (!entry || entry.window !== window) throw new Error("browser.pane.unavailable")
+      const requestID = crypto.randomUUID()
+      const abort = new AbortController()
+      entry.requests.set(requestID, abort)
+      try {
+        const outcome = await execute(entry, { action, files: [] }, abort.signal)
+        if (outcome.type === "failure") throw new Error(outcome.message)
+      } finally {
+        entry.requests.delete(requestID)
+      }
     },
 
     close(binding: string) {

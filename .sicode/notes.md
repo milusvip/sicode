@@ -2019,11 +2019,32 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 英文行为词概念映射
 
-
-
 - 整词匹配用 `(?:^|[^a-zA-Z0-9])word(?![a-zA-Z0-9])`：`compress` 命中 `compress`/`re-compress`，不命中 `compressor`。
 - 验证：`packages/core/test/search-ranked.test.ts` 10 pass（新增两条：`compress` 命中 `session/compaction.ts` 而非内容含该词的 `config/normalize.ts`；`compressor` 不触发映射）；`packages/core` typecheck 1838 文件 0 错。仍未做全基线对照——原 20 条查询集已丢。
 - 接续上一条：定义行排序救不了的「英文行为词 → 不同名实现文件」改由概念映射补。`packages/core/src/search-ranked/concepts.ts` 新增 `BEHAVIOR` 表（行为词 → 仓库实际用的标识符），`extrasOf` 对英文 query 按**整词、忽略大小写**匹配后并入 extras，其余管线（`expand` → BM25F → `pathMatchesExtra` 路径优先）不变。表内容（**prune 行已删**，见下）：`compress`/`summarize` → `compaction`、`truncate`/`overflow` → `recent-text`、`validate`/`validation` → `runtime`。
 - 表内每行左侧词都是**实测**目标文件名/声明里不含的（`compress` 不在 `compaction.ts`，`truncate` 不在 `tool-output.ts` 而在 `session/recent-text.ts:72` 的 `truncateToolOutput`）。曾拟加的 `emit`/`publish` → bus、`validate` → schema、`compress` → `prune` 三行**已删**：本仓 `emit` 无顶层实现（是接口成员），`schema.ts` 无校验实现，`prune` 只出现在 config schema 字段名里（`config/normalize.ts:353`），均属假映射。加行前先确认目标文件真存在。
 - **端到端实测**（`.sicode/scratch/suggest-probe.ts`，跑真实 `SearchRanked.suggest`：980 文件 + rg 文件列表 + 读内容，不是 rg 命中集——`pathMatchesExtra` 作用在全文件列表上）：`truncate` → `src/session/recent-text.ts` **第 1**、`validate` → `src/tool/runtime.ts` **第 1**、`compress` → `src/session/compaction.ts` **第 2**。`retry`（无 extra）未命中 `src/ripgrep.ts`，`permission`（无 extra）目标第 2，说明映射不误伤顺风题。
 - `compress` 排第 2 而非第 1 的原因不是映射失败，是**同名干扰**：`src/config/plugin/compaction.ts` 的 stem 也等于 extra `compaction`，`suggest` 的 `exactness` 分不出两者，BM25F score 把它排前。⇒ 概念映射已能把目标拉进 top2；要第 1 需要「同名多文件时按定义/职责再分」，属另一个改动。
+
+## shell-tail-pipe
+
+- ses_e537b4fa：`pnpm pack:release 2>&1 | Select-Object -Last 40` + background 把发布脚本挂死在 Start-Job/Wait-Job；用户本机前台不到 1 分钟。根因是工具说明教模型用 Select-Object -Last 滤大输出。
+- 结构性修：`detectTailPipeHang` 在 spawn 前拒掉 live 进程 `| Select-Object -Last` / `| tail`（允许 Get-Content 已有日志）；改 description：裸跑构建、前台打 pack、勿管道 -Last。
+
+## shell-todo-continue
+
+- completion-gate：后台 shell 仍 running（transcript metadata）时等同 waitingOnUser，不再硬拽续跑去 read（ses_e537b4fa）。
+- planning-gate：用户短句「继续」且上一份 todo 已全完成 → soft=1 / force=2，强制下一阶段 todowrite（ses_e53c41b83ffe）。
+- Start-Job 无管道复现：简单 Wait-Job / 流式 Job 在重定向与 Select-Object -Last 下均不挂；挂死主因仍是 live | Select-Object -Last 包住真实 pack 脚本（已由 detectTailPipeHang 拦）。
+
+## background-shell-pill
+
+- Background shell pills showed tool-call ids (call_00_…) and no elapsed clock because shell `read`/`list`/`kill` parts also finish as completed+metadata.running; history treated them as tasks and overwrote the real command label (ses_e537b4fa, pack:release).
+- Same-session pill click never expanded the timeline card: `SessionRunningPill.onReveal` was unwired, and route `location.state.reveal` only runs on virtualizer mount — navigating to the same session does not re-fire it.
+- Fix: `background.ts` only admits shell tasks that have `input.command`; wire `onReveal` → `timeline.actions.revealPart`; pill click reveals immediately; elapsed falls back to `shell.list()` match by command.
+
+## browser-push-system
+
+- 扩展「推送到对话」误开内置：根因是 stickSystem→wake 挂接 Electron，inventory mirror 进 strip；createChromeAttachment 从未接入 BrowserPane.register。
+- 修复：push 只 setPreferSystem(true) 不 wake；main 在 owningAttach 时 register→chrome attachment；publishState 只发 agentInventory（避免 ambient Chrome 灌 strip）；prefer/bridge force→connection.reattach。
+- 内置打开 / syncLogin 先 setPreferSystem(false) 再挂 Electron。

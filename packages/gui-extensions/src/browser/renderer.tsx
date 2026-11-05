@@ -50,11 +50,22 @@ const setup: Setup<typeof definition> = (ctx) => {
 
   // SiCode: extension popup pushes — a page, a picked element, or the site's login cookies.
   createKeyed(ctx.uses.chromeBridge, (client) => {
+    const stickSystem = () => {
+      // Push pins Agent to system Chrome for this conversation. Do not wake the in-app pane —
+      // that silently mirrors tabs into the built-in strip. Drafts have a screen but no
+      // MountedSession yet — prefer sticky waits until a real ses_ id exists. Agent wake on
+      // execution (or a later in-app open) registers the chrome attachment when prefer owns it.
+      const session = ctx.sessions.current()
+      if (!session) return
+      void client.setPreferSystem({ session: session.id, prefer: true })
+    }
+
     client.on("tabOffer", (event) => {
       const screen = ctx.screen.current()
 
       if (!screen) return showToast({ title: ctx.t("push.failed"), description: ctx.t("push.noSession") })
 
+      stickSystem()
       screen.composer.attach(
         pageOfferNote({
           origin: ctx.id,
@@ -75,18 +86,24 @@ const setup: Setup<typeof definition> = (ctx) => {
 
       if (!elements.length) return
 
-      const first = elements[0]!
+      stickSystem()
+      // Multi-select from the picker lands as one offer with many elements — attach every chip.
+      for (const element of elements) {
+        screen.composer.attach(
+          elementOfferNote({
+            origin: ctx.id,
+            url: event.tab.url,
+            title: event.tab.title,
+            element,
+            comment: event.comment,
+          }),
+        )
+      }
 
-      screen.composer.attach(
-        elementOfferNote({
-          origin: ctx.id,
-          url: event.tab.url,
-          title: event.tab.title,
-          element: first,
-          comment: event.comment,
-        }),
-      )
-      showToast({ title: ctx.t("push.element"), description: first.label || first.selector })
+      const first = elements[0]!
+      const description =
+        elements.length > 1 ? `${first.label || first.selector} +${elements.length - 1}` : first.label || first.selector
+      showToast({ title: ctx.t("push.element"), description })
     })
     client.on("cookieSync", (event) => {
       const current = model()
@@ -117,6 +134,7 @@ const setup: Setup<typeof definition> = (ctx) => {
     canOpen: (session, path) => model()?.canOpen(session, path) ?? false,
     open: (session, url) => model()?.openURL(session, url),
     openFile: (session, path, options) => model()?.openFile(session, path, options),
+    wake: (session) => model()?.wake(session),
   })
 
   ctx.add(Command, (): Command | undefined => {

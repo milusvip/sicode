@@ -187,6 +187,7 @@ test("suspension retains tabs and reconnects once on demand using the current ta
     expect(app.calls).toHaveLength(2)
     expect(app.calls[1].input).toEqual({
       binding: expect.any(String),
+      access: "full",
       server: "browser-moved",
       session: "ses_browser",
       restore: browser,
@@ -216,6 +217,7 @@ test("a registration lost with the pane's Ipc registers again with its tabs once
     expect(app.calls).toHaveLength(2)
     expect(app.calls[1].input).toEqual({
       binding: expect.any(String),
+      access: "full",
       server: "browser-test",
       session: "ses_browser",
       restore: browser,
@@ -284,6 +286,7 @@ test("a rejected registration clears itself and retries with its tabs after the 
     expect(app.calls).toHaveLength(3)
     expect(app.calls[2].input).toEqual({
       binding: expect.any(String),
+      access: "full",
       server: "browser-test",
       session: "ses_browser",
       restore: browser,
@@ -310,6 +313,21 @@ test("a command wakes its attachment once and is not replayed", async () => {
     await Bun.sleep(0)
     expect(app.closed).toEqual([app.calls[0].input.binding, app.calls[1].input.binding])
     expect(app.calls).toHaveLength(2)
+  } finally {
+    app.connection.dispose()
+  }
+})
+
+test("reattach closes the live binding and registers again", async () => {
+  const app = fixture()
+
+  try {
+    const first = app.calls[0].input.binding
+    app.connection.reattach()
+    await Bun.sleep(0)
+    expect(app.closed).toEqual([first])
+    expect(app.calls).toHaveLength(2)
+    expect(app.calls[1].input.binding).not.toBe(first)
   } finally {
     app.connection.dispose()
   }

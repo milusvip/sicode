@@ -27,6 +27,9 @@ type Attachment = {
   embeds: Readonly<Record<string, string>>
   suspended: boolean
   error?: string
+  /** SiCode: agent write grant for this attachment; mirrored so the toolbar chip stays reactive. */
+  access: "full" | "read"
+  locked: { read: boolean; write: boolean }
 }
 
 type Live = {
@@ -140,6 +143,16 @@ export function createModel(ctx: SetupContext<typeof definition>) {
   // The SDK removes the listener when the Ipc's generation ends.
   createKeyed(pane, (current) => current.on("event", (value) => listeners.get(value.binding)?.(value.event)))
 
+  // SiCode: preferSystem / bridge flips emit force — live sessions must re-bind chrome ↔ electron.
+  createKeyed(chromeBridge, (client) => {
+    onCleanup(
+      client.on("connection", (event) => {
+        if (!event.force) return
+        live.forEach((entry) => entry.connection.reattach())
+      }),
+    )
+  })
+
   const wakeCurrent = () => {
     if (document.visibilityState !== "visible") return
     const view = sessions.current()
@@ -244,6 +257,9 @@ export function createModel(ctx: SetupContext<typeof definition>) {
                 embeds: next.embeds,
                 suspended: next.suspended,
                 error: next.error ? describe(next.error) : undefined,
+                // SiCode: keep access on the solid attachment so toolbar + site switch share one source.
+                access: next.access,
+                locked: next.locked,
               }),
             )
 
@@ -259,8 +275,10 @@ export function createModel(ctx: SetupContext<typeof definition>) {
           open(tabID) {
             if (layout.state(key(tabID), ref) !== "closed") return
 
-            // A tab an `openFile({ select })` asked for brings the pane forward selected; any other
-            // new tab — the agent's tools, the user — joins the strip quietly, as before.
+            // A tab `openFile`/`syncLogin` asked for (openingURL) brings the pane forward selected.
+            // Other inventory mirrors — wake after idle, push stickSystem, restore — join quietly.
+            // Agent tabs.open/navigate already report focus → layout select, so side-closed audio
+            // pages still surface; do not treat every mirrored tab as a user-facing open.
             const entry = live.get(ref.key)
             const url = attachment(ref)?.browser?.tabs.find((item) => item.id === tabID)?.url
             const select = !!entry?.openingURL && url !== undefined && url === entry.openingURL
@@ -274,7 +292,13 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     }
 
     live.set(id, entry)
-    setState("attachments", id, { browser: null, embeds: {}, suspended: false })
+    setState("attachments", id, {
+      browser: null,
+      embeds: {},
+      suspended: false,
+      access: "full",
+      locked: { read: false, write: false },
+    })
 
     // The attachment's own root, not the route effect that happened to call attach(), so `entry.dispose` ends it.
     const unwatch = createRoot((dispose) => {
@@ -458,7 +482,12 @@ export function createModel(ctx: SetupContext<typeof definition>) {
 
     if (!entry) return { ok: false, message: ctx.t("login.sync.unavailable") }
 
-    // A pane that has not registered yet (the user never opened it this run) registers here, so the write has an owner.
+    // Cookie paste writes into the Electron pane store — stick off system Chrome first.
+    const bridge = chromeBridge()
+    if (bridge.status === "active") {
+      await bridge.value.setPreferSystem({ session: view.id, prefer: false })
+    }
+    // Prefer flip emits force → reattach; if this session was idle, wake so the write has an owner.
     entry.connection.wake()
 
     try {
@@ -558,7 +587,21 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     open(session: SessionRef) {
       if (!available(session)) return
       opening.add(session.key)
-      command(session, { type: "tabs.open" })
+      // In-app open sticks off system Chrome before tabs.open registers, or the open lands in Chrome.
+      void (async () => {
+        const bridge = chromeBridge()
+        if (bridge.status === "active") {
+          await bridge.value.setPreferSystem({ session: session.id, prefer: false })
+        }
+        command(session, { type: "tabs.open" })
+      })()
+    },
+    /**
+     * SiCode: re-register the agent channel after idle eviction so the next prompt sees browser
+     * tools and mirrored tabs. Safe to call repeatedly; no-op when the session has no live entry.
+     */
+    wake(session: SessionRef) {
+      live.get(session.key)?.connection.wake()
     },
     /** Whether the user just opened a tab in this session; true once, for the pane that focuses its address. */
     opened: (session: Session) => opening.delete(session.key),
@@ -571,10 +614,12 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     site: (session: Session, tabID: Browser.TabID) => live.get(session.key)?.connection.site(tabID),
     /** Deletes the page's cookies and stored data, and reloads it. */
     clearSite: (session: Session, tabID: Browser.TabID) => live.get(session.key)?.connection.clearSite(tabID),
-    /** Agent browser access for this session's attachment; default read. */
-    agentAccess: (session: Session) => live.get(session.key)?.connection.agentAccess() ?? "read",
+    /** Agent browser access for this session's attachment; default full. Prefer the solid mirror. */
+    agentAccess: (session: Session) =>
+      state.attachments[session.key]?.access ?? live.get(session.key)?.connection.agentAccess() ?? "full",
     /** Config-file denies for this session's agent; write locked disables the panel switch. */
     agentLocked: (session: Session) =>
+      state.attachments[session.key]?.locked ??
       live.get(session.key)?.connection.agentLocked() ?? { read: false, write: false },
     /** Allow or revoke write tools without reconnecting; pages stay. No-op when config locked write. */
     setAgentAccess: (session: Session, access: "full" | "read") =>
