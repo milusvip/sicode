@@ -2048,3 +2048,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 扩展「推送到对话」误开内置：根因是 stickSystem→wake 挂接 Electron，inventory mirror 进 strip；createChromeAttachment 从未接入 BrowserPane.register。
 - 修复：push 只 setPreferSystem(true) 不 wake；main 在 owningAttach 时 register→chrome attachment；publishState 只发 agentInventory（避免 ambient Chrome 灌 strip）；prefer/bridge force→connection.reattach。
 - 内置打开 / syncLogin 先 setPreferSystem(false) 再挂 Electron。
+
+## reply-plain-language
+
+- 用户侧回复密密麻麻（路径/符号/pass-fail/已落盘分区）根因：Communication 只说了白话，没禁工程交接体；GPT/Astra 整段 override 还在鼓励 clear file paths。
+- 结构性修复：system.txt + deepseek/gpt/gpt-astra 钉死「改了什么→卡在哪→下一步」；禁 已落盘/未执行/当前进度 ledger；路径/符号仅在用户要打开或动手时才写；单测钉住关键句。

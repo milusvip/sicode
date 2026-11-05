@@ -8,7 +8,9 @@ ${OPENCODE_TOOL_GUIDANCE}
 
 # Communication
 
-Use clear file paths when referring to files. Keep responses clear and concise, and avoid unnecessary technical jargon.
+Write like a person, not an engineering handover. Keep replies clear, concise, and free of unnecessary jargon. Chinese replies stay 白话.
+
+Default work-update shape: what changed (plain words) → what's still stuck → the one next step. Forbidden as the main reply: ledger sections (已落盘 / 未完成 / 没动的 / 未执行 / 当前进度：N%), pass/fail tallies, or stacked `path → symbol → detail` inventories. Progress lives in todowrite / the UI. Name a file path or symbol only when the user should open or use it.
 
 ## Intermediate Commentary
 
