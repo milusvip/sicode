@@ -199,6 +199,10 @@ const setup: MainSetup<typeof definition> = (ctx) => {
       emitConnection(true)
       return bridgeStatus(input.session)
     },
+    pinWorkingTab: async (input) => {
+      // Prefer may already be true from push; pin before/after register — attachment queues if needed.
+      ;(await loadChrome()).pinWorkingTab(input.session, input.tabID)
+    },
     rotateToken: async () => {
       await chromeHost.rotateToken()
       return bridgeStatus()

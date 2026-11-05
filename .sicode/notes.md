@@ -2019,12 +2019,16 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 英文行为词概念映射
 
-- 整词匹配用 `(?:^|[^a-zA-Z0-9])word(?![a-zA-Z0-9])`：`compress` 命中 `compress`/`re-compress`，不命中 `compressor`。
-- 验证：`packages/core/test/search-ranked.test.ts` 10 pass（新增两条：`compress` 命中 `session/compaction.ts` 而非内容含该词的 `config/normalize.ts`；`compressor` 不触发映射）；`packages/core` typecheck 1838 文件 0 错。仍未做全基线对照——原 20 条查询集已丢。
 - 接续上一条：定义行排序救不了的「英文行为词 → 不同名实现文件」改由概念映射补。`packages/core/src/search-ranked/concepts.ts` 新增 `BEHAVIOR` 表（行为词 → 仓库实际用的标识符），`extrasOf` 对英文 query 按**整词、忽略大小写**匹配后并入 extras，其余管线（`expand` → BM25F → `pathMatchesExtra` 路径优先）不变。表内容（**prune 行已删**，见下）：`compress`/`summarize` → `compaction`、`truncate`/`overflow` → `recent-text`、`validate`/`validation` → `runtime`。
 - 表内每行左侧词都是**实测**目标文件名/声明里不含的（`compress` 不在 `compaction.ts`，`truncate` 不在 `tool-output.ts` 而在 `session/recent-text.ts:72` 的 `truncateToolOutput`）。曾拟加的 `emit`/`publish` → bus、`validate` → schema、`compress` → `prune` 三行**已删**：本仓 `emit` 无顶层实现（是接口成员），`schema.ts` 无校验实现，`prune` 只出现在 config schema 字段名里（`config/normalize.ts:353`），均属假映射。加行前先确认目标文件真存在。
 - **端到端实测**（`.sicode/scratch/suggest-probe.ts`，跑真实 `SearchRanked.suggest`：980 文件 + rg 文件列表 + 读内容，不是 rg 命中集——`pathMatchesExtra` 作用在全文件列表上）：`truncate` → `src/session/recent-text.ts` **第 1**、`validate` → `src/tool/runtime.ts` **第 1**、`compress` → `src/session/compaction.ts` **第 2**。`retry`（无 extra）未命中 `src/ripgrep.ts`，`permission`（无 extra）目标第 2，说明映射不误伤顺风题。
 - `compress` 排第 2 而非第 1 的原因不是映射失败，是**同名干扰**：`src/config/plugin/compaction.ts` 的 stem 也等于 extra `compaction`，`suggest` 的 `exactness` 分不出两者，BM25F score 把它排前。⇒ 概念映射已能把目标拉进 top2；要第 1 需要「同名多文件时按定义/职责再分」，属另一个改动。
+- **同名干扰（compress 从第 2 → 第 1）**：`compress` 的 extra 是 `compaction`，而 `src/config/plugin/compaction.ts` 与 `src/session/compaction.ts` 的 stem 都等于 `compaction`，`preferred` 原来的 `exactness`/`isTest` 两级完全分不出。实测（`.sicode/scratch/rank-diff-probe.ts`，983 文件）：`config/plugin/compaction.ts` = 0.14393，`session/compaction.ts` = 0.14166。BM25F 是长度归一化均值，前者的 content 只有 143 个 term、后者 9328 个（`compaction` 在后者出现 101 次 vs 前者 17 次），短文件反而占便宜——这 0.002 的差没有语义。
+- 修法（`packages/core/src/search-ranked/index.ts` 的 `preferred` 排序，在 `isTest` 之后加两级）：① `isInfrastructure` —— 路径落在 `config/`、`test(s)/`、`script(s)/`、`tools?/`、`migrations?/`、`fixtures?/`、`__*/`、`i18n`、`locales?` 的排后；② `selfMentions` —— 文件自身正文提到自己文件名（stem）的次数，多的排前。两级都只在 `pathMatchesExtra` 已命中的候选里生效，不影响无 extras 的普通查询。
+- **行为词门（`concepts.ts`）**：`BEHAVIOR` 表原来只要整词命中就并入 extras，导致 `验证`/`校验` 之类在真正含义是「检查一下」的句子里也把 extras 拉进来（`extrasOf` 的调用点见 `packages/core/src/session/context-hints.ts:229,243`），这会污染 head。现在分两档：`ALWAYS = {compress, summarize}` 命名词本身即触发（本仓 `compress` 不可能是别的意思，只可能是 compaction）；其余（`truncate`/`overflow`/`validate`/`validation`）必须 `namesIt`（query 以该词结尾）或 `ASKS_ABOUT`（query 以概念名词结尾，如 `压缩`/`截断`/`校验`/`验证`/`compaction`/`truncate`/`truncation`/`validation`）才触发。
+- **踩过的坑**：加门后 `validate` 裸词从第 1 掉到「未命中」——`validate` 不在 `ALWAYS`、又不以概念名词结尾，被门直接 continue 掉。修法是加 `namesIt`：query 以该行为词结尾（或就是该词）即视为在问这个行为，这同时覆盖 `validate`、`truncate` 两种裸词。
+- **端到端实测**（`.sicode/scratch/suggest-probe.ts`，跑真实 `SearchRanked.suggest`，983 文件）：`compress` → `src/session/compaction.ts` **第 1**、`truncate` → `src/session/recent-text.ts` **第 1**、`validate` → `src/tool/runtime.ts` **第 1**。`retry` 与 `permission`（均无 extras）不进 preferred 路径，名次不变（`permission` 第 2）。
+- 验证：`packages/core/test/search-ranked.test.ts` **13 pass**（新增三条：同名干扰时实现文件压过 config 观察者、行为词只在「在问这个概念」时触发、裸词 `validate`/`truncate` 仍映射）；`tool-search.test.ts` 37 pass / 0 fail；`packages/core` typecheck 1841 文件 0 错。全基线对照**仍未做**——原 20 条查询集随 `.sicode/scratch` 丢失，只有这五条定向数字。
 
 ## shell-tail-pipe
 
@@ -2048,6 +2052,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 扩展「推送到对话」误开内置：根因是 stickSystem→wake 挂接 Electron，inventory mirror 进 strip；createChromeAttachment 从未接入 BrowserPane.register。
 - 修复：push 只 setPreferSystem(true) 不 wake；main 在 owningAttach 时 register→chrome attachment；publishState 只发 agentInventory（避免 ambient Chrome 灌 strip）；prefer/bridge force→connection.reattach。
 - 内置打开 / syncLogin 先 setPreferSystem(false) 再挂 Electron。
+- 推送后 Agent 仍开不了系统 Chrome：stickSystem 只 setPrefer 不 wake，attachment 未挂时 browser.write 仍 deny，第一轮没有 click 工具。
+- 修复：推送 setPrefer + pinWorkingTab(被推标签进工作集，可排队) + wake 走 chrome register；drive-hint/system 文案明确推送后驱动系统 Chrome。
 
 ## reply-plain-language
 

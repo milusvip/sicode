@@ -50,14 +50,17 @@ const setup: Setup<typeof definition> = (ctx) => {
 
   // SiCode: extension popup pushes — a page, a picked element, or the site's login cookies.
   createKeyed(ctx.uses.chromeBridge, (client) => {
-    const stickSystem = () => {
-      // Push pins Agent to system Chrome for this conversation. Do not wake the in-app pane —
-      // that silently mirrors tabs into the built-in strip. Drafts have a screen but no
-      // MountedSession yet — prefer sticky waits until a real ses_ id exists. Agent wake on
-      // execution (or a later in-app open) registers the chrome attachment when prefer owns it.
+    const stickSystem = (chromeTabID?: string) => {
+      // Push must own system Chrome before the next prompt: prefer + pin the tab + wake the
+      // chrome attachment (not Electron). Without wake, browser.write is still denied when the
+      // model starts and Cursor-style drive of 宝塔/admin pages never gets tools.
       const session = ctx.sessions.current()
       if (!session) return
-      void client.setPreferSystem({ session: session.id, prefer: true })
+      void (async () => {
+        await client.setPreferSystem({ session: session.id, prefer: true })
+        if (chromeTabID) await client.pinWorkingTab({ session: session.id, tabID: chromeTabID })
+        model()?.wake(session)
+      })()
     }
 
     client.on("tabOffer", (event) => {
@@ -65,7 +68,7 @@ const setup: Setup<typeof definition> = (ctx) => {
 
       if (!screen) return showToast({ title: ctx.t("push.failed"), description: ctx.t("push.noSession") })
 
-      stickSystem()
+      stickSystem(event.tab.id)
       screen.composer.attach(
         pageOfferNote({
           origin: ctx.id,
@@ -86,7 +89,7 @@ const setup: Setup<typeof definition> = (ctx) => {
 
       if (!elements.length) return
 
-      stickSystem()
+      stickSystem(event.tab.id)
       // Multi-select from the picker lands as one offer with many elements — attach every chip.
       for (const element of elements) {
         screen.composer.attach(

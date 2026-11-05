@@ -70,6 +70,8 @@ export function createChromeAttachment(input: {
   const runtime = ManagedRuntime.make(NodeHttpClient.layerNodeHttp)
   const files = createBrowserFiles(() => [])
   let disposed = false
+  /** Extension push can land before this session's chrome binding registers — apply on attach. */
+  const pendingPins = new Map<string, Set<string>>()
 
   const asTab = (mapped: Mapped, bridge?: BridgeTab): Browser.Tab => ({
     id: mapped.tabID,
@@ -81,14 +83,35 @@ export function createChromeAttachment(input: {
     generation: mapped.generation,
   })
 
+  const lookupMapped = (entry: Entry, tabID: string) =>
+    entry.byTab.get(tabID as Browser.TabID) ??
+    (() => {
+      const chromeId = chromeIdFromTabID(tabID)
+      return chromeId !== undefined && Number.isFinite(chromeId) ? entry.byChrome.get(chromeId) : undefined
+    })()
+
+  /** Lock a pushed / focused Chrome tab into the agent working set and publish. */
+  const pinTab = (entry: Entry, tabID: string) => {
+    const mapped = lookupMapped(entry, tabID)
+    if (!mapped) return false
+    entry.touchedTabIDs.add(mapped.tabID)
+    entry.focusedTabID = mapped.tabID
+    publishState(entry)
+    return true
+  }
+
+  const applyPendingPins = (entry: Entry) => {
+    const pending = pendingPins.get(entry.session)
+    if (!pending?.size) return
+    for (const tabID of [...pending]) {
+      if (pinTab(entry, tabID)) pending.delete(tabID)
+    }
+    if (!pending.size) pendingPins.delete(entry.session)
+  }
+
   const requireMapped = (entry: Entry, tabID: Browser.TabID) => {
     // Accept stable tab_chrome_<id>, push chips chrome_tab_<id>, and any still-mapped legacy tab_<uuid>.
-    const mapped =
-      entry.byTab.get(tabID) ??
-      (() => {
-        const chromeId = chromeIdFromTabID(tabID)
-        return chromeId !== undefined && Number.isFinite(chromeId) ? entry.byChrome.get(chromeId) : undefined
-      })()
+    const mapped = lookupMapped(entry, tabID)
     if (!mapped) {
       return {
         type: "failure" as const,
@@ -233,6 +256,7 @@ export function createChromeAttachment(input: {
     try {
       if (action.type === "tabs.list") {
         await ensureInventory(entry, true)
+        applyPendingPins(entry)
         publishState(entry)
         // Agent sees Cursor-shaped pane (touched ∪ focused), not ambient Chrome.
         return { type: "success", result: { value: agentInventory(entry), files: [] } }
@@ -931,7 +955,24 @@ export function createChromeAttachment(input: {
       await entry.registered.promise.finally(() => clearTimeout(timeout))
       if (entries.get(binding) !== entry) throw new Error("browser.pane.registration.closed")
       await syncInventory(entry)
+      applyPendingPins(entry)
       publishState(entry)
+    },
+
+    /**
+     * SiCode: queue or apply a push chip's tab into this session's agent working set so
+     * tabs.list / drive tools see the page the user just sent from system Chrome.
+     */
+    async pinWorkingTab(session: string, tabID: string) {
+      if (disposed) return
+      const live = [...entries.values()].find((entry) => entry.session === session)
+      if (live) {
+        await ensureInventory(live)
+        if (pinTab(live, tabID)) return
+      }
+      const pending = pendingPins.get(session) ?? new Set<string>()
+      pending.add(tabID)
+      pendingPins.set(session, pending)
     },
 
     /** UI/agent commands routed through BrowserPane IPC when this binding owns the session. */

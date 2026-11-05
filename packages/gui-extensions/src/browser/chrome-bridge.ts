@@ -53,6 +53,16 @@ export const ChromeBridge = Ipc.define({
       input: Schema.Struct({ prefer: Schema.Boolean, session: PreferKey }),
       output: ChromeBridgeStatus,
     },
+    /**
+     * SiCode: extension push pins this Chrome tab into the Agent working set (`chrome_tab_*` or
+     * `tab_chrome_*`). Queued until the session's chrome attachment registers.
+     */
+    pinWorkingTab: {
+      input: Schema.Struct({
+        session: PreferKey,
+        tabID: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+      }),
+    },
     /** Internal store rotate (not shown in the simple UI). */
     rotateToken: { output: ChromeBridgeStatus },
     setPort: { input: Schema.Number, output: ChromeBridgeStatus },
@@ -180,6 +190,9 @@ export const ChromeBridge = Ipc.define({
       element: Schema.Struct({
         selector: Schema.String,
         label: Schema.String,
+        slot: Schema.optionalKey(Schema.String),
+        component: Schema.optionalKey(Schema.String),
+        action: Schema.optionalKey(Schema.String),
         role: Schema.optionalKey(Schema.String),
         name: Schema.optionalKey(Schema.String),
         text: Schema.optionalKey(Schema.String),
@@ -188,6 +201,9 @@ export const ChromeBridge = Ipc.define({
         Schema.Struct({
           selector: Schema.String,
           label: Schema.String,
+          slot: Schema.optionalKey(Schema.String),
+          component: Schema.optionalKey(Schema.String),
+          action: Schema.optionalKey(Schema.String),
           role: Schema.optionalKey(Schema.String),
           name: Schema.optionalKey(Schema.String),
           text: Schema.optionalKey(Schema.String),
