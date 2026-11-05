@@ -18,7 +18,7 @@ import { TrigramSearch } from "@opencode/core/filesystem/trigram-search"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
 import { GlobTool } from "@opencode/core/tool/plugin/glob"
-import { GrepTool } from "@opencode/core/tool/plugin/grep"
+import { AUTO_CONTEXT_MAX_MATCHES, GrepTool } from "@opencode/core/tool/plugin/grep"
 import { Tool } from "@opencode/core/tool"
 import { ToolOutput } from "@opencode/core/tool-output"
 import { location } from "./fixture/location"
@@ -351,6 +351,45 @@ describe("search tools", () => {
     ),
   )
 
+  // SiCode: synonym batch — one call covers several guesses so Flash need not serial-miss.
+  it.live("grep patterns merges synonym hits and dedupes overlapping matches", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          Promise.all([
+            Bun.write(path.join(tmp.path, "a.ts"), "export const sidebarFooter = 1\n"),
+            Bun.write(path.join(tmp.path, "b.ts"), "export const emptySpace = 2\n"),
+            Bun.write(path.join(tmp.path, "c.ts"), "export const unrelated = 3\n"),
+          ]),
+        ).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) =>
+              executeTool(
+                registry,
+                call("grep", {
+                  pattern: "sidebarFooter",
+                  patterns: ["emptySpace", "sidebarFooter", "missingToken"],
+                }),
+              ),
+            ),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              expect(result.metadata).toMatchObject({ matches: 2, patterns: 3, mode: "content" })
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(text).toContain("a.ts")
+              expect(text).toContain("b.ts")
+              expect(text).not.toContain("c.ts")
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("includes context lines around each match", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -380,6 +419,72 @@ describe("search tools", () => {
     ),
   )
 
+  // SiCode: a narrow hit list used to cost the model a whole extra step — grep gave line numbers,
+  // then a read was needed to see the code around them. The surrounding lines now ride along.
+  it.live("adds context to a narrow result without being asked", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          fs.writeFile(
+            path.join(tmp.path, "sample.ts"),
+            ["one", "two", "three", "alpha", "beta", "needle", "delta", "epsilon", "zeta", "eta", "theta"].join("\n") + "\n",
+          ),
+        ).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) => executeTool(registry, call("grep", { pattern: "needle" }))),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              expect(text).toContain("Line 3 | three")
+              expect(text).toContain("Line 6: needle")
+              expect(text).toContain("Line 9 | zeta")
+              expect(text).not.toContain("two")
+              expect(text).not.toContain("Line 10")
+              expect(text).not.toContain("Line 11")
+              expect(text).toContain("context lines included around each hit")
+              // Context stays presentation: machine output and the match count are unchanged.
+              expect(result.output).toHaveLength(1)
+              expect(result.metadata).toMatchObject({ matches: 1, truncated: false, mode: "content" })
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("keeps a wide result free of context lines", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.promise(() =>
+          fs.writeFile(
+            path.join(tmp.path, "many.ts"),
+            Array.from({ length: AUTO_CONTEXT_MAX_MATCHES + 2 }, (_, index) => `line ${index} needle\n`).join(""),
+          ),
+        ).pipe(
+          Effect.andThen(
+            withTools(tmp.path, (registry) => executeTool(registry, call("grep", { pattern: "needle" }))),
+          ),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.status).toBe("completed")
+              if (result.status !== "completed") return
+              const text = result.content?.[0]?.type === "text" ? result.content[0].text : ""
+              // Past the narrow threshold the surrounding lines would flood the page, so the
+              // result stays matches-only and the model narrows the search instead.
+              expect(text).not.toContain(" | ")
+              expect(text).not.toContain("context lines included")
+            }),
+          ),
+        ),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("ranks files by filename hit first, demotes tests", () =>
     Effect.sync(() => {
       // toModelContent is a pure function; assert its ordering directly so the relevance
@@ -402,6 +507,48 @@ describe("search tools", () => {
       // retry.test.ts (test file) demoted to last despite matching the stem.
       expect(out.indexOf("src/retry.ts:")).toBeLessThan(out.indexOf("src/config.ts:"))
       expect(out.indexOf("src/config.ts:")).toBeLessThan(out.indexOf("src/retry.test.ts:"))
+    }),
+  )
+
+  it.live("ranks a file that defines the term above one that only mentions it", () =>
+    Effect.sync(() => {
+      // The measured gap this pins: a hit-count sort lets a file that mentions a symbol eight times
+      // outrank the file that declares it once, so the model reads the wrong file first. A declaration
+      // line is the signal that the definition lives here, and it must outrank both a filename hit
+      // and a higher count. (Scope: this only helps when the declaration is in the hit set and the
+      // query names what it declares — see isDefinitionLine for the half it does NOT close.)
+      const mk = (p: string, line: number, text: string) => ({
+        kind: "match" as const,
+        match: { entry: { path: p, type: "file" as const }, line, offset: 0, text, submatches: [] },
+      })
+      const rows = [
+        // Each file also matches the other, so ranking cannot be satisfied by the filename alone.
+        mk("src/topic-switch.ts", 1, "export function switchTopic(session)"),
+        mk("src/consumer.ts", 1, "import { switchTopic } from './topic-switch'"),
+        mk("src/consumer.ts", 2, "switchTopic(session)"),
+        mk("src/consumer.ts", 3, "switchTopic(other)"),
+        mk("src/consumer.ts", 4, "switchTopic(third)"),
+      ]
+      const out = GrepTool.toModelContent(rows, { mode: "content", truncated: false, offset: 0, pattern: "switchTopic" })
+      // The declaring file wins on rank 0 over the filename-matching consumer, despite 1 hit vs 4.
+      expect(out.indexOf("src/topic-switch.ts:")).toBeLessThan(out.indexOf("src/consumer.ts:"))
+    }),
+  )
+
+  it.live("puts the definition line above the usage lines inside one file", () =>
+    Effect.sync(() => {
+      const mk = (p: string, line: number, text: string) => ({
+        kind: "match" as const,
+        match: { entry: { path: p, type: "file" as const }, line, offset: 0, text, submatches: [] },
+      })
+      const rows = [
+        mk("src/retry.ts", 40, "  retry(attempt + 1)"),
+        mk("src/retry.ts", 12, "export function retry(attempt)"),
+        mk("src/retry.ts", 55, "  retry(attempt)"),
+      ]
+      const out = GrepTool.toModelContent(rows, { mode: "content", truncated: false, offset: 0, pattern: "retry" })
+      // Line 12 (the declaration) prints before line 40, the earliest usage.
+      expect(out.indexOf("Line 12:")).toBeLessThan(out.indexOf("Line 40:"))
     }),
   )
 
@@ -934,8 +1081,10 @@ describe("two-stage grep prefilter", () => {
             yield* trigram.buildNow
             const added = yield* executeTool(registry, call("grep", { pattern: "tokenZZZ" }))
             expect(added.metadata).toMatchObject({ prefiltered: true, matches: 1 })
+            // SiCode: a literal with zero trigram candidates must fall back to a full sweep
+            // (prefiltered: false), not treat [] as "search nothing".
             const removed = yield* executeTool(registry, call("grep", { pattern: "tokenAAA" }))
-            expect(removed.metadata).toMatchObject({ prefiltered: true, matches: 0 })
+            expect(removed.metadata).toMatchObject({ matches: 0, prefiltered: false })
           }),
         )
       }),

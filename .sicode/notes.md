@@ -86,6 +86,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 覆盖面：`packages/app/src/shell/ui-inspect/describe.ts`（SiCode 内点选）、`chrome-extension/pick-element.js` + `background.js` normalize、`gui-extensions` 的 BridgeElement / chrome-bridge schema / `comment.ts` subject / `chromium.ts` CDP describe / `ipc.PaneElement`。
 - 无 hook 的裸标签（svg/path）chip 标题改成 `svg · {slot}`，避免模型只看到「svg」。
 - 扩展路径改完后要重装/重打包 CRX 才生效；ui-inspect 热更新即可。
+- 产品规则：agent/系统自己打开内置浏览器时必须拉开右侧 Review 侧栏；「有声音找不到窗口」是真实 UX bug。
+- 根因：新标签默认 strip.open 走 append（侧栏关着也不展开）；navigate 不发 focus，复用已有标签时页面后台跑、出声。
+- 修复：`model.ts` strip.open 在侧栏关闭时强制 select；`pane.ts` / `chrome/attachment.ts` 的 navigate 发 focus → layout.open(select)。
+- 改 packages/chrome-extension 源码后必须立刻 bun packages/chrome-extension/pack.ts \"<chrome.exe>\" 重打 SiCode-Browser-Bridge.crx；只改 js/html 不打包，Install/assertPackedCrxFresh 会拒装或装到旧包。CentBrowser 路径见 chrome-extension/README.md。
+- Bridge 上传（≥0.2.42）：chrome.debugger 下禁止裸 DOM.setFileInputFiles(nodeId)（Chromium #928255）；走 Page.setInterceptFileChooserDialog → 点标记 input/可见控件 → Page.fileChooserOpened.backendNodeId → setFileInputFiles。page.js 快照含隐藏/shadow [file]，带 accept=/hidden=/multiple=。
+- 内置 chromium 上传：先 ensureFileInput 直接 set；失败再 filechooser 兜底。appendFileInputs 用 DOM.getDocument({depth:-1,pierce:true}) 穿 open shadow。
 
 ## 过程壳与时间线
 
@@ -281,6 +287,17 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 独立 Thinking 行已取消：`projection.ts` 不再把实时 reasoning 抽成 `Thinking`，一律留在 context 组里，由 `CurrentContextToolGroup`（过程壳）渲染；`streaming` 仍在 `session-timeline-row` 标给末尾未完成 thought。
 - `isProcessGroup` 仍只认带工具的组（避免「只有已完成思考」的空闲回合被套上零工具 WorkShell）。纯思考链靠 `isReasoningWork` 进 `lastProcessGroupKey`，工作中默认展开 + busy。
 - `CurrentContextToolGroup.pending` 额外认 `reasoning.streaming`，无工具时过程壳也保持转圈。
+- 过程条单位跟着「实际跑了什么」走：`CurrentContextToolGroup.label()` 用 `toolCount = parts.filter(type === "tool" || "shell").length`，`toolCount === 0` 时单位换成「个思考」（`ui.processShell.openThought` / `ui.processShell.count.afterThought`）。之前纯思考组会把 reasoning 段数当工具数，渲染成「过程 · 3 个工具」。
+- 纯思考组没有工具名列表：`tools` 与 `mid` 在 `props.open || thoughtsOnly` 时都为空串，所以不会出现「过程 · · 3 个思考」。展开态本来也不会重复分隔点（`mid` 为空、`after` 是 `count.after`）。
+- 失败数量单独渲染在 `[data-slot="context-tool-group-failed"]`，颜色 `--v2-state-fg-danger`。`failedTools()` 是失败计数，`failed()` 只是它的布尔投影；trigger 上的 warning 图标用 `failed()`，文字用 `failedTools()`。
+- 总栏 `WorkShellHead.title` 在 `status === "done" && failedCount > 0` 时改用 `ui.workShell.title.doneFailed`（「完成 N 个工具，M 个失败」），但仍保留绿勾——判定 `workShellStatus` / `unresolvedFailure` 的语义没动，只在标题补数。
+- 过程条 trigger 加了 `title={label().open}`（长工具名被 `text-overflow: ellipsis` 截断后可悬停看全文），`aria-label` 改成 `label().text`，与可见文本一致（之前用的是带工具名列表的 `open`）。
+- 死键 `ui.processShell.closed.*`（before/mid.one/mid.other）已从 en/zh/zht 删掉；`ui.processShell.closed.one/other` 也一并移除。
+- 验证：`packages/ui` 的 `bun run typecheck`（172 文件）与 `packages/session-ui` 的 `bun run typecheck`（247 文件）均无错；`packages/session-ui` 下 `bun test src` 311 pass / 0 fail。
+- 过程条失败数的统计口径必须和「N 个工具」一致：`toolCount` 把 `type === "shell"` 也算进工具数，所以 `failedTools()` 也必须覆盖 shell part，否则组里一条 shell 命令超时/被杀时，头显示「5 个工具」却一个失败都不报。`ContextGroupPart` 的 shell 变体现在带 `failed?: boolean`，由 `session-timeline-row.tsx` 按 `status === "timeout" | "killed" | exit !== 0` 填充。
+- 截断提示只在真的可能被截断时给：过程条 trigger 的 `title` 用 `label().tools || undefined`（只有收起态的工具名列表会被 `text-overflow: ellipsis` 切），不要再挂整句 `label().open`——大多数头没有可截断内容，每次悬停都弹一个和屏幕上一样的句子是噪音。
+- 总栏 `work-shell-title` 的失败数在句尾，窄窗口下 `text-overflow: ellipsis` 会先吃掉它，所以 `WorkShellHead` 的标题 span 带 `title={title()}`，被切时仍可悬停读全。
+- 过程壳的视觉现状（核对过，不需要改）：面板 1px `--v2-border-border-weak-base` + 10px 圆角 + layer-01 45% 填充；头条 layer-01 100%；hover 只点亮 inset 边框不换填充；focus-visible 有 1px `--v2-border-border-focus` 内描边；`prefers-reduced-motion` 已覆盖开合动画和贴顶浮入；失败态只有图标和失败数上色，工具名保持 faint。
 
 ## 字体与排版
 
@@ -746,8 +763,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 侧边栏文件树
 
-
-
 - 「打开文件」侧边栏的树是 `gui-extensions/src/file/tree-v2.tsx`，行由 `tree-model.ts` 的 `flattenLiveFileTreeV2` 从 `screen.file.tree.list(dir)` 拼出；数据源是 app 侧 `workspaces/files/tree-store.ts`。
 - 目录只列一次：`tree-store.ts:42-48` 的 `listDir` 在 `dir[dir].loaded` 为真时直接返回；折叠再展开走 `expandDir`（`:138-145`）→ `listDir` 无 force → 同样不重读。`tree-v2.tsx:186-195` 只在根 `loaded` 为假时才 `sync("")`。
 - 能让已加载目录重列的只有 `filesystem.changed`：`workspaces/files/model.tsx:263-281` → `watcher.ts:16-41`（unlink 时刷事件文件的父目录，且要求该目录已 load）。
@@ -771,10 +786,12 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 绝对路径用 `resolveOpenInAppPath(root, path)` 拼，root 取 `ctx.screen.current()?.file.root`（与 `OpenInBrowserButton` 同一读法，动作发生时读而不是渲染时闭包）。失败（文件已被删/路径失效）弹 `common.requestFailed` toast，description 给路径——`reveal()` 返回 false 不会抛错，不接住就静默失败。
 - 覆盖范围比「二进制」大：`ArtifactBinary` 是所有 Switch 分支的 fallback，凡是 preview 不了的（含 viewer 解码失败、viewer 抛错、未知 kind）都落到这里，所以按钮一次到位；`ArtifactViewer` 的两处 fallback 也要把 `onReveal` 透传下去。
 - 新 key 只加 en/zh/zht 三份（`view.revealInFolder`），其余 60 个语言回落到英文——与 `view.fontSample` 的做法一致（扩展的 t 在 `host.tsx` 里把 en 合并在语言包下面，缺 key 不会露出原始 key 名）。
+- 根因：客户端 invalidateFromWatcher 能重载已打开文件，但 LocationWatcher 只盯 .git/HEAD，agent 的 edit/write/patch 从不发 filesystem.changed。
+- 修复：FileMutation.write / writeTextPreservingBom 成功后 publish FileSystem.Event.Changed（resource 相对路径，existed→change 否则 add）。客户端已有 loadFile(force) 路径。
+- 兜底：refreshFileTree 在挂载/idle/手动刷新时除树目录外，按 layout.stored 的 file tab id 强制 sync 打开文件内容。
+- 验证：core file-mutation 9 pass（含 publishes filesystem.changed）；gui-extensions refresh.test 4 pass；core/gui-extensions typecheck 干净。需重启 sidecar。
 
 ## 会话历史脊
-
-
 
 - 组件是 `app/src/session/timeline/turn-rail.tsx` + `turn-rail.css`（未提交，SiCode 新功能），挂载点 `message-timeline.tsx:497` 的 `<SessionTurnRail>`，`<Show when={props.active !== false}>` 里。
 - 数据：`turnRailMessages` = `selectVisibleSessionUserMessages(selectSessionUserMessages(history.messages()), revert?.messageID)`；`turnRailFailed` 只看该轮最后一条 assistant 的 `error`。点击 tick → `onUnpin()` + `scrollToMessage(message,"smooth")`（`use-session-hash-scroll.ts:99`，靠 `#msg_` 锚点 + `revealMessage` 重试 4 帧）。
@@ -790,6 +807,7 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
   - 自动滚动：`scrollIntoView` 换成直接算 `tick.offsetTop` 设 `track.scrollTop`，不会再去带动别的滚动容器。
   - 顺手：track `onScroll` 时按保存的 tick 元素重算 hover（梯子滚动时气泡跟着走）；删掉死规则 `[data-visible="false"]` 和同名常量属性。
 - 仍未做：每帧 `querySelectorAll("[data-message-id]")` + 每行 rect 的抽样方式没动（`activeTurnID` 保持原样，rAF 节流，实测不了了）。
+- turn-rail wheel: overflow-y auto + stopPropagation alone did not scroll the ladder in Electron (narrow absolute rail, hidden scrollbar). Now non-passive wheel listener sets track.scrollTop from deltaY (deltaMode lines/pages normalized) and preventDefault/stopPropagation only when scroll actually moves.
 
 ## 语义索引
 
@@ -1141,8 +1159,6 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 
 ## 自定义提供商
 
-
-
 - **自定义提供商的「获取模型」链路（2026-10-27，a93d3241d4）**：探测逻辑在 `packages/core/src/provider-probe.ts`（导出 `probeModels`，Effect 版），`POST /api/provider/models`（`packages/protocol/src/groups/provider.ts` 的 `provider.models`）和插件 SDK 的 provider domain（`core/src/plugin/host.ts`）都调它；客户端类型是生成的，改 protocol 后要在 `packages/client` 跑 `bun run generate`。
 - 探测的兼容面：响应接受 OpenAI `{data:[{id}]}`、Ollama `{models:[{name}]}`、裸数组三种；baseURL 不以 `/v1` 结尾时 404 会回退 `{base}/v1/models`；`Authorization` 只在用户没自定义同名 header 时才注入 Bearer；15s 超时；错误信息优先读响应体里的 `error.message`。
 - **给 protocol 加 endpoint 的固定成本清单**（这次踩全了）：protocol group、server handler、两处插件 SDK domain 实现（`core/src/plugin/host.ts` + `plugin/src/promise/adapter.ts`）、client 生成物（generate）、以及 core 测试夹具里的 provider stub（`core/test/fixture/policy.ts`、`core/test/plugin/host.ts` 的 providerHost/noProviders/默认 overrides）——缺一处 typecheck 就挂。
@@ -1157,6 +1173,11 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **自定义提供商全链路体检（2026-10-29）**：①运行时链路闭合——package `aisdk:@ai-sdk/openai-compatible` 经 `provider.ts` 的 `packageName()` 剥前缀 → `core/src/plugin/provider/dynamic.ts`（DynamicProviderPlugin 兜底任意包）npm 装 `@ai-sdk/openai-compatible@ai-v6`（`sdk-factory.ts` 的 installSpec 钉 v6 tag）→ 取 `create*` 导出；`aisdk.ts` 的 `prepareOptions` 把 settings（baseURL）+ `nativeCredentialSettings`（credential type:"key" → `{apiKey}`）+ config headers 全部传入工厂。②credential 两条路都能到：明文 key 存 credential 库 → `model-resolver.ts:381` 按 providerID 查 `connection.active`；`{env:NAME}` 走合成 integration 的 env method → `connection.resolve` 读 `process.env[name]`。③config provider 插件（`config/plugin/provider.ts:29`）会给每个配置化 provider 注册**合成 integration**（key 或 env method）——用户撞的 404 本质是保存弹窗在 config.update 返回后立刻 connect.key、注册表 reload 未完成的**时序竞态**；直接 credential.create 的修法对该竞态免疫，两种状态都正确。④schema（`schema/src/config/provider.ts`）完整接受表单形状：settings 走 StructWithRest、capabilities（tools/input/reasoning）与 limit（context/output）字段全对上。
 - 体检中另修两处：②`CustomProviderActions.remove` 原样调 `integration.get` 无 catch——删除自定义提供商必报「Integration not found」（与保存同根因），已加 404 回退到 `credential.list()` 按 integrationID 过滤；③zht 缺 5 个 key（deleted.title/description、edit.title、field.apiKey.editDescription）已补繁体。
 - 已知瑕疵（未修，低危）：`listCustomProviders` 只回读 settings.baseURL，手工调过 timeout 等其它 settings 的 config 在编辑保存后会被丢；`{env:...}` 提供商改为明文 key 保存时，若合成 integration 只有 env method，`connect.key` 会 `Effect.die`（Key method not found → 500），刷新后重存可绕过；config.update 先于 key 存储执行，key 存储失败会留下「无 key 的提供商」（修复后概率极低）。
+- **「保存/测试连接都报错」的真因不是表单，是连错了服务端（2026-11-03）**：桌面端连到的 127.0.0.1:28894 实际是**官方 OpenCode 桌面端 2.2.5** 的后台服务（`%APPDATA%\ai.opencode.desktop\cli\2.2.5-x64\opencode-cli.exe serve --service`，pid 记在 `~/.local/state/opencode/service.json`），不是 SiCode 2.1.4 自己的。用 service.json 的 password 走 Basic auth 实测：`/api/info` 回 `{"version":"2.2.5"}`，`POST /api/provider/models` 与 `/api/provider/test` 都是 **404**（这两个是 SiCode 私有端点，字符串在 2.2.5 的 exe 里计数为 0），`GET /api/credential` 回 200 —— 所以「获取模型/测试连接/保存」全挂，其它功能正常。
+- 成因：两个 app 共用 `~/.local/state/opencode/service.json` 和同一个固定端口；`packages/desktop/src/main/service/background-service.ts` 只在 `mode === "initial"` 时把 `cli.version` 传给 `Service.ensure`，**reconnect 时 version 是 undefined**，而 `packages/client/src/service-version.ts` 的 `matchesVersion(v, {version: undefined})` 恒为 true → 自己的 2.1.4 服务一死，重连就顺手接管了官方 2.2.5 的服务。查证：`Get-CimInstance Win32_Process -Filter "ProcessId=<service.json 的 pid>"` 看 CommandLine 指向哪个 appId。
+- 用户侧立即解法：退出官方 OpenCode 桌面端（或结束那个 opencode-cli 进程）后重启 SiCode，让它自己 2.1.4 的 server 重新占端口。注意两个 app 还共用 `~/.local/share/opencode/opencode.db`，会话与凭据是混着的。
+- 附带发现（会误导排查）：`installCli`（desktop-cli.ts:139）把 bundled exe 拷到 `userData/cli/<version>-<arch>/` 后，只要同版本目录已存在就**直接复用**（日志 "v2 CLI staged executable reused"）。所以改完服务端代码、版本号不变地重新打包，跑的还是旧二进制的 server——本机 `com.sicode.desktop\cli\2.1.4-x64\opencode-cli.exe` 是 10-29 的，而 Program Files 里的 bundle 是 11-03 13:00 的。排「新代码没生效」时先比这两个文件的时间戳。
+- 端点本身没问题：`http://8.138.2.118:3001/v1`（new-api 网关）+ 该 key 实测 `/v1/models` 200（deepseek-v4.1-flash、glm-5.3-flash）、chat/completions 200；仓库里 `probeModels`/`probeTest` 对它也全绿。
 
 ## shell 发现 / 别名兜底
 
@@ -1840,3 +1861,169 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 「是 bug 那你改」被答成「设计如此」：`obey-fix-hint.ts` request-only 注入，要求改或问一个参数；`OPENCODE_OBEY_FIX=0` 关。
 - Windows PowerShell 上 bash 形（`tail`/`for x in`/`sed`/`ls -`/`cat`/`<<`）exit 1 红壳：`detectBashOnPowerShell` 在 spawn 前拒；system-prompt win32 加一行；`OPENCODE` 无单独开关。
 - 单测：`decision-freeze.test.ts` / `obey-fix-hint.test.ts` / `shell-bash-on-ps.test.ts`。
+
+## flash-pr123
+
+- PR1: locate>=8 exploreHandoff now forces toolChoice=subagent + narrowTools; soft-ignored -> exploreForce still narrows (no grep). Golden caps tightened to searchMedian<=3 / firstUsefulMedian<=8.
+- PR2: batch-pace.ts — >=2 trailing single-tool look steps -> batchNudge + BATCH_FOCUS_TOOLS (grep/glob/read only). Wired in selectSteer below exploreForce, above narrate/soft.
+- PR3: code-chunks.ts budgeted excerpts mounted after context-hints path list; OPENCODE_CODE_CHUNKS=0 disables. Fixture rewritten as target trajectory (not live re-export).
+
+## todo-default-on
+
+- experimental.todo 默认改为开（`todo !== false`）；显式 `false` 才隐藏 todowrite
+- 新 planning-gate：第 4 步无 todowrite 软提醒，再 +2 步强制 toolChoice=todowrite；新用户消息重置
+- explore 硬改派已有（handoff→subagent）；FOCUS_TOOLS 补上 todowrite；system.txt 加 Multi-step plans
+
+## upstream-handport-todo-edit
+
+- 手合上游 2f4653bb51：edit missHint + permission.allows；9321c2cec0：read 缺目录提示；0e102908e3：subagent 跟进文案
+- 手合 todo pill（c4c6065ee7/6007274795 适配）：本 fork 无 composer-lane，pill 单独浮在 composer 上方；todoEnabled 用 `!== false` 对齐默认开
+- /goal（8de0323975）暂缓：跨 core/plugin/gui/tui/schema，体量大，与 SiCode planning-gate 重叠，另开任务再评
+
+## deepseek 优化审计
+
+- 口径：本机 opencode-local.db + opencode.db 全量 assistant 行；DeepSeek 25 会话 / 1362 步 / 生成 273.9 分钟。脚本 `.sicode/scratch/deepseek-audit.ts`、`deepseek-reasoning.ts`、`deepseek-cache2.ts`、`deepseek-miss.ts`、`deepseek-quality.ts`、`deepseek-timeout.ts`。
+- 成本结构（DeepSeek）：每步生成 12.1s；推理 token 482,707 > 可见输出 417,614（p50 83 / p90 1056 / p99 3887）。reasoning 2049-8192 的 35 步平均 29.8s，是长尾主因。变体 `low` 只用了 21/1364 次，`default` 1343 次。
+- 缓存：命中率 88.7%（cache read 105.4M / uncached 13.4M）。会话中途 cache.read=0 共 84 次，吃掉 5.2M 未命中 token；其中 55 次 prompt>30k。紧跟 synthetic 注入的步 miss 率 19%，普通步 6%。
+- 并行：每步 1.24 次工具调用，≥2 调用的步只占 30.4%。单工具步 69.6% 正是 batchNudge 的触发条件。
+- 工具质量：read 重复率 26%（84/318，同一会话内 controller/Wechat.php 读 10 次）；grep 空搜 14%（41/292）、输出 >8k 字符 53 次；execute 82 次里 20 次在内部用 search() 找自己的工具；shell 681 次、显式 sleep 轮询 33 次。
+- 协议层缺陷 A：`packages/ai/src/providers/deepseek.ts` 的 configure() 只设了 maxTokensField，没有设 chunkTimeout，于是吃到本 fork 改的 `DEFAULT_CHUNK_TIMEOUT_MS = 30_000`（上游 900s）。该常量的注释自己写了「DeepSeek can stream nothing for minutes while reasoning…known to think without streaming set chunkTimeout explicitly」——但 deepseek 这一家没设。实测 3 次 `Timed out waiting for response data`（ses_e7785b80），每次都整份重发。
+- 协议层缺陷 B：`narrowTools`（runner/llm.ts:95）收窄 `tools.definitions` 后，`baseTranscript` 用同一份 definitions 去渲染 system prompt（`SessionSystemPrompt.make(tools.definitions.map(t=>t.name))`），所以收窄一步会同时改掉工具列表和 system 文本 —— 两者都在 DeepSeek 的缓存前缀里，等于整段重建。`PromptPrefix.observe` 已经记录这个事件但没人读。影响面不小：batchNudge 在单工具步之后就会触发，而单工具步占 69.6%。
+- 提示词缺陷 C：`plugin/system-prompt/deepseek.txt` 与 `anthropic.txt` 是 append 模式，却各自又抄了一遍 `runner/prompt/system.txt` 里已有的 `# Reverse engineering and security task execution` 和 `# Authorization`，等于每轮读两遍。
+- 提示词缺陷 D：7 个 `plugin/system-prompt/*.txt` 里都有字面量 `\u2014`（unicode 转义没被解码就落盘），实际发给模型的是反斜杠 u2014 而不是破折号。deepseek.txt 第 24/28 行、gpt.txt 第 53/57 行等。
+- 数据口径警告：DB 反映的是用户当时跑的安装包，不是当前工作区。`todowrite`/`subagent` 在 1362 步里 0 次调用，但 planning-gate.ts 仍是未提交文件（git status `??`），所以不能据此判定 gate 失效 —— 当时那个版本里 todo 大概率还是 experimental.todo 关闭态。引用这两个数字必须先确认构建版本。
+- 已量过、不要再做的：edit 链路（98.8% 成功率、占工具耗时 1%）、shell 超时与轮询（已拦）、上下文压缩阈值（92.7% 缓存命中下是负收益）、重试退避（Retry-After 只对 429）、工具输出上限、loop/probe 检测。剩余可回收量级都在分钟级。
+
+## 会话空转诊断
+
+- 诊断目标 ses_e5ea441c7ffdgabQieDL9FJpH7（标题「模型身份询问」，实为 DeepSeek 优化审计）：墙钟 30.3 分钟从提问到最终回答，100 个 assistant 步、137 次工具调用、11.25M prompt token，但**零行代码改动**（工具分布 shell 37 / grep 48 / read 31 / write 21，write 全部落在 `.sicode/scratch/`，无 edit、无 patch）。用户的追问是「为什么花了二十分钟空转」。
+- 时间去向（`time.streamed` 是 reasoning.completed，不是首 token，别用它算 TTFT）：真 TTFT 992s(50%)、reasoning 流 478s(24%)、正文流 70s(4%)、工具执行 35s(2%)、压缩 86s(4%)。思考和等首字节合计 1470s = 81%，屏幕上什么都没有。工具执行根本不是瓶颈——137 次调用总共 35 秒。
+- 关键推导：`corr(TTFT, reasoning tokens) = 0.88`，`corr(TTFT, prompt size) = 0.19`。所以 9.9s/步的平均首字节不是上下文变长、不是缓存失效、不是中转排队造成的，而是**模型在想**：provider 在吐第一个 token 前已经生成完了全部 reasoning_content。provider `8-138-2-118-3001` 245 步实测 TTFT 中位 6.8s / 均值 9.1s，而同库 `opencode` provider 是 2.0s / 2.6s —— 差 3.5 倍，是这家中转的特性，不是全局网络问题。
+- 空转的机械原因（可修，有实证）：`explore-budget.ts` 的 `READ_ONLY_TOOLS` 不含 `write`，`SHELL_READ_ONLY_COMMANDS` 也不匹配 `bun .sicode/scratch/x.ts`。按该文件真实规则回放本次会话：连续只读步最长只有 13（HARD=24 永不触发），而 streak 被**重置 11 次，其中 9 次是被 `write` 打断**。即每写一个一次性统计脚本就被判为「有进展」，预算清零重来。脚本 21 个、各跑一次，共 23 次 scratch shell 调用。写垃圾脚本 = 绕过探索预算的合法通道。
+- 单步粒度也有问题：137 次调用 / 100 步 = 1.37，每步只发 1 个工具的有 61 步（61%），2 个的 32 步。`batch-pace.ts` 的 `SERIAL_SINGLE_STEPS = 2` 只在连续单工具**look** 步后触发，而插在中间的 write 步会打断这个序列，所以也没触发。两个止损器都被同一个 write 重置。
+- 中断点实证：12:50:38 用户点停（`idle.outcome = "interrupted"`，seq=1114 `finish=error / Step interrupted`，该步 TTFT 71s 后仍在思考），12:50:39 用户追问，12:52:56 才出答案（TTFT 120.4s 的极端步）。问→答 30.3 分钟，其中最后一步就等了 2 分钟。
+- 可复跑脚本：`.sicode/scratch/session-spin-audit.mjs <sessionID>` 出时间拆解；`.sicode/scratch/explore-budget-replay.mjs <sessionID>` 按真实预算规则回放并列出每次 streak 重置的原因。两个都只读 DB（opencode.db 存历史会话，opencode-local.db 是当前本地库，同一 ID 不一定两边都有）。
+- 修复（本次）：`explore-budget.ts` 的 `isReadOnlyTool` 现在把「write 到 scratch/temp 目录」和「用解释器跑 scratch 路径的脚本」都算作探索步；`batch-pace.ts` 的 `serialSingleToolSteps` 用同一套 `looksOnly` 判定。两个模块各自带一份 `THROWAWAY_DIR`（`.sicode/scratch|scratch|tmp|temp`）与 `INTERPRETER`（bun/node/deno/tsx/npx/python/py/pwsh）正则，没抽公共模块——两个文件都只有 50–90 行，跨文件抽常量会让任一改动都要动两个 import。
+- 验收数字（`bun .sicode/scratch/explore-budget-compare.mjs <sessionID>`，同一会话前后各回放一次）：ses_e5ea441c 修复前最长连续只读步 13 / 硬预算从未触发 / 软提醒 5 次；修复后 50 / 在 seq=466 触发 / 软提醒 15 次。即预算从「整个回合不生效」变成「走到约 34% 处生效」。
+- 测试：`explore-budget.test.ts` 原来有一条 `"a shell command that runs a scratch script breaks the streak"` 断言（跑 scratch 脚本算进展），那正是把这个 bug 固化成期望值，已改成「算探索」并新增「写到项目里的 write 仍算进展」对照；`batch-pace.test.ts` 同步加两条。7 个相关测试文件 78 pass，`bun typecheck` 干净。
+- **未修的缺口（重要）**：`steer.ts:88` 的 `if (input.exploreHard) return { prompt: EXPLORE_BUDGET_PROMPT, role: "assistant", stop: false }` —— 硬预算即使触发也只是一句可被忽略的提示，而 `explore-budget.ts` 文件头当时写的是「hard: stop the turn and make it hand back a summary, the same way the step limit does」。已把文件头改成与实现一致的措辞（提示而非停止），但要不要真的 `stop: true` 是行为决策，未擅改：`EXPLORE_BUDGET_PROMPT` 自己写着「If you are not hunting — reading a long document … ignore this and continue」，收掉回合会误伤合法长文档任务。真正的止损需要区分「搜为主」与「读为主」，`locatingSteps` 已有这个形状，可作为下一步。
+- 同一会话里还剩两个未处理的 streak 打断点：seq=209 的 PowerShell 内联读字节（`$b=[IO.File]::ReadAllBytes(...)`，正则不认）和 seq=761 用 here-string 管道写 notes（那是真交付物，不该算探索）。前者说明 `SHELL_READ_ONLY_COMMANDS` 的「首词匹配」策略天然漏掉 PowerShell 管道式只读，后者是正确的重置。
+- 深挖 ses_e5ea441c 补充：当时跑的是已提交 HEAD 行为，不是工作区 WIP。HEAD 的 explore-budget 是 soft=12 / hard=24 / shell 只读已算探索，但无 THROWAWAY、无 force/handoff；batch-pace.ts 与 planning-gate.ts 当时仍是未跟踪文件。所以会话里不可能出现 todowrite 强制或 locate handoff——不是 gate 失灵，是根本没装上。
+- 同会话量化：工具执行合计仅 35s；created→streamed 等待 1345s；全程无「纯文本收尾步」，用户 interrupt（seq=1119）才停。第一次 scratch write 在第 15 步（deepseek-audit.ts），正好在 soft=12 触发之后、hard=24 之前把 streak 清掉。
+- 即便按当前 WIP 回放：handoff 会在第 8 步强制 subagent，hard 在第 38 步（seq=466）触发，但 exploreHard 仍是 stop:false，硬触发后还会再跑 60 步 / 约 15.4 分钟等待。EXPLORE_FOCUS_TOOLS 仍含 write，force 收窄后模型还能继续写 scratch（只是不能再 shell 跑）。
+- 次要浪费（非主因）：notes.md 重读 4 次、deepseek.txt/llm.ts 各 3 次；shell 失败仅 2 次（Windows 无 grep、ls 路径）；空 grep 15%。PowerShell $b=[IO.File]::ReadAllBytes(...) 仍会打断 streak（首词匹配漏掉），notes 已记。
+- 已修（接 ses_e5ea441c 深挖）：① \xploreHardLocate\——hard 且 \locatingSteps > 0\ 时 \stop: true\ + \	oolChoice: none\ + \EXPLORE_HARD_LOCATE_PROMPT\，长文档 hard（locating=0）仍只提示；② \EXPLORE_FOCUS_TOOLS\ 去掉 \write\（force/handoff 只能 edit/patch/subagent/…），force 文案同步；③ PowerShell \[IO.File]::ReadAllBytes/Text\ 算只读（explore-budget + batch-pace）。llm.ts 接线 \xploreHardLocate\。
+- 验证：steer / explore-budget / batch-pace / search-miss / planning-gate / flash-trajectory 71 pass。要进用户手中的桌面包还需要重新构建安装——这些闸门此前都在未提交 WIP 里。
+- 已修 scratch 主导空转漏网：新增 \spinningSteps\（搜索或 throwaway write/run 占一半以上才 >0）；\xploreHardLocate\ 改为 \xploreHard && spinningSteps > 0\。\locatingSteps\ 仍只看搜索（handoff 不误伤纯测量中段）。长文档纯 read → spinning=0 → 硬预算仍只提示。验收：explore-budget/steer/batch-pace 50 pass。
+
+## 读图吞吐
+
+- 读图吞吐（ses_e5d81d66 闲鱼 17 张）：不另开读图工具。① Image 默认 maxWidth/Height 2000→1280（磁盘原图不动）；② read \path\ 若是字符串化 JSON 数组则 coerce 成真数组；③ 多路径 read 并发上限 4。验证 tool-read + config/image 35 pass。
+
+## 记忆写入竞态
+
+- ses_e5d81d66 并行 remember：同一步两条 remember 同时 syncVectors（delete project slice + insert）撞 memory_vector.belief_id UNIQUE。修法：store.ts 用 KeyedMutex 按 project/persona 串行化；record 的 load+merge+replaceUnlocked 同锁。验证 memory-vector-store 并发测 + 相关 21 pass。
+
+## 浏览器写权限可发现性
+
+- 闲鱼发布会话卡死根因：侧边浏览器默认 browser.read，面板把 click/fill/evaluate/files.upload 从工具表整表摘掉；模型探测后推 Chrome remote-debugging-port / 外部 CDP，而不是指用户开开关。
+- 能力本身已有（plugin-browser Operations + browser.write），不是缺工具 API。开关原在地址栏站点菜单（site.agent），默认关，难发现。
+- 已修：① system-prompt 在有 screenshot/snapshot/tabs.list 且无 browser.click 时注入「请用户开 Allow the agent to modify this page，禁止推 CDP」；② tools.ts namespace 描述同口径；③ 工具栏加「允许交互」按钮（AgentAccessToolbar），access/locked 镜像进 solid Attachment 与站点菜单共用。
+- 默认仍只读（安全取舍）；不做「默认 full」。上传走 browser.files.upload，开 write 后才出现。
+- 用户反馈「还要点允许交互太麻烦」：默认改为 full。侧边浏览器一挂上就有 click/fill/upload，不必再手动开。
+- 改动点：connection 初始 access、pane `target.access ?? "full"`、model Attachment 初值与 agentAccess 回落。工具栏/站点开关仍可关成只读。
+- 只读提示词保留：用户主动关 write 时模型仍应指回开关，不推外部 CDP。
+- 用户不要任何「允许交互」开关：已拆掉工具栏按钮和站点菜单里的 agent write Switch。侧边浏览器挂上默认 full，模型直接 click/fill/upload。
+- 只读仅剩配置 deny browser.write；提示词改为「说清被拒并停下，禁止推 CDP」，不再让用户开开关。
+- 系统 Chrome bridge 对齐自主操作最小集：fill_form / select / check / hover / wait / dialog / files.upload（扩展 page.js + debugger DOM.setFileInputFiles + host/attachment）。
+- 内置 pane 本就有这些；现在同一套 browser.* 在两侧都能点填传。files.drop / lighthouse / trace 仍仅内置。
+- 扩展版本 0.2.39；用户需在设置里重装/更新 Bridge 扩展后新操作才生效。
+- 提示词：有 click+snapshot 时注入自主闭环（tabs → snapshot → 写操作 → wait/screenshot），禁止起第二浏览器/CDP。
+- ses_e5d10f71fffeAQ4mLKMXCroPKo：闲鱼发布失败。写工具已有（click/fill/upload），卡在 browser.snapshot/find 报 frameCache is not defined，拿不到 @eN ref。
+- 根因：chromium.ts 的 `let frameCache` 写在 createBrowserPage 的 `return {…}` 之后，初始化永远不执行，frames() 访问 TDZ → snapshot/find 必炸；screenshot/evaluate/tabs 不受影响。
+- 修法：把 frameCache 声明挪到 return 之前（与 revision 同层）。需重启桌面端生效。
+- ses_e5b3ddeb: side browser attached (permission browser.read+write allow) but Flash refused "没法操作闲鱼/没有登录态" with 0 browser.* calls. Not an attach bug — model capability-refuse.
+- Fixed: browser-drive-hint.ts injects on 发布/填表/publish… when browser.click is in the tool snapshot; system-prompt adds explicit "do not refuse with missing login/API".
+- Structural (not soft-only): browser-drive-gate in llm Completed — user 发布/填表 + click tools present + turn used 0 browser_* tools → force one more step (once per user id). Soft hint kept as front half.
+- Also fixed tool-id mismatch: production ids are browser_click (underscore) but checks used browser.click (dot), so Drive-web guidance never fired. hasTool() accepts both; system-prompt/canDrive updated.
+- Tab visibility: plugin-browser mirrors compact inventory into session metadata sicode.browserTabs on state; hint lists open tabs. Cleared on attachment close.
+
+## flash-empty-stop
+
+- ses_e5b6962c: Flash finish:stop with "看下…" and 0 tools → idle; completion/final-answer gates miss this. Fixed with continue-intent-gate.ts (short announce + next-step markers, once per fingerprint) wired in llm.ts after completion-gate.
+- Same session burned 120s on Shell.Application.Namespace(10).Items() Recycle Bin COM enum — not covered by unbounded-recurse/content-search. Fixed with detectSlowEnumeration in shell.ts (Namespace(10) / $Recycle.Bin / uncapped Items()).
+- [object Object] on shell errors in that dump was the analysis script String(st.error) — stored error.message was already the real notice. No product fix.
+
+## browser-evaluate-alias
+
+- browser.evaluate: accept CDP `expression` as alias for `script` (rpc schema + normalizeAction + chrome attachment fallback). Fixes Flash burning a turn on "script: Missing key" after sending expression.
+- Code Mode: stub setTimeout/setInterval/clearTimeout/clearInterval to TypeError pointing at tools.browser.wait; execute tool description names the same. No real timers added.
+
+## browser-element-visibility
+
+- 选元素/加页面 note 后模型「看不见内置浏览器」：note 只塞 chip 文案，不保证 agent RPC 挂接与 sicode.browserTabs；idle 挂起后工具 deny、清单清空，hint/gate 都不触发。让模型自己 open 会重建挂接所以看起来「只有自己开才行」。
+- 已修（core）：mentionsAttachedBrowser 认 comment.ts 固定 subject；browser-drive-hint / browser-drive-gate 在「有 click 工具 +（有镜像 tabs 或用户 note 点了浏览器）」时注入/逼一轮，不再只靠 metadata。
+- 已修（gui/app）：Browser.wake；panel 选元素/整页 note 时 wake + setPreferSystem(false)；扩展 push 时 setPreferSystem(true)+wake；composer prepareSend 在 origin=browser 的 note 发送前 wake MountedSession。
+- 验证：core browser-drive-hint/gate 14 pass；gui-extensions + app + core typecheck 干净。需重启桌面端才进安装包。
+
+## long-context-plan
+
+- 长上下文「用得好」方案落在 .sicode/plans/long-context-use.md：对症 Lost-in-the-Middle / 漂移 / 噪声 / 混来源 / 错误传播 / 延迟；与 flash-dual-track、memory、latency-plan 错开，不管跨会话记忆和代码检索。
+- 真杠杆顺序：P0 工具噪声分级 degrade → P1 working-pin 钉尾 → P2 constraint ledger → P5 少步 batch → P3 来源标签 → P4 checkpoint nudge。禁止靠加长 system。
+- 只做一个就做 P0；P0+P5 可并行，对墙钟和中间淹没最直接。
+- 长上下文方案落地进度（long-context-use.md）：P0 工具噪声分级 degrade（preserve/reopen/noisy + error 一行）；P1 working-pin 钉尾；P2 constraint-ledger 允许范围（@附件/点名路径，也可以改 扩展 / 不限文件 清空）；P5 batch SERIAL_SINGLE_STEPS 2→1。
+- 接线：context.ts 合并 freeze+scope 一次 MetadataUpdated；edit/write/patch 在 freeze 后查 ledger；working-pin 带 frozen/scope/anchors。
+- Kill switches：OPENCODE_WORKING_PIN / OPENCODE_CONSTRAINT_LEDGER；既有 DECISION_FREEZE / BROWSER_DRIVE 不动。
+- 验证：constraint-ledger + working-pin + history-degrade + batch-pace + decision-freeze 42 pass；core typecheck 干净。P3 provenance / P4 checkpoint 未做。需重启 sidecar/桌面端。
+- P3 provenance: wrapToolResult in session/provenance.ts; to-llm-message toolResult wraps completed text (and first text part of content arrays). Compact degrade lines get a one-line <source ... />. Kill switch OPENCODE_PROVENANCE=0. Older omit/error lines stay header-only.
+- P4 checkpoint: session/checkpoint-hint.ts CHECKPOINT_STEPS=6; llm Completed on needsContinuation injects once per user id before continue; Set checkpointNudged. Kill switch OPENCODE_CHECKPOINT=0. Below step-limit, above final-answer.
+- Verified: provenance + checkpoint-hint + history-degrade + batch-pace 26 pass; core typecheck clean. Manual replay / token delta / commit left open.
+- Track A: scratch long-context-baseline.ts against opencode-local.db — 2 noisy sessions drop tool chars ~74% (PASS ≥30%); T5.1 last-14d tools/step mostly 1-tool (1177) vs 2+ (499); latency sketch by provider in long-context-baseline.md.
+- Track B: T5.3 one-line parallel read/grep in system.txt + read/grep tool descriptions (SERIAL already 2→1).
+- Track C: edit-spiral.ts detect mutate↔read ≥3 transitions; soft then stop via steer/llm; OPENCODE_EDIT_SPIRAL=0; tests green.
+- Track D: Waiting row shows provider/model; after 60s stall copy + Stop waiting via sessionInterrupt (no auto endpoint switch).
+
+## constraint-ledger
+
+- constraint-ledger: image/PDF/AV attachments are reference media and must not enter write allow-scope; only named prose paths and editable @files lock edit/write/patch. Pure media attach = no lock (same as pathless chat). Kill switch still OPENCODE_CONSTRAINT_LEDGER=0.
+- ses_e5d10f71fffeAQ4mLKMXCroPKo stuck: metadata scope locked to two Downloads pngs so workspace 闲鱼服装图 txt/md writes refused. Cause: media attachments entered ledger + persisted scope survives pathless turns.
+- Heal: scrub media paths from fold/scopeOf/remember; skip media attachments when building scope. Cleared that session's sicode.constraintLedger.scope in opencode-local.db. Instant unlock without restart: user says 不限文件.
+
+## completion-gate
+
+- completion-gate structural fix (ses_e58cab861ffd): refuse idle while latest todowrite still has pending/in_progress. Same stuck fingerprint forced up to MAX_COMPLETION_CONTINUES=8; completing/cancelling an item resets budget. Once-per-fingerprint removed. Skips when stepLimitReached or waitingOnUser. Kill path still hand back after 8 no-progress continues.
+
+## system-proxy
+
+- Smart system proxy: parse PAC chain (PROXY…; DIRECT); TCP-probe and only inject a live proxy into HTTP_PROXY; all dead → direct. OPENCODE_MIRRORED_PROXY marks owned env. Side browser uses PAC data-URL so Chromium natively fails over to DIRECT. Runtime: aisdk + webfetch call failoverMirroredProxy on transport death and clear mirrored env so retries go direct. User-exported proxy keys are never overwritten.
+- batch-pace: todowrite-only steps are transparent to the serial single-look streak so progress-bar updates no longer cancel parallel batching (ses_e58cab861ffd).
+
+## memory-pipeline
+
+- Memory structure in packages/core (not .sicode plans): Observation → policy → Consolidate.admit → Belief. explicit/repeated-constraint/edit-locus are policies; inject unchanged. Plugin project-memory admits via consolidate; OPENCODE_MEMORY_AUTO=0 keeps only explicit. preference.ts is thin facade.
+- packages/core memory pipeline (structural): Observation → policy (explicit / repeated-constraint / edit-locus / collect) → Consolidate.admit → Belief. project-memory plugin only admits; prompt keeps per-session recent texts for repeat constraints. OPENCODE_MEMORY_AUTO=0 keeps explicit only. preference.ts is facade. .sicode plan file removed as deliverable.
+
+## browser-push
+
+- 扩展「推送到对话」会误开内置浏览器：不是 syncLogin/openURL，是 stickSystem→wake 重新挂接后 inventory mirror 走 strip.open。
+- 本地曾把 strip.open 改成「侧栏关着就对任何新 tab select」；append 不加侧栏，select 会 tabs.setRegion(side,true)。wake/restore 的镜像 tab 被当成用户可见打开。
+- Agent 真正开页靠 pane focus 事件（tabs.open/navigate→focus→layout select），不需要 strip.open 在 side 关闭时一律 select。
+- 已改回：strip.open 仅 openingURL（openFile/syncLogin）时 select，其余 append；推送仍 stickSystem+wake，不再拉开 Review。
+
+## grep 定义行排序
+
+- 定向验证「grep 定义行优先」信号（`packages/core/src/tool/plugin/grep.ts` 的 `isDefinitionLine` / `sortRowsByDefinition`）：它只救「声明在命中集内、且 query 命名了声明的东西」这一类（`retry` → `export function retry`、`switchTopic` → 其声明行）。
+- 这三条 notes 记的失败题**不在受益面**：`compress` 的真实文件是 `session/compaction.ts`，文件名与声明都不含 compress（是 compaction）；`emit` 命中的是接口成员 `readonly emit: (update) => ...` 与注释；`validate` 命中的是第三方 `schema["~standard"].validate(value)` 调用。三者都没有可抓的顶层声明行。
+- 结论：定义行优先 ≠ 补上那 35%。文件名不含关键词 / 命中行是接口成员或第三方调用这类，需要概念映射（`packages/core/src/search-ranked/concepts.ts`），不是排序。grep.ts 的注释已按此改写，勿再把它写成「修 compress/emit/validate」。
+- 验证：`tool-search.test.ts` 37 pass（含新增两条：声明文件压过文件名命中文件、文件内声明行排在使用行前）；`packages/core` typecheck 1838 文件 0 错。改前/改后全基线对照**未做**——原 20 条查询集已随 `.sicode/scratch` 丢失。
+
+## 英文行为词概念映射
+
+
+
+- 整词匹配用 `(?:^|[^a-zA-Z0-9])word(?![a-zA-Z0-9])`：`compress` 命中 `compress`/`re-compress`，不命中 `compressor`。
+- 验证：`packages/core/test/search-ranked.test.ts` 10 pass（新增两条：`compress` 命中 `session/compaction.ts` 而非内容含该词的 `config/normalize.ts`；`compressor` 不触发映射）；`packages/core` typecheck 1838 文件 0 错。仍未做全基线对照——原 20 条查询集已丢。
+- 接续上一条：定义行排序救不了的「英文行为词 → 不同名实现文件」改由概念映射补。`packages/core/src/search-ranked/concepts.ts` 新增 `BEHAVIOR` 表（行为词 → 仓库实际用的标识符），`extrasOf` 对英文 query 按**整词、忽略大小写**匹配后并入 extras，其余管线（`expand` → BM25F → `pathMatchesExtra` 路径优先）不变。表内容（**prune 行已删**，见下）：`compress`/`summarize` → `compaction`、`truncate`/`overflow` → `recent-text`、`validate`/`validation` → `runtime`。
+- 表内每行左侧词都是**实测**目标文件名/声明里不含的（`compress` 不在 `compaction.ts`，`truncate` 不在 `tool-output.ts` 而在 `session/recent-text.ts:72` 的 `truncateToolOutput`）。曾拟加的 `emit`/`publish` → bus、`validate` → schema、`compress` → `prune` 三行**已删**：本仓 `emit` 无顶层实现（是接口成员），`schema.ts` 无校验实现，`prune` 只出现在 config schema 字段名里（`config/normalize.ts:353`），均属假映射。加行前先确认目标文件真存在。
+- **端到端实测**（`.sicode/scratch/suggest-probe.ts`，跑真实 `SearchRanked.suggest`：980 文件 + rg 文件列表 + 读内容，不是 rg 命中集——`pathMatchesExtra` 作用在全文件列表上）：`truncate` → `src/session/recent-text.ts` **第 1**、`validate` → `src/tool/runtime.ts` **第 1**、`compress` → `src/session/compaction.ts` **第 2**。`retry`（无 extra）未命中 `src/ripgrep.ts`，`permission`（无 extra）目标第 2，说明映射不误伤顺风题。
+- `compress` 排第 2 而非第 1 的原因不是映射失败，是**同名干扰**：`src/config/plugin/compaction.ts` 的 stem 也等于 extra `compaction`，`suggest` 的 `exactness` 分不出两者，BM25F score 把它排前。⇒ 概念映射已能把目标拉进 top2；要第 1 需要「同名多文件时按定义/职责再分」，属另一个改动。

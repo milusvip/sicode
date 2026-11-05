@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { SearchRanked } from "@opencode/core/search-ranked/index"
+import { SearchRankedConcepts } from "@opencode/core/search-ranked/concepts"
 import { SearchRankedTerms } from "@opencode/core/search-ranked/terms"
 
 const source = (files: Record<string, string>): SearchRanked.Source => ({
@@ -14,6 +15,47 @@ test("splits identifiers and chinese into comparable terms", () => {
   expect(SearchRankedTerms.termsOf("设置页留白")).toContain("设置")
   expect(SearchRankedTerms.termsOf("设置页面留白")).toContain("留白")
   expect(SearchRankedTerms.pathTerms("packages/app/src/session/header.tsx")).toContain("header")
+})
+
+test("expands chinese intent into english code names", () => {
+  expect(SearchRankedConcepts.expand("为什么压缩之后模型变笨了")).toContain("compaction")
+  expect(SearchRankedConcepts.expand("上下文压缩什么时候会触发")).toContain("compaction")
+  // Bare 压缩 alone is too broad; phrase rows must carry the bridge.
+  expect(SearchRankedConcepts.extrasOf("图片压缩怎么做")).toEqual([])
+  expect(SearchRankedConcepts.expand("hello world")).toBe("hello world")
+})
+
+test("maps an english behavior word onto the file that implements it", async () => {
+  // `compress` names a behavior; the code calls it `compaction`. No dictionary bridges two English
+  // words, so the ranked search needs the mapping — this is the failure definition-line ordering
+  // cannot fix, because the target's filename and declarations never contain the query word.
+  const suggestions = await SearchRanked.suggest(
+    source({
+      "packages/core/src/session/compaction.ts": "export function compact() {}",
+      "packages/core/src/config/normalize.ts": "// compress the config before writing",
+      "packages/core/src/compaction-metrics.ts": "// how long compress took",
+    }),
+    "compress",
+  )
+  expect(suggestions[0]?.path).toBe("packages/core/src/session/compaction.ts")
+})
+
+test("matches a behavior word whole, never as a prefix of a longer word", async () => {
+  // `compress` must not fire on `compressor`; otherwise the mapping over-fires on unrelated queries.
+  expect(SearchRankedConcepts.extrasOf("compressor tuning")).toEqual([])
+  expect(SearchRankedConcepts.extrasOf("re-compress this")).toContain("compaction")
+})
+
+test("reaches compaction through a chinese compress phrasing", async () => {
+  const suggestions = await SearchRanked.suggest(
+    source({
+      "packages/core/src/session/compaction.ts": "export const precompute = true",
+      "packages/ui/src/i18n/zh.ts": 'export default { "ui.other": "为什么" }',
+      "packages/core/src/unrelated.ts": "const a = 1",
+    }),
+    "为什么压缩之后模型变笨了",
+  )
+  expect(suggestions[0]?.path).toBe("packages/core/src/session/compaction.ts")
 })
 
 test("ranks a file whose path matches above one that only mentions the term", async () => {
