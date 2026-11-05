@@ -118,23 +118,51 @@ export function PanelTrigger(props: {
   const others = () => props.region.keys().filter((key) => key !== props.value && closable(key))
   const every = () => props.region.keys().filter(closable)
 
-  // SiCode: only the tab body is the context-menu trigger. The close button is a sibling of it —
-  // the same shape as the titlebar tabs — because a context-menu trigger claims pointer/click on
-  // its whole subtree, which swallowed the close's click and left the X inert.
-  const menu = (trigger: JSX.Element, closeEl?: JSX.Element) => (
+  // Label text only — keep the X in Tabs.Trigger's close slot (same layout as before). Wrapping the
+  // whole tab in Context.Trigger swallowed close clicks; wrapping only the label does not.
+  const labeled = (node: JSX.Element) => (
+    <Menu.Context.Trigger as="div" class="contents">
+      {node}
+    </Menu.Context.Trigger>
+  )
+
+  return (
     <Menu.Context modal={false}>
-      <div class="group h-full flex items-center">
-        <Menu.Context.Trigger as="div" class="contents">
-          {trigger}
-        </Menu.Context.Trigger>
-        <Show when={closeEl}>
-          {(button) => (
-            <div data-slot="tabs-trigger-close-button" class="relative z-10 flex items-center">
-              {button()}
-            </div>
-          )}
-        </Show>
-      </div>
+      <Switch
+        fallback={
+          <SortableTrigger
+            value={props.value}
+            tab={props.tab}
+            index={props.index}
+            active={props.active}
+            preview={props.preview}
+            content={labeled(content())}
+            close={close()}
+            onClose={props.onClose}
+            onPromote={props.onPromote}
+          />
+        }
+      >
+        <Match when={props.tab.pinned}>
+          <Tabs.Trigger
+            value={props.value}
+            id={props.tab.dom?.tab}
+            aria-controls={props.active ? props.tab.dom?.panel : undefined}
+          >
+            {labeled(content())}
+          </Tabs.Trigger>
+        </Match>
+        <Match when={props.tab.draggable === false}>
+          <Tabs.Trigger
+            value={props.value}
+            id={props.tab.dom?.tab}
+            class="group"
+            onMiddleClick={props.tab.closable === false ? undefined : () => props.onClose(props.value)}
+          >
+            {labeled(content())}
+          </Tabs.Trigger>
+        </Match>
+      </Switch>
       <Menu.Context.Portal>
         <Menu.Context.Content class="session-panel-tab-menu">
           <Menu.Item disabled={!closable(props.value)} onSelect={() => props.onClose(props.value)}>
@@ -150,44 +178,6 @@ export function PanelTrigger(props: {
       </Menu.Context.Portal>
     </Menu.Context>
   )
-
-  return menu(
-    <Switch
-      fallback={
-        <SortableTrigger
-          value={props.value}
-          tab={props.tab}
-          index={props.index}
-          active={props.active}
-          preview={props.preview}
-          content={content()}
-          onClose={props.onClose}
-          onPromote={props.onPromote}
-        />
-      }
-    >
-      <Match when={props.tab.pinned}>
-        <Tabs.Trigger
-          value={props.value}
-          id={props.tab.dom?.tab}
-          aria-controls={props.active ? props.tab.dom?.panel : undefined}
-        >
-          {content()}
-        </Tabs.Trigger>
-      </Match>
-      <Match when={props.tab.draggable === false}>
-        <Tabs.Trigger
-          value={props.value}
-          id={props.tab.dom?.tab}
-          class="group"
-          onMiddleClick={props.tab.closable === false ? undefined : () => props.onClose(props.value)}
-        >
-          {content()}
-        </Tabs.Trigger>
-      </Match>
-    </Switch>,
-    close(),
-  )
 }
 
 function SortableTrigger(props: {
@@ -197,6 +187,7 @@ function SortableTrigger(props: {
   active: boolean
   preview: boolean
   content: JSX.Element
+  close: JSX.Element | undefined
   onClose: (value: string) => void
   onPromote: (value: string) => void
 }): JSX.Element {
@@ -221,6 +212,8 @@ function SortableTrigger(props: {
           onDblClick={() => {
             if (props.preview) props.onPromote(props.value)
           }}
+          closeButton={props.close}
+          hideCloseButton
         >
           {props.content}
         </Tabs.Trigger>
