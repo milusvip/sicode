@@ -74,6 +74,7 @@ describe("inject", () => {
   // The hint rides a real service, so these pin what happens when the lookup it depends on is not
   // there: a missing index, or a ripgrep binary that cannot be resolved on a machine with no
   // network. Both must leave the request untouched rather than fail the turn.
+  // Ranked is stubbed empty so these cases stay on the name path without Location/Ripgrep.
   const sessionID = Session.ID.make("ses_context_hints")
   const prompt = [assistant(), user("为什么 `htmlArtifactsForTurn` 没触发？看 session/context.ts")]
   const entry = (path: string) => FileSystem.Entry.make({ path: RelativePath.make(path), type: "file" })
@@ -81,11 +82,20 @@ describe("inject", () => {
   const withSearch = (find: (input: FileSystem.FindInput) => Effect.Effect<FileSystem.Entry[]>) =>
     Layer.succeed(FileSystemSearch.Service, { find })
 
-  const run = (find: (input: FileSystem.FindInput) => Effect.Effect<FileSystem.Entry[]>) =>
+  const provide = (
+    find: (input: FileSystem.FindInput) => Effect.Effect<FileSystem.Entry[]>,
+    ranked: SessionContextHints.RankedSuggest = () => Effect.succeed([]),
+  ) => SessionContextHints.makeLayer({ ranked }).pipe(Layer.provide(withSearch(find)))
+
+  const run = (
+    find: (input: FileSystem.FindInput) => Effect.Effect<FileSystem.Entry[]>,
+    ranked?: SessionContextHints.RankedSuggest,
+    messages: SessionMessage.Info[] = prompt,
+  ) =>
     Effect.gen(function* () {
       const service = yield* SessionContextHints.Service
-      return yield* service.inject({ sessionID, messages: prompt })
-    }).pipe(Effect.provide(SessionContextHints.layer.pipe(Layer.provide(withSearch(find)))))
+      return yield* service.inject({ sessionID, messages })
+    }).pipe(Effect.provide(provide(find, ranked)))
 
   const textOf = (message: SessionMessage.Info) => (message as { text?: string }).text ?? ""
 
@@ -130,15 +140,69 @@ describe("inject", () => {
         const second = yield* service.inject({ sessionID, messages: prompt })
         return [first, second] as const
       }).pipe(
-        Effect.provide(
-          SessionContextHints.layer.pipe(
-            Layer.provide(withSearch(() => Effect.succeed([entry("packages/core/src/session/context.ts")]))),
-          ),
-        ),
+        Effect.provide(provide(() => Effect.succeed([entry("packages/core/src/session/context.ts")]))),
       ),
     )
 
     expect(once[0]).toHaveLength(3)
     expect(once[1]).toHaveLength(2)
+  })
+
+  test("chinese intent with a concept hit still gets ranked leads", async () => {
+    const chinese = [user("为什么压缩之后模型变笨了", "msg_zh")]
+    const messages = await Effect.runPromise(
+      run(
+        () => Effect.succeed([]),
+        () => Effect.succeed(["packages/core/src/session/compaction.ts"]),
+        chinese,
+      ),
+    )
+
+    expect(messages).toHaveLength(2)
+    expect(messages[1].type).toBe("synthetic")
+    expect(textOf(messages[1])).toContain("packages/core/src/session/compaction.ts")
+    expect(textOf(messages[1])).toContain("ranked by request text")
+  })
+
+  test("chinese intent without a concept stays silent instead of injecting i18n noise", async () => {
+    const messages = await Effect.runPromise(
+      run(
+        () => Effect.succeed([]),
+        () => Effect.succeed(["packages/ui/src/i18n/zh.ts"]),
+        [user("这个按钮的颜色不对齐主题", "msg_no_concept")],
+      ),
+    )
+
+    expect(messages).toHaveLength(1)
+  })
+
+  test("named prompts stay on fuzzysort and do not take a ranked fill", async () => {
+    let rankedCalls = 0
+    const messages = await Effect.runPromise(
+      run(
+        () => Effect.succeed([entry("packages/app/src/session/header/session-header-actions.tsx")]),
+        () => {
+          rankedCalls++
+          return Effect.succeed(["packages/core/src/session/compaction.ts"])
+        },
+        [user("修一下 session-header-actions.tsx 的布局", "msg_named")],
+      ),
+    )
+
+    expect(rankedCalls).toBe(0)
+    expect(textOf(messages[1]!)).toContain("packages/app/src/session/header/session-header-actions.tsx")
+    expect(textOf(messages[1]!)).not.toContain("packages/core/src/session/compaction.ts")
+  })
+
+  test("ranked failure leaves the turn alone", async () => {
+    const messages = await Effect.runPromise(
+      run(
+        () => Effect.succeed([]),
+        () => Effect.die(new Error("ranked blew up")),
+        [user("上下文压缩什么时候会触发", "msg_rank_fail")],
+      ),
+    )
+
+    expect(messages).toHaveLength(1)
   })
 })

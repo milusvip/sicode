@@ -121,9 +121,13 @@ export function SideRegion(props: {
                     sensors={[
                       PointerSensor.configure({
                         activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
+                        // SiCode: file tabs render their close as an IconButton, which is not the
+                        // `tabs-trigger-close-button` slot; without matching it here the drag sensor
+                        // claims the press and the close never runs.
                         preventActivation: (event) =>
                           event.target instanceof Element &&
                           (!!event.target.closest('[data-slot="tabs-trigger-close-button"]') ||
+                            !!event.target.closest('[data-component="icon-button-v2"]') ||
                             !!event.target.closest(".session-review-v2-open-in-app-slot")),
                       }),
                     ]}

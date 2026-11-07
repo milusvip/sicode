@@ -26,10 +26,11 @@ describe("parseBunOutput", () => {
       "1 | const x = ;",
       "              ^",
       "error: Unexpected ;",
-      "    at E:\\app-dev\\Agent-SiCode\\SiCode\\.sicode\\scratch\\sc\\broken.js:1:11",
+      // SiCode: neutral path, not this checkout's absolute location.
+      "    at /workspace/broken.js:1:11",
       "",
     ].join("\n")
-    expect(parseBunOutput(output, "E:\\app-dev\\Agent-SiCode\\SiCode\\.sicode\\scratch\\sc\\broken.js")).toEqual([
+    expect(parseBunOutput(output, "/workspace/broken.js")).toEqual([
       { line: 1, character: 11, message: "Unexpected ;" },
     ])
   })

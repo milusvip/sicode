@@ -1,0 +1,310 @@
+/* SiCode: hand-ported from upstream 6007274795 composer-lane + todo-pill styles.
+ * Capsules sit in [data-slot="composer-lane"] as a horizontal wrap above the input. */
+
+[data-slot="composer-lane"] {
+  width: 100%;
+}
+
+[data-slot="composer-lane"]:empty {
+  display: none;
+  padding: 0;
+}
+
+[data-slot="composer-lane-pills"] > * {
+  pointer-events: auto;
+  max-width: min(100%, 320px);
+}
+
+[data-composer-pill] {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 10px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: var(--v2-background-bg-base);
+  box-shadow: var(--v2-elevation-raised);
+  font-size: 13px;
+  font-weight: 440;
+  line-height: var(--line-height-compact);
+  letter-spacing: -0.04px;
+  white-space: nowrap;
+  color: var(--v2-text-text-base);
+  outline: none;
+
+  [data-color-scheme="dark"] & {
+    background: var(--v2-background-bg-layer-01);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 2.5px;
+  }
+
+  @media (hover: hover) {
+    &:hover:not(:active, [data-expanded]) {
+      background-image: linear-gradient(var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover));
+    }
+  }
+
+  &:active:not([data-expanded]) {
+    background-image: linear-gradient(
+      var(--v2-overlay-simple-overlay-pressed),
+      var(--v2-overlay-simple-overlay-pressed)
+    );
+  }
+
+  &[data-expanded] {
+    background: var(--v2-background-bg-layer-01);
+
+    [data-color-scheme="dark"] & {
+      background: var(--v2-background-bg-layer-02);
+    }
+  }
+
+  @media (hover: none) {
+    min-height: 44px;
+  }
+}
+
+[data-composer-pill-panel] {
+  max-width: calc(100vw - 56px);
+  border: 0.5px solid transparent;
+  border-radius: 10px;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-floating);
+  outline: none;
+  transform-origin: var(--kb-popover-content-transform-origin);
+  animation: composer-pill-panel-in 150ms ease-out;
+
+  :root[data-motion="reduce"] & {
+    animation: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes composer-pill-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+[data-composer-pill][data-slot="session-todo-pill"] {
+  gap: 6px;
+  padding-inline-start: 8px;
+}
+
+[data-composer-pill][data-slot="session-running-pill"] {
+  gap: 6px;
+  padding-inline-start: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-slot="session-running-elapsed"] {
+  font-variant-numeric: tabular-nums;
+}
+
+
+[data-composer-pill-panel][data-slot="session-todo-panel"] {
+  width: max-content;
+  min-width: max(var(--kb-popper-anchor-width, 0px), 240px);
+  max-width: min(400px, calc(100vw - 56px));
+}
+
+/* SiCode: compact popup anchored to the Shell pill — does not steal composer layout. */
+[data-composer-pill-panel][data-slot="session-shell-popup"] {
+  width: min(360px, calc(100vw - 56px));
+  min-width: max(var(--kb-popper-anchor-width, 0px), 260px);
+  overflow: hidden;
+}
+
+[data-slot="session-shell-popup-head"] {
+  border-bottom: 0.5px solid var(--v2-border-border-muted);
+}
+
+[data-slot="session-shell-popup-list"] {
+  border-bottom: 0.5px solid var(--v2-border-border-muted);
+}
+
+/* SiCode: shell popup scroll areas stay thin — default OS bars crowd the compact panel. */
+[data-slot="session-shell-popup-list"],
+[data-slot="session-shell-popup-output"] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--v2-border-border-muted) transparent;
+}
+
+[data-slot="session-shell-popup-list"]::-webkit-scrollbar,
+[data-slot="session-shell-popup-output"]::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+[data-slot="session-shell-popup-list"]::-webkit-scrollbar-track,
+[data-slot="session-shell-popup-output"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-slot="session-shell-popup-list"]::-webkit-scrollbar-thumb,
+[data-slot="session-shell-popup-output"]::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--v2-border-border-muted);
+}
+
+[data-slot="session-shell-popup-list"]::-webkit-scrollbar-thumb:hover,
+[data-slot="session-shell-popup-output"]::-webkit-scrollbar-thumb:hover {
+  background: var(--v2-icon-icon-muted);
+}
+
+[data-slot="session-shell-popup-row"] {
+  min-height: 30px;
+  padding-inline-end: 2px;
+  border-radius: 6px;
+
+  [data-slot="session-shell-popup-command"] {
+    color: var(--v2-text-text-muted);
+  }
+
+  &[data-active] {
+    background-color: var(--v2-overlay-simple-overlay-pressed);
+
+    [data-slot="session-shell-popup-command"] {
+      color: var(--v2-text-text-base);
+      font-weight: 700;
+    }
+
+    [data-slot="session-running-elapsed"] {
+      color: var(--v2-text-text-muted);
+    }
+  }
+
+  @media (hover: hover) {
+    &:hover:not([data-active]) {
+      background-color: var(--v2-overlay-simple-overlay-hover);
+    }
+  }
+}
+
+[data-slot="session-shell-popup-select"] {
+  min-width: 0;
+  padding-block: 6px;
+  padding-inline: 8px 4px;
+  border-radius: 6px;
+  outline: none;
+}
+
+[data-slot="session-shell-popup-output"] {
+  max-height: calc(8 * var(--line-height-compact));
+  padding: 8px 10px;
+}
+
+/* SiCode: stop controls keep a muted chip fill at rest; red only on hover/focus/press. */
+[data-component="icon-button-v2"][data-variant="ghost-muted"][data-slot="session-shell-stop"],
+[data-slot="session-shell-stop-all"] {
+  color: var(--v2-text-text-muted);
+  background-color: var(--v2-overlay-simple-overlay-pressed);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+[data-slot="session-shell-stop-all"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding-inline: 8px 6px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: var(--line-height-compact);
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+[data-slot="session-shell-stop-all"] [data-slot="icon-svg"] {
+  width: 12px;
+  height: 12px;
+}
+
+[data-component="icon-button-v2"][data-variant="ghost-muted"][data-slot="session-shell-stop"]:is(
+    :hover,
+    [data-state="hover"],
+    :focus-visible
+  ):not(:disabled),
+[data-slot="session-shell-stop-all"]:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--v2-state-fg-danger);
+  background-color: var(--v2-state-bg-danger);
+}
+
+[data-component="icon-button-v2"][data-variant="ghost-muted"][data-slot="session-shell-stop"]:is(
+    :active,
+    [data-state="pressed"]
+  ):not(:disabled),
+[data-slot="session-shell-stop-all"]:is(:active):not(:disabled) {
+  color: var(--v2-state-fg-danger);
+  background-color: var(--v2-state-bg-danger);
+}
+
+:root[data-motion="reduce"] [data-component="icon-button-v2"][data-slot="session-shell-stop"],
+:root[data-motion="reduce"] [data-slot="session-shell-stop-all"] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="icon-button-v2"][data-slot="session-shell-stop"],
+  [data-slot="session-shell-stop-all"] {
+    transition: none;
+  }
+}
+
+[data-slot="session-todo-glyph"] {
+  color: var(--v2-icon-icon-faint);
+
+  &[data-status="in_progress"] {
+    color: var(--v2-state-fg-info);
+  }
+
+  &[data-status="completed"] {
+    color: var(--v2-icon-icon-muted);
+  }
+}
+
+/* SiCode: in_progress reads as motion — a dim full track with one arc orbiting it. */
+[data-slot="session-todo-glyph"][data-status="in_progress"] {
+  animation: var(--animate-spin);
+
+  [data-slot="session-todo-glyph-track"] {
+    opacity: 0.25;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+[data-slot="session-todo-row"] {
+  [data-slot="session-todo-text"] {
+    color: var(--v2-text-text-muted);
+  }
+
+  &[data-status="in_progress"] [data-slot="session-todo-text"] {
+    color: var(--v2-text-text-base);
+  }
+
+  &:is([data-status="completed"], [data-status="cancelled"]) [data-slot="session-todo-text"] {
+    color: var(--v2-text-text-faint);
+    text-decoration: line-through;
+  }
+}

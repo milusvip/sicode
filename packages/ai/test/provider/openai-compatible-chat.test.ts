@@ -548,10 +548,23 @@ describe("OpenAI-compatible Chat route", () => {
     }),
   )
 
-  it.effect("rejects a stream without a required finish reason", () =>
+  // SiCode: relays often drop the terminal finish_reason after usable text — infer stop instead
+  // of failing the step (ses_e508). Empty / mid-tool cuts still reject below.
+  it.effect("infers stop when a required finish reason is missing after usable text", () =>
+    Effect.gen(function* () {
+      const response = yield* LLMClient.generate(request).pipe(
+        Effect.provide(fixedResponse(sseEvents(deltaChunk({ content: "Hello" }), deltaChunk({}, "")))),
+      )
+
+      expect(response.finishReason).toEqual({ normalized: "stop" })
+      expect(response.text).toBe("Hello")
+    }),
+  )
+
+  it.effect("rejects a cut with no usable output and no finish reason", () =>
     Effect.gen(function* () {
       const error = yield* LLMClient.generate(request).pipe(
-        Effect.provide(fixedResponse(sseEvents(deltaChunk({ content: "Hello" }), deltaChunk({}, "")))),
+        Effect.provide(fixedResponse(sseEvents(deltaChunk({}, "")))),
         Effect.flip,
       )
 

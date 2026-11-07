@@ -58,6 +58,36 @@ export function sessionPermissionRequest(
   return sessionTreeRequest(session, request, sessionID, include)
 }
 
+/**
+ * SiCode: every pending permission in the session tree, depth-first. Used to batch same-action
+ * asks (N concurrent edits) into one dock instead of N serial popups.
+ */
+export function sessionPermissionRequests(
+  session: SessionInfo[],
+  request: Record<string, PermissionRequest[] | undefined> | ((sessionID: string) => PermissionRequest[] | undefined),
+  sessionID?: string,
+  include: (item: PermissionRequest) => boolean = () => true,
+): PermissionRequest[] {
+  const ids = sessionTreeIDs(session, sessionID)
+  if (!ids.length) return []
+
+  const list = (id: string) => (request instanceof Function ? request(id) : request[id])
+  const out: PermissionRequest[] = []
+  for (const id of ids) {
+    for (const item of list(id) ?? []) {
+      if (include(item)) out.push(item)
+    }
+  }
+  return out
+}
+
+/** First pending ask, plus every later ask that shares its action (edit with edit, shell with shell). */
+export function sessionPermissionBatch(pending: readonly PermissionRequest[]): PermissionRequest[] {
+  const first = pending[0]
+  if (!first) return []
+  return pending.filter((item) => item.action === first.action)
+}
+
 export function sessionFormRequest(
   session: SessionInfo[],
   request: Record<string, FormInfo[] | undefined> | ((sessionID: string) => FormInfo[] | undefined),

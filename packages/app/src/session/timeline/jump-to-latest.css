@@ -1,0 +1,49 @@
+/* The floating "jump to latest" control over the timeline. Its surface lives here rather than in an
+   inline style so the hover and pressed overlays can sit on top of the resting background. */
+[data-component="timeline-jump-to-latest"] {
+  background: color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent);
+  box-shadow:
+    var(--v2-elevation-raised),
+    0px 2px 8px var(--v2-background-bg-base);
+  outline: none;
+}
+
+@media (hover: hover) {
+  [data-component="timeline-jump-to-latest"]:hover {
+    background-image: linear-gradient(
+      var(--v2-overlay-simple-overlay-hover),
+      var(--v2-overlay-simple-overlay-hover)
+    );
+  }
+
+  /* The arrow previews the click: it nudges toward the bottom edge it scrolls to. */
+  [data-component="timeline-jump-to-latest"]:hover [data-slot="jump-to-latest-arrow"] {
+    transform: translateY(2px);
+  }
+}
+
+[data-component="timeline-jump-to-latest"]:active {
+  background-image: linear-gradient(
+    var(--v2-overlay-simple-overlay-pressed),
+    var(--v2-overlay-simple-overlay-pressed)
+  );
+}
+
+[data-component="timeline-jump-to-latest"]:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 2.5px;
+}
+
+[data-slot="jump-to-latest-arrow"] {
+  transition: transform 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="jump-to-latest-arrow"] {
+    transition: none;
+  }
+
+  [data-component="timeline-jump-to-latest"]:hover [data-slot="jump-to-latest-arrow"] {
+    transform: none;
+  }
+}

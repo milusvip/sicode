@@ -1,0 +1,168 @@
+{
+  "sessionID": "ses_e6d429b4fffd5sGQgfzhJkdGsm",
+  "model": "deepseek-v4.1-flash",
+  "note": "Flash PR1/PR2 target trajectory — batched searches, first useful ≤8, search median ≤3. Re-export live sessions via .sicode/scratch/export-flash-trajectory.ts when adoption improves.",
+  "turns": [
+    {
+      "id": "sidebar-inset",
+      "query": "侧边栏底部留白是在哪里控制的？不要猜，用搜索定位到具体文件。",
+      "expectPaths": [
+        "packages/app/src/shell/left-sidebar.tsx",
+        "packages/app/src/shell/shell.tsx"
+      ],
+      "tools": [
+        {
+          "name": "grep",
+          "pattern": "padding-bottom|paddingBlockEnd|pb-|paddingBottom|shell-bottom-inset",
+          "matches": 12
+        },
+        {
+          "name": "glob",
+          "pattern": "**/left-sidebar*",
+          "count": 1
+        },
+        {
+          "name": "read",
+          "path": "packages/app/src/shell/left-sidebar.tsx"
+        },
+        {
+          "name": "read",
+          "path": "packages/app/src/shell/shell.tsx"
+        }
+      ]
+    },
+    {
+      "id": "permission-dock",
+      "query": "权限弹窗里 always / once 的批处理逻辑在哪？先搜再读。",
+      "expectPaths": [
+        "packages/app/src/session/requests/session-permission-dock.tsx",
+        "packages/app/src/session/requests/model.ts",
+        "packages/app/src/session/requests/auto-approve.ts"
+      ],
+      "tools": [
+        {
+          "name": "grep",
+          "pattern": "once|always|SessionPermissionDock|sessionPermissionBatch",
+          "matches": 11
+        },
+        {
+          "name": "read",
+          "path": "packages/app/src/session/requests/model.ts"
+        },
+        {
+          "name": "read",
+          "path": "packages/app/src/session/requests/auto-approve.ts"
+        },
+        {
+          "name": "read",
+          "path": "packages/app/src/session/requests/session-permission-dock.tsx"
+        }
+      ]
+    },
+    {
+      "id": "compaction-dumb",
+      "query": "上下文压缩之后为什么会变笨？找到相关实现文件。",
+      "expectPaths": [
+        "packages/core/src/session/compaction.ts",
+        "packages/core/src/session/history.ts",
+        "packages/core/src/session/compaction-durable.ts"
+      ],
+      "tools": [
+        {
+          "name": "glob",
+          "pattern": "packages/core/src/session/compaction*",
+          "count": 2
+        },
+        {
+          "name": "grep",
+          "pattern": "compaction|history-degrade|recent-text",
+          "matches": 20
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/session/compaction.ts"
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/session/compaction-durable.ts"
+        }
+      ]
+    },
+    {
+      "id": "repo-map-inject",
+      "query": "仓库地图是怎么注入进请求的？定位文件。",
+      "expectPaths": [
+        "packages/core/src/config/plugin/project-map.ts"
+      ],
+      "tools": [
+        {
+          "name": "grep",
+          "pattern": "repo-map|project-map|structure.md",
+          "matches": 8
+        },
+        {
+          "name": "glob",
+          "pattern": "**/project-map*",
+          "count": 1
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/config/plugin/project-map.ts"
+        }
+      ]
+    },
+    {
+      "id": "project-memory",
+      "query": "项目记忆跨会话是怎么存和注入的？",
+      "expectPaths": [
+        "packages/core/src/session/memory/inject.ts",
+        "packages/core/src/config/plugin/project-memory-inject.ts"
+      ],
+      "tools": [
+        {
+          "name": "grep",
+          "pattern": "project-memory|memory.inject|belief",
+          "matches": 15
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/session/memory/inject.ts"
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/config/plugin/project-memory-inject.ts"
+        }
+      ]
+    },
+    {
+      "id": "hints-dock-adversarial",
+      "query": "线索码头相关的注入和权限码头在哪？",
+      "expectPaths": [
+        "packages/core/src/session/context-hints.ts",
+        "packages/app/src/session/requests/session-permission-dock.tsx"
+      ],
+      "tools": [
+        {
+          "name": "grep",
+          "pattern": "context-hints|permission-dock|线索码头",
+          "matches": 10
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/session/context-hints.ts"
+        },
+        {
+          "name": "read",
+          "path": "packages/core/src/search-ranked/concepts.ts"
+        }
+      ]
+    }
+  ],
+  "caps": {
+    "maxSearchMedian": 3,
+    "maxSearchP90": 5,
+    "minExpectHitRate": 0.8,
+    "maxFirstUsefulMedian": 8,
+    "minBatchedRate": 0.8
+  }
+}

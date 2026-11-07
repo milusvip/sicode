@@ -5,9 +5,13 @@ import { PROTOCOL_VERSION, chromeIdFromTabID, isPackageBehind, toBridgeTab } fro
 import {
   captureScreenshot,
   detachDebugger,
+  enableDialogWatch,
+  getDialog,
   getNetwork,
+  handleDialog,
   listNetwork,
   readConsole,
+  setFileInputFiles,
 } from "./debugger-buffer.js"
 
 /** Prod formal desktop. Extension tries these in order so push prefers the packaged prod app. */
@@ -629,6 +633,144 @@ async function onMessage(raw, port) {
       return
     }
 
+    if (message.type === "select") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "select", [normalizeRef(message.ref), message.values ?? []])
+      send({ type: "select.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "check") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "check", [normalizeRef(message.ref), message.checked === true])
+      send({ type: "check.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "hover") {
+      const tab = await requireTab(message.tabID)
+      await callPage(tab.id, "hover", [normalizeRef(message.ref)])
+      send({ type: "hover.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "fill_form") {
+      const tab = await requireTab(message.tabID)
+      const fields = (message.fields ?? []).map((field) => ({
+        ...field,
+        ref: normalizeRef(field.ref),
+      }))
+      await callPage(tab.id, "fill_form", [fields])
+      send({ type: "fill_form.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "wait") {
+      const tab = await requireTab(message.tabID)
+      const condition = message.condition || "load"
+      const text = message.text ?? ""
+      const timeoutMs = Math.min(30_000, Math.max(100, Number(message.timeoutMs) || 10_000))
+      if (condition !== "load" && !text) {
+        throw new Error(
+          'browser.wait requires non-empty text for condition "text", "textGone", or "response". Use condition "load" without text to wait for loading.',
+        )
+      }
+      if (condition === "load") {
+        await waitLoaded(tab.id, timeoutMs)
+      } else if (condition === "response") {
+        // Extension network buffer is best-effort; poll listNetwork for a URL match that finishes while waiting.
+        const started = Date.now()
+        let seen = false
+        while (Date.now() - started < timeoutMs) {
+          const listed = await listNetwork(tab.id, { urlContains: text, limit: 50 })
+          if (
+            (listed.requests || []).some((item) => {
+              const state = item?.state ?? item?.status
+              return state && state !== "pending"
+            })
+          ) {
+            seen = true
+            break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+        if (!seen) {
+          throw new Error(
+            `browser.wait failed for condition "response" (timeoutMs: ${timeoutMs}). Check browser.network.list({tabID}) for the request's fate.`,
+          )
+        }
+      } else {
+        const want = condition === "text"
+        const started = Date.now()
+        let ok = false
+        while (Date.now() - started < timeoutMs) {
+          const has = await callPage(tab.id, "hasText", [text])
+          if (Boolean(has) === want) {
+            ok = true
+            break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+        if (!ok) {
+          throw new Error(
+            `browser.wait failed for condition ${JSON.stringify(condition)} (timeoutMs: ${timeoutMs}). Inspect browser.snapshot({tabID}) before retrying.`,
+          )
+        }
+      }
+      send({ type: "wait.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
+    if (message.type === "dialog") {
+      const tab = await requireTab(message.tabID)
+      await enableDialogWatch(tab.id)
+      if (message.action === "get") {
+        send({
+          type: "dialog.result",
+          requestID,
+          dialog: await getDialog(tab.id),
+          tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+        })
+        return
+      }
+      await handleDialog(tab.id, message.action === "accept", message.promptText)
+      send({
+        type: "dialog.result",
+        requestID,
+        dialog: null,
+        tab: toBridgeTab(await chrome.tabs.get(tab.id)),
+      })
+      return
+    }
+
+    if (message.type === "files.upload") {
+      const tab = await requireTab(message.tabID)
+      const paths = message.paths ?? []
+      if (!paths.length) throw new Error("Upload command has no file paths.")
+      const ref = normalizeRef(message.ref)
+      const token = `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+      let marked = false
+      try {
+        await callPage(tab.id, "markFileInput", [ref, token])
+        marked = true
+      } catch (error) {
+        const detail = String(error?.message || error)
+        if (!/not a file input|no associated input\[type=file\]/i.test(detail)) throw error
+      }
+      // chrome.debugger rejects bare DOM.setFileInputFiles; intercept → click → event backendNodeId.
+      await setFileInputFiles(tab.id, paths, async () => {
+        if (marked) {
+          await callPage(tab.id, "openMarkedFileInput", [token])
+          return
+        }
+        // No input in the DOM yet — click the visible control so the page opens a chooser.
+        await callPage(tab.id, "click", [ref, "left", 1, true])
+      })
+      if (marked) await callPage(tab.id, "clearMarkedFileInput", [token]).catch(() => undefined)
+      send({ type: "files.upload.result", requestID, tab: toBridgeTab(await chrome.tabs.get(tab.id)) })
+      return
+    }
+
     if (message.type === "press") {
       const tab = await requireTab(message.tabID)
       await callPage(tab.id, "press", [message.key])
@@ -785,11 +927,11 @@ async function offerActiveTab() {
 /**
  * Normalize picker result: array of elements, or legacy single object.
  * @param {unknown} raw
- * @returns {Array<{ selector: string; label: string; role?: string; name?: string; text?: string }>}
+ * @returns {Array<{ selector: string; label: string; slot?: string; component?: string; action?: string; role?: string; name?: string; text?: string }>}
  */
 function normalizePickedElements(raw) {
   const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : []
-  /** @type {Array<{ selector: string; label: string; role?: string; name?: string; text?: string }>} */
+  /** @type {Array<{ selector: string; label: string; slot?: string; component?: string; action?: string; role?: string; name?: string; text?: string }>} */
   const out = []
   for (const item of list) {
     if (!item || typeof item !== "object") continue
@@ -799,6 +941,9 @@ function normalizePickedElements(raw) {
     out.push({
       selector: selector.slice(0, 2_048),
       label: label.slice(0, 512),
+      ...(typeof item.slot === "string" ? { slot: item.slot.slice(0, 128) } : {}),
+      ...(typeof item.component === "string" ? { component: item.component.slice(0, 128) } : {}),
+      ...(typeof item.action === "string" ? { action: item.action.slice(0, 128) } : {}),
       ...(typeof item.role === "string" ? { role: item.role.slice(0, 128) } : {}),
       ...(typeof item.name === "string" ? { name: item.name.slice(0, 512) } : {}),
       ...(typeof item.text === "string" ? { text: item.text.slice(0, 512) } : {}),

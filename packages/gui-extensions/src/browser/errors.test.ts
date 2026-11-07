@@ -27,12 +27,18 @@ test("native protocol errors keep the cause and give a valid recovery operation"
   expect(
     protocolError("Runtime.callFunctionOn", new Error("Given expression does not evaluate to a function")).message,
   ).toContain("(element) => element.textContent")
+  expect(protocolError("DOM.setFileInputFiles", new Error("Node is not a file input")).message).toContain(
+    "[file] ref (including hidden=true)",
+  )
+  expect(protocolError("DOM.setFileInputFiles", new Error("Not allowed")).message).toContain(
+    "file-chooser interception",
+  )
   const unsupported = protocolError("Target.getBrowserContexts", new Error("Not allowed"))
   expect(unsupported.message).toContain("does not support or allow")
   expect(unsupported.message).toContain("do not retry unchanged")
   expect(unsupported.cause).toBeInstanceOf(Error)
   const failure = browserFailure({ type: "screenshot", tabID }, new Error("UnknownVizError"))
-  expect(failure.message).toContain("browser.tabs.focus({tabID})")
+  expect(failure.message).toContain("Confirm the tab has a loaded document")
   expect(failure.message).toContain("report the capture failure")
 })
 

@@ -2,6 +2,12 @@
 export type UiElement = {
   label: string
   selector: string
+  /** Nearest `data-slot` on the element or an ancestor — stable design-system hook. */
+  slot?: string
+  /** Nearest `data-component` on the element or an ancestor. */
+  component?: string
+  /** Nearest `data-action` on the element or an ancestor. */
+  action?: string
   role?: string
   name?: string
   text?: string
@@ -58,11 +64,47 @@ export function elementSelector(element: Element) {
   return selector.length > 2000 ? "" : selector
 }
 
-function elementLabel(element: Element) {
+function attrValue(element: Element, name: string) {
+  const value = element.getAttribute(name)?.trim()
+
+  return value ? clip(value, 128) : undefined
+}
+
+/**
+ * Design-system hooks the app already stamps on interactive chrome. Prefer these over
+ * fragile nth-of-type CSS paths when identifying a picked node for the model.
+ * Walks ancestors so a click on an inner svg/icon still names the owning control.
+ */
+export function elementIdentity(element: Element) {
+  let slot: string | undefined
+  let component: string | undefined
+  let action: string | undefined
+
+  for (let node: Element | null = element; node; node = node.parentElement) {
+    slot ??= attrValue(node, "data-slot")
+    component ??= attrValue(node, "data-component")
+    action ??= attrValue(node, "data-action")
+
+    if (slot && component && action) break
+  }
+
+  return {
+    ...(slot ? { slot } : {}),
+    ...(component ? { component } : {}),
+    ...(action ? { action } : {}),
+  }
+}
+
+function elementLabel(element: Element, identity: ReturnType<typeof elementIdentity>) {
   const classes =
     element instanceof HTMLElement ? Array.from(element.classList, (name) => `.${name}`).join("") : ""
+  const base = `${element.localName}${element.id ? `#${element.id}` : ""}${classes}`
+  const hook = identity.slot || identity.component || identity.action
 
-  return clip(`${element.localName}${element.id ? `#${element.id}` : ""}${classes}`, 200)
+  // Bare decorative nodes (svg/path/icon spans) are useless chip titles; name the owning hook.
+  if (hook && !element.id && !classes) return clip(`${element.localName} · ${hook}`, 200)
+
+  return clip(base, 200)
 }
 
 function elementText(element: Element) {
@@ -106,10 +148,12 @@ function elementAccessibility(element: Element) {
 export function describeElement(element: Element): UiElement {
   const bounds = element.getBoundingClientRect()
   const accessibility = elementAccessibility(element)
+  const identity = elementIdentity(element)
 
   return {
-    label: elementLabel(element),
+    label: elementLabel(element, identity),
     selector: elementSelector(element),
+    ...identity,
     ...accessibility,
     text: elementText(element),
     rect: {

@@ -33,6 +33,8 @@ import { resolveSessionComposerSelection } from "./selection"
 import { createSessionRequestModel } from "../requests/model"
 import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
+import { SessionTodoPill } from "./todo-pill"
+import { sessionTodos, todoFinished } from "./todos"
 
 export function createActiveSessionRegion(input: {
   session: SessionModel
@@ -282,6 +284,10 @@ export function createActiveSessionRegion(input: {
       promptRef = element
     },
     setDockRef: input.timeline.view.setDockRef,
+    // SiCode: background shells open their own output popover; this remains for subagent/tool reveal.
+    onReveal: (target: string) => {
+      input.timeline.actions.revealPart(target)
+    },
   }
 
   const active = createMemo(
@@ -332,6 +338,7 @@ export function ActiveSessionComposerRegion(props: {
   suggestionBoundary: () => HTMLElement | undefined
 }) {
   const location = useWorkspaceLocation()
+  const data = useData()
 
   // Only the server's LocationNotFoundError for the session's own Location replaces the composer.
   const missing = createMemo(() => {
@@ -343,9 +350,29 @@ export function ActiveSessionComposerRegion(props: {
     return { directory: info.location.directory, sessionID: info.id, projectID: info.projectID }
   })
 
+  // SiCode: hand-ported from upstream c4c6065ee7 — todowrite list as a pill above the composer.
+  // Matches our default-on gate (`todo !== false`); explicit false hides the pill.
+  const todoEnabled = () =>
+    data.location.config
+      .list({ directory: location().directory })
+      ?.flatMap((entry) => (entry.type === "document" && entry.info.experimental ? [entry.info.experimental] : []))
+      .at(-1)?.todo !== false
+  const todos = createMemo(() => sessionTodos(props.session.history.messages(), props.session.data.revertMessageID()))
+  const todosVisible = () =>
+    todoEnabled() &&
+    !props.session.data.isChild() &&
+    props.session.data.working() &&
+    todos().length > 0 &&
+    !todos().every(todoFinished)
+
   return (
     <SessionComposerRegion
       controller={props.model.region}
+      lane={
+        <Show when={todosVisible()}>
+          <SessionTodoPill todos={todos()} />
+        </Show>
+      }
       composer={
         <Show
           when={missing()}

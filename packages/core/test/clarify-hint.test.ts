@@ -74,7 +74,10 @@ describe("inject", () => {
     const hint = messages[1] as SessionMessage.Synthetic
     expect(hint.type).toBe("synthetic")
     expect(hint.text).toContain("<clarify-hint>")
-    expect(hint.text).toContain("question tool")
+    expect(hint.text).toContain("naming the reading")
+    expect(hint.text).toContain("Do not ask the user in prose")
+    // Structural: this hint must not invite a question-tool theater mid-turn.
+    expect(hint.text).toMatch(/do not call the question tool/i)
     // Fenced code would break on the backticks the surrounding text already uses.
     expect(hint.text).not.toContain("```")
   })

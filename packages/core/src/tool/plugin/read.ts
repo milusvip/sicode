@@ -16,6 +16,28 @@ import { Environment } from "../../environment/index.js"
 
 export const name = "read"
 const FILENAME = "AGENTS.md"
+/** SiCode: max parallel paths in one multi-read — keeps photon decode from stampeding. */
+const MULTI_READ_CONCURRENCY = 4
+
+/**
+ * SiCode: if the model stringifies a path array, parse it back. Real arrays pass through; anything
+ * that is not a non-empty string[] stays the original string so authorizeRead can fail normally.
+ */
+function coercePathInput(path: string | ReadonlyArray<string>): string | ReadonlyArray<string> {
+  if (typeof path !== "string") return path
+  const trimmed = path.trim()
+  if (!trimmed.startsWith("[")) return path
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((entry) => typeof entry === "string")) {
+      return parsed as string[]
+    }
+  } catch {
+    // keep the original string
+  }
+  return path
+}
+
 const LocationInput = Schema.Struct({
   path: Schema.Union([Schema.String, Schema.Array(Schema.String)]).annotate({
     description: "File or directory to read. Pass an array to read several paths in one call.",
@@ -52,10 +74,13 @@ export const Plugin = {
           name,
           options: { codemode: false },
           description:
-            "Read the contents of a file or directory. Pass an array of paths to read several in one call; offset and limit then apply to each path, and paths that fail are reported individually instead of failing the whole call. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+            "Read the contents of a file or directory. Pass path as a JSON array of strings to read several in one call (not a stringified array inside one string). Offset and limit then apply to each path, and paths that fail are reported individually instead of failing the whole call. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Large text is capped for the model (head+tail, full text on disk) — use grep to locate, then read with offset/limit around the hit; do not re-read whole large files to \"confirm\". Prefer one focused read over many tiny slices. Independent reads (and greps) that do not depend on each other belong in the same step, not serial single-tool steps.",
           input: Input,
           output: Output,
           execute: (input, context) => {
+            // SiCode: Flash often stringifies the array (`path: "[\\"a.png\\",…]"`). Coerce before
+            // authorize so a multi-image folder does not burn two failed steps (ses_e5d81d66).
+            const paths = coercePathInput(input.path)
             const readOne = (path: string) =>
               Effect.gen(function* () {
                 const read = (target: FileAccess.Target) =>
@@ -154,8 +179,8 @@ export const Plugin = {
               )
 
             return Effect.gen(function* () {
-              if (typeof input.path === "string") {
-                const result = yield* readOne(input.path)
+              if (typeof paths === "string") {
+                const result = yield* readOne(paths)
                 return {
                   output: result.output,
                   content: toModelContent(result.path, input.offset, result.output),
@@ -163,7 +188,11 @@ export const Plugin = {
                 }
               }
 
-              const settled = yield* Effect.forEach(input.path, (path) => Effect.result(readOne(path)))
+              // SiCode: unbounded parallel image decodes thrash CPU/RAM on phone-photo batches
+              // (ses_e5d81d66: 17 reads at once, multi-minute tool wall). Cap concurrency.
+              const settled = yield* Effect.forEach(paths, (path) => Effect.result(readOne(path)), {
+                concurrency: MULTI_READ_CONCURRENCY,
+              })
               const read = settled.flatMap((item) => (item._tag === "Success" ? [item.success] : []))
               const failed = settled.flatMap((item) => (item._tag === "Failure" ? [item.failure] : []))
               // One bad path must not discard the paths that did read.
@@ -207,20 +236,54 @@ export const Plugin = {
       return join(dirname(absolute), matches[0].name)
     })
 
-    const missing = Effect.fn("ReadTool.missing")(function* (input: string, absolute: string) {
-      const base = basename(input).toLowerCase()
-      const suggestions = yield* fs.readDirectory(dirname(absolute)).pipe(
-        Effect.map((entries) =>
-          entries
-            .filter((entry) => {
-              const candidate = entry.toLowerCase()
-              return candidate.includes(base) || base.includes(candidate)
-            })
-            .map((entry) => join(dirname(input), entry))
-            .slice(0, 3),
-        ),
-        Effect.orElseSucceed(() => [] as string[]),
+    // SiCode: hand-ported from upstream 9321c2cec0 — list through the session environment
+    // (may be a remote workspace), not this host's filesystem.
+    const listing = (path: string) =>
+      reader.list(AbsolutePath.make(path)).pipe(
+        Effect.map((entries) => ({ type: "found" as const, names: entries.map((entry) => entry.name) })),
+        Effect.catchTag("Environment.NotFound", () => Effect.succeed({ type: "missing" as const })),
+        Effect.orElseSucceed(() => ({ type: "unknown" as const })),
       )
+
+    const similar = (names: readonly string[], name: string) => {
+      const base = name.toLowerCase()
+      return names
+        .filter((entry) => {
+          const candidate = entry.toLowerCase()
+          return candidate.includes(base) || base.includes(candidate)
+        })
+        .slice(0, 3)
+    }
+
+    // A missing folder usually means a removed worktree, a moved directory, or a relative path
+    // resolved from the wrong place, so name the first missing folder and its nearest existing parent.
+    const missingFolder = Effect.fn("ReadTool.missingFolder")(function* (input: string, folder: string) {
+      let child = folder
+      let parent = dirname(folder)
+      while (parent !== child) {
+        const found = yield* listing(parent)
+        if (found.type === "unknown") break
+        if (found.type === "found") {
+          const suggestions = similar(found.names, basename(child)).map((entry) => join(parent, entry))
+          const message = [
+            `File not found: ${input}`,
+            `The folder ${child} does not exist. The nearest folder that does is ${parent}.`,
+            ...(suggestions.length === 0 ? [] : [`Did you mean one of these?\n${suggestions.join("\n")}`]),
+          ].join("\n\n")
+          return yield* new ToolFailure({ message })
+        }
+        child = parent
+        parent = dirname(parent)
+      }
+      return yield* new ToolFailure({ message: `File not found: ${input}` })
+    })
+
+    const missing = Effect.fn("ReadTool.missing")(function* (input: string, absolute: string) {
+      const folder = dirname(absolute)
+      const found = yield* listing(folder)
+      if (found.type === "missing") return yield* missingFolder(input, folder)
+      const suggestions =
+        found.type === "found" ? similar(found.names, basename(input)).map((entry) => join(dirname(input), entry)) : []
       const message =
         suggestions.length === 0
           ? `File not found: ${input}`

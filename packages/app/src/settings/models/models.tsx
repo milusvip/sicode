@@ -11,7 +11,12 @@ import { popularProviders } from "@/providers/catalog/providers"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
-import { CONSOLE_GROUP_KEY, consoleModelGroup, ProviderModelSections } from "@/providers/models/provider-group"
+import {
+  CONSOLE_GROUP_KEY,
+  consoleModelGroup,
+  ProviderModelSections,
+  ProviderVisibilityBulk,
+} from "@/providers/models/provider-group"
 import { SettingsSearchEmpty } from "@/settings/search-empty"
 import { SettingsSearchField } from "@/settings/search-field"
 
@@ -75,18 +80,30 @@ export const SettingsModels: Component<{
       .filter((item) => item.provider.id === providerID)
       .forEach((item) => models.setVisibility({ providerID, modelID: item.id }, visible))
 
+  const providerVisible = (providerID: string) =>
+    models
+      .list()
+      .filter((item) => item.provider.id === providerID)
+      .every((item) => models.visible({ providerID, modelID: item.id }))
+
   function ModelRows(props: { items: ModelItem[] }) {
     return (
       <SettingsList variant="catalog">
         <For each={props.items}>
           {(item) => {
             const key = { providerID: item.provider.id, modelID: item.id }
+            const visible = () => models.visible(key)
 
             return (
-              <SettingsRow title={item.name} description="">
+              <SettingsRow
+                title={item.name}
+                description={
+                  visible() ? language.t("dialog.model.manage.shown") : language.t("dialog.model.manage.hidden")
+                }
+              >
                 <div>
                   <Switch
-                    checked={models.visible(key)}
+                    checked={visible()}
                     onChange={(checked) => models.setVisibility(key, checked)}
                     hideLabel
                   >
@@ -185,6 +202,12 @@ export const SettingsModels: Component<{
               disabled={searching()}
               onExpandedChange={(key, value) => setStore("collapsed", key, !value)}
               onSetVisibility={setProviderVisibility}
+              action={(group) => (
+                <ProviderVisibilityBulk
+                  allVisible={providerVisible(group.category)}
+                  onChange={(checked) => setProviderVisibility(group.category, checked)}
+                />
+              )}
               ref={(providerID, element) => sections.set(providerID, element)}
               rows={(items) => <ModelRows items={items} />}
             />

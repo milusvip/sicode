@@ -13,6 +13,16 @@ export interface Browser {
    * without it the tab quietly joins the strip, as the agent's own `tabs.open` does.
    */
   openFile(session: SessionRef, path: string, options?: { select?: boolean }): void
+  /**
+   * SiCode: reconnect the agent browser channel for this session so tools and tab inventory are
+   * live again after idle eviction — call when the user picks an element or sends a browser note.
+   */
+  wake(session: SessionRef): void
+  /**
+   * SiCode: wake (and for system-Chrome push tabs, stick + pin) then wait until the agent RPC
+   * attachment is bound. Call from prepareSend so the first browser.* tool is not disconnected.
+   */
+  ensure(session: SessionRef, options?: { chromeTabIDs?: readonly string[] }): Promise<void>
 }
 
 /** The browser extension provides this on desktop. Inactive on web or while the extension is off. */

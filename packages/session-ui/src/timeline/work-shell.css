@@ -178,10 +178,18 @@
    first tool, thought, or word. It sits in the shell body, indented to line up under the head's
    title (past the 19px icon and its 8px gap, plus the head's 4px start padding). */
 [data-component="waiting-for-model"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-inline-start: 31px;
   padding: 4px 0 6px;
   font-size: 12.5px;
-  line-height: var(--line-height-compact, 20px);
+  line-height: var(--line-height-compact, 16px);
   color: var(--v2-text-text-muted, var(--text-weak));
+}
+
+[data-component="waiting-for-model"][data-stalled] {
+  color: var(--v2-text-text-secondary, var(--text-base));
 }
 

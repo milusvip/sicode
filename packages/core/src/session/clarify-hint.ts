@@ -4,15 +4,21 @@ import { DateTime } from "effect"
 import { SessionMessage } from "./message.js"
 
 /**
- * SiCode: when the opening request of a session is too thin to act on, say exactly what is
- * missing and ask for it — instead of letting the model guess.
+ * SiCode: when the opening request of a turn is too thin to act on, name what is missing and
+ * force one stated reading — then act. Do not invite a mid-turn question theater.
  *
  * The data behind the shape of this: across 302 real prompts, 16% are short and carry an action
  * verb but name no file, symbol, path, or number ("写个demo", "你帮我修复好"). Reading them is
  * never the problem — the model parses broken punctuation and typos fine. The cost is that it
  * picks a target and a deliverable on its own, and a wrong pick burns a whole turn.
  *
- * Two deliberate restraints keep it from becoming noise:
+ * Early versions forced the `question` tool first; that interrupted short continuations
+ * ("你帮我修复好" pointing at the bug just discussed). Soft "ask when two readings differ" then
+ * became Flash narrating options, saying it would not guess, and grepping anyway. Structural
+ * fix: only require a one-line reading, then work. Real blocking asks go through `question`
+ * alone (see mixed-prose-question stop in continue-intent-gate) — not through this hint.
+ *
+ * Restraints that stay:
  * - Only the request that starts a turn. Once work is running under it, the model has its own
  *   context and a question would interrupt rather than help.
  * - Nothing that licenses guessing, and nothing that is a question. "随便写个demo" hands the
@@ -73,8 +79,8 @@ const hintMessage = (missing: readonly string[]): SessionMessage.Synthetic => ({
   text: [
     "<clarify-hint>",
     `This request does not say ${missing.join(", or ")}.`,
-    "Open your reply with one line naming the reading you are taking, then work from it.",
-    "Say so and ask with the question tool only when two readings are both plausible and would lead to different work — one question, offering the readings as the options.",
+    "Open your reply with one line naming the reading you are taking (file / module / deliverable), then work from that reading.",
+    "Do not ask the user in prose, do not list options and wait, and do not call the question tool from this hint — if you truly cannot pick a reading, stop with that one-line gap instead of guessing and searching.",
     "Never ask for something the request, the conversation, or the repository already answers.",
     "</clarify-hint>",
   ].join("\n"),

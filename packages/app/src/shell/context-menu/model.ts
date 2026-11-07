@@ -12,7 +12,6 @@ export type ContextMenuActionID =
   | "edit.copy"
   | "edit.paste"
   | "edit.delete"
-  | "edit.selectAll"
   | "view.inspectElement"
   | "view.toggleDevTools"
   | "view.reload"
@@ -29,7 +28,6 @@ export type ContextMenuLabelKey =
   | "desktop.menu.copy"
   | "desktop.menu.paste"
   | "desktop.menu.delete"
-  | "desktop.menu.selectAll"
   | "desktop.menu.toggleDeveloperTools"
   | "desktop.menu.reload"
 
@@ -87,15 +85,15 @@ export function contextMenuSelected(target: ContextMenuTarget) {
 
 function shortcuts(platform: ContextMenuPlatform) {
   if (platform === "macos")
-    return { undo: "⌘Z", redo: "⇧⌘Z", cut: "⌘X", copy: "⌘C", paste: "⌘V", selectAll: "⌘A" }
+    return { undo: "⌘Z", redo: "⇧⌘Z", cut: "⌘X", copy: "⌘C", paste: "⌘V" }
 
-  return { undo: "Ctrl+Z", redo: "Ctrl+Y", cut: "Ctrl+X", copy: "Ctrl+C", paste: "Ctrl+V", selectAll: "Ctrl+A" }
+  return { undo: "Ctrl+Z", redo: "Ctrl+Y", cut: "Ctrl+X", copy: "Ctrl+C", paste: "Ctrl+V" }
 }
 
 /**
  * Builds the menu for one right-click. Ordering follows the platform convention: history first,
- * then the clipboard group, then selection, with developer tools last so they never sit next to
- * a destructive item.
+ * then the clipboard group, with developer tools last so they never sit next to a destructive item.
+ * SiCode: 全选 is gone — Ctrl+A already selects all, and the item only padded the menu.
  */
 export function contextMenuSections(target: ContextMenuTarget, platform: ContextMenuPlatform): ContextMenuSection[] {
   const keys = shortcuts(platform)
@@ -134,9 +132,6 @@ export function contextMenuSections(target: ContextMenuTarget, platform: Context
         disabled: !selected,
       },
     ])
-    sections.push([
-      { type: "item", action: "edit.selectAll", labelKey: "desktop.menu.selectAll", shortcut: keys.selectAll },
-    ])
   } else {
     // SiCode: on a message bubble with nothing selected, 复制 copies the whole bubble; with a
     // selection the existing item already does the right thing, so the whole-bubble copy backs off.
@@ -144,13 +139,14 @@ export function contextMenuSections(target: ContextMenuTarget, platform: Context
       ? [{ type: "item" as const, action: "message.copy" as const, labelKey: "desktop.menu.copy" as const }]
       : []
 
-    sections.push([
+    const copy = [
       ...messageCopy,
       ...(selected
         ? [{ type: "item" as const, action: "edit.copy" as const, labelKey: "desktop.menu.copy" as const, shortcut: keys.copy }]
         : []),
-      { type: "item", action: "edit.selectAll", labelKey: "desktop.menu.selectAll", shortcut: keys.selectAll },
-    ])
+    ]
+
+    if (copy.length > 0) sections.push(copy)
   }
 
   if (target.dev) {

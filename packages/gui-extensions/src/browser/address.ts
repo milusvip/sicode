@@ -49,7 +49,8 @@ export function searches(input: string) {
   const host = value.split(/[/?#]/, 1)[0] ?? ""
 
   const named =
-    /^(?:localhost|\[[\da-f:.]+\])(?::\d+)?$/i.test(host) || /:\d+$/.test(host) || /^[^.]+(?:\.[^.]+)+$/.test(host)
+    !host.includes("@") &&
+    (/^(?:localhost|\[[\da-f:.]+\])(?::\d+)?$/i.test(host) || /:\d+$/.test(host) || /^[^.]+(?:\.[^.]+)+$/.test(host))
 
   // Main adds the scheme the same way, so the text opens only if the whole URL it becomes does.
   return !named || !destinationOrigin(`https://${value}`)

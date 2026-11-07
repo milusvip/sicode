@@ -83,22 +83,48 @@
       .slice(0, 512)
   }
 
+  const attrOf = (el, name) => {
+    const value = el.getAttribute(name)
+    return value && value.trim() ? value.trim().slice(0, 128) : ""
+  }
+
+  /** Nearest data-slot / data-component / data-action — stable hooks over nth-of-type paths. */
+  const identityOf = (el) => {
+    let slot = ""
+    let component = ""
+    let action = ""
+    for (let node = el; node; node = node.parentElement) {
+      if (!slot) slot = attrOf(node, "data-slot")
+      if (!component) component = attrOf(node, "data-component")
+      if (!action) action = attrOf(node, "data-action")
+      if (slot && component && action) break
+    }
+    return { slot, component, action }
+  }
+
   const labelOf = (el) => {
     const named = nameOf(el) || textOf(el)
     if (named) return named.slice(0, 512)
-    return el.tagName.toLowerCase()
+    const identity = identityOf(el)
+    const hook = identity.slot || identity.component || identity.action
+    const tag = el.tagName.toLowerCase()
+    return (hook ? `${tag} · ${hook}` : tag).slice(0, 512)
   }
 
   const payloadOf = (el) => {
     const name = nameOf(el)
     const text = textOf(el)
     const role = roleOf(el)
+    const identity = identityOf(el)
     return {
       selector: cssPath(el),
       label: labelOf(el),
       ...(role ? { role } : {}),
       ...(name ? { name } : {}),
       ...(text && text !== name ? { text } : {}),
+      ...(identity.slot ? { slot: identity.slot } : {}),
+      ...(identity.component ? { component: identity.component } : {}),
+      ...(identity.action ? { action: identity.action } : {}),
     }
   }
 

@@ -21,6 +21,8 @@ export type CookieLoginState = {
 export type Connection = ReturnType<typeof createConnection>
 
 export type Registration = {
+  /** Resolves once main has accepted this binding. */
+  bound: Promise<void>
   /** Creates a restored tab's page, which then reports its embed. */
   load(tabID: Browser.TabID): void
   command(command: Browser.Action): Promise<void>
@@ -271,6 +273,19 @@ export function createConnection(input: {
       blocked = false
       register()
     },
+    /** Wait until the current binding is accepted by main (after wake/reattach). */
+    waitBound() {
+      register()
+      const registration = state.registration
+
+      if (!registration) {
+        const error = new Error("browser.pane.unavailable")
+
+        return Promise.reject(input.client() ? error : Object.assign(error, { code: "unavailable" }))
+      }
+
+      return registration.bound
+    },
     /** Follows the pane's Ipc going away and coming back. */
     refresh() {
       if (!input.client()) {
@@ -366,8 +381,13 @@ function open(
   const ready = client.register({ binding, ...target })
   // Other failures reach the owner through the closed-state event; keep the bare promise handled.
   void ready.catch(failed)
+  // A second observer of `ready` — mark it handled so a rejected register does not surface as
+  // unhandled when nobody awaits waitBound(); awaiters still see the rejection.
+  const bound = ready.then(() => undefined)
+  void bound.catch(() => undefined)
 
   return {
+    bound,
     load(tabID) {
       if (status.closed) return
       void ready.then(() => client.load({ binding, tabID })).catch(() => undefined)

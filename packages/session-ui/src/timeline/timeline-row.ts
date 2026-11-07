@@ -97,6 +97,17 @@ export namespace TimelineRow {
     diffs?: readonly FileDiffInfo[]
   }> {}
 
+  /**
+   * SiCode: newly created deliverables for this turn, shown as capsules. `collapsed` is true for
+   * every turn except the latest one that produced artifacts — older capsules fold so the transcript
+   * only surfaces this turn's new work by default.
+   */
+  export class Artifacts extends Data.TaggedClass("Artifacts")<{
+    userMessageID: string
+    items: readonly { path: string; ref: PartRef }[]
+    collapsed: boolean
+  }> {}
+
   /** Where the host shows the active turn's live status when undelivered input waits below it. */
   export class Activity extends Data.TaggedClass("Activity")<{
     userMessageID: string
@@ -138,6 +149,8 @@ export namespace TimelineRow {
    */
   export class Waiting extends Data.TaggedClass("Waiting")<{
     userMessageID: string
+    /** When the empty shell opened — used to escalate copy after a long first-token stall. */
+    startedAt: number
   }> {}
 
   export type TimelineRow =
@@ -152,6 +165,7 @@ export namespace TimelineRow {
     | Retry
     | CompactionQueued
     | TurnDiff
+    | Artifacts
     | Activity
     | WorkShell
     | WorkShellEnd
@@ -172,6 +186,7 @@ export namespace TimelineRow {
     Retry: (row) => `retry:${row.userMessageID}`,
     CompactionQueued: (row) => `compaction-queued:${row.inboxID}`,
     TurnDiff: (row) => `turn-diff:${row.messageID}`,
+    Artifacts: (row) => `artifacts:${row.userMessageID}`,
     // One live status exists at a time; it keeps its identity when the active turn changes.
     Activity: () => "activity",
     WorkShell: (row) => `work-shell:${row.userMessageID}`,
@@ -201,6 +216,11 @@ export type TimelineRowMap = {
   Error: { userMessageID: string; text: string; kind?: "free-limit"; resetAt?: number }
   CompactionQueued: { userMessageID: string; inboxID: string }
   TurnDiff: { userMessageID: string; messageID: string; from: string; files: readonly string[] }
+  Artifacts: {
+    userMessageID: string
+    items: readonly { path: string; ref: PartRef }[]
+    collapsed: boolean
+  }
   Activity: { userMessageID: string }
   WorkShell: {
     userMessageID: string

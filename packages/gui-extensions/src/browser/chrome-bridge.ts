@@ -50,7 +50,12 @@ export const ChromeBridge = Ipc.define({
      * true → system while connected; false → in-app pane. Set by push / 内置加入对话.
      */
     setPreferSystem: {
-      input: Schema.Struct({ prefer: Schema.Boolean, session: PreferKey }),
+      input: Schema.Struct({
+        prefer: Schema.Boolean,
+        session: PreferKey,
+        /** When false, only sticks the map — caller reattaches (avoids tabs.open racing the IPC force). */
+        reattach: Schema.optional(Schema.Boolean),
+      }),
       output: ChromeBridgeStatus,
     },
     /**

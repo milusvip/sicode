@@ -29,4 +29,24 @@ describe("uiElementNote", () => {
     expect(note.subject).toContain('selector "body > button.primary"')
     expect(note.commentID.length).toBeGreaterThan(0)
   })
+
+  test("puts design-system hooks ahead of the CSS selector", () => {
+    const note = uiElementNote(
+      {
+        label: "svg · composer-attachment-remove",
+        selector: "#root > div:nth-of-type(3) > svg",
+        slot: "composer-attachment-remove",
+        component: "composer-attachments",
+        action: "remove",
+        rect: { x: 0, y: 0, width: 12, height: 12 },
+      },
+      "Enlarge and turn red on hover",
+    )
+
+    expect(note.subject.indexOf('data-slot "composer-attachment-remove"')).toBeLessThan(
+      note.subject.indexOf("selector "),
+    )
+    expect(note.subject).toContain('data-component "composer-attachments"')
+    expect(note.subject).toContain('data-action "remove"')
+  })
 })

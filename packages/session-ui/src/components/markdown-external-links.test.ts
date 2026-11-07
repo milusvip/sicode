@@ -77,4 +77,26 @@ describe("external link routing", () => {
     root.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 1 }))
     expect(opened).toEqual([])
   })
+
+  // The host call is fire-and-forget, so this attribute is the only thing telling the reader the
+  // click landed. It must appear on the clicked link only, and must not outlive the handoff.
+  test("marks the clicked link until the browser takes focus", () => {
+    const root = mount(
+      `<p><a class="external-link" href="https://example.com">one</a><a class="external-link" href="https://example.org">two</a></p>`,
+    )
+    const [first, second] = root.querySelectorAll("a")
+    const dispose = setupExternalLinks(root, () => () => {})
+
+    first!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    expect(first!.hasAttribute("data-opening")).toBe(true)
+    expect(second!.hasAttribute("data-opening")).toBe(false)
+
+    window.dispatchEvent(new Event("blur"))
+    expect(first!.hasAttribute("data-opening")).toBe(false)
+
+    // A second click must not survive the owner going away, or the transcript keeps a dimmed link.
+    second!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    dispose()
+    expect(second!.hasAttribute("data-opening")).toBe(false)
+  })
 })

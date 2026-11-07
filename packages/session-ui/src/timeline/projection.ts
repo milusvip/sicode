@@ -20,6 +20,7 @@ import {
   currentToolMetadata,
 } from "../message/current-tool-state"
 import { changedFileDiff } from "../components/apply-patch-file"
+import { createdArtifacts } from "./artifact"
 import { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap } from "./timeline-row"
 import { timelineCategory, timelineNoticeRequired, type TimelineDetail } from "./detail"
 
@@ -28,6 +29,7 @@ export {
   filterCollapsedWorkShellRows,
   formatElapsed,
   openWorkShellOnly,
+  restoreDefaultOpenWorkShells,
   toolSpanElapsed,
   workShellDefaultOpen,
   workShellDisclosureKey,
@@ -163,7 +165,8 @@ export function createTimelineProjection(input: TimelineProjectionInput) {
 
     if (Predicate.isTagged(row, "AssistantPart")) {
       lastAssistantGroupKey.set(row.userMessageID, row.group.key)
-      if (isProcessGroup(row)) lastProcessGroupKey.set(row.userMessageID, row.group.key)
+      // SiCode: pure reasoning groups also need last-process open/busy so live "思考中" expands on the chain.
+      if (isProcessGroup(row) || isReasoningWork(row)) lastProcessGroupKey.set(row.userMessageID, row.group.key)
     }
   })
 
@@ -271,7 +274,8 @@ export function createReactiveTimelineProjection(input: {
   const lastProcessGroupKey = createMemo(() => {
     const result = new Map<string, string>()
     rows().forEach((row) => {
-      if (Predicate.isTagged(row, "AssistantPart") && isProcessGroup(row))
+      // SiCode: include reasoning-only context groups so the live thought process shell opens while working.
+      if (Predicate.isTagged(row, "AssistantPart") && (isProcessGroup(row) || isReasoningWork(row)))
         result.set(row.userMessageID, row.group.key)
     })
 
@@ -520,14 +524,15 @@ export namespace Timeline {
       ),
     )
 
-    // SiCode: a card superseded by a later render of the same path dims into history; the newest
-    // one stays live. History rows never rewrite — the badge just points forward.
+    // SiCode: only the latest turn's capsules stay expanded; earlier turns fold so the transcript
+    // surfaces this turn's new deliverables without re-listing everything above.
+    const withArtifacts = collapseOlderArtifacts(rows)
 
     return {
       activeMessageID,
       rows: detail
         ? groupMessages(
-            rows,
+            withArtifacts,
             detail,
             new Set(
               messages.flatMap((message) =>
@@ -539,7 +544,7 @@ export namespace Timeline {
               ),
             ),
           )
-        : rows,
+        : withArtifacts,
     }
   }
 
@@ -563,7 +568,6 @@ export namespace Timeline {
     const lastStep = entries.findLast((entry) => entry.type === "assistant" || entry.type === "idle")
     const previousUserMessage = index > 0
     const compaction = entries.some((entry) => entry.type === "notice" && entry.message.type === "compaction")
-    const lastContent = lastAssistant?.content.at(-1)
 
     // Session still working this turn — process tools finishing must not mark the outer shell done.
     const turnBusy = isActive && status.type === "busy"
@@ -576,15 +580,9 @@ export namespace Timeline {
       !lastAssistant?.error &&
       !lastAssistant?.retry
 
-    // SiCode: a live thought is rendered wherever thinking is visible at all, not only when it is
-    // laid out separately. While the model thinks there is no other work on screen, and grouping it
-    // away left the shell head alone for the whole first thought — the turn looked stuck. The row's
-    // head is a ticker, so even the collapsed placement keeps reading as alive.
-    const thinking =
-      streaming &&
-      (detail ? detail.thinking.placement !== "hidden" : showReasoning) &&
-      lastContent?.type === "reasoning" &&
-      lastContent.time?.completed === undefined
+    // SiCode: never promote live reasoning to a standalone Thinking row. That painted "思考中"
+    // under the work-shell / process-shell chrome. Keep every thought in its context group so
+    // CurrentContextToolGroup renders it on the process chain (streaming flag still ticks).
 
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: turnID }))
 
@@ -598,10 +596,7 @@ export namespace Timeline {
     const appendAssistantSegment = (messages: SessionMessageAssistant[]) => {
       const refs = messages.flatMap((message, messageIndex) =>
         contentEntries(message)
-          .filter(
-            (entry) =>
-              isRenderable(entry.content, showReasoning, detail) && !(thinking && entry.content === lastContent),
-          )
+          .filter((entry) => isRenderable(entry.content, showReasoning, detail))
           .map((entry) => ({ messageID: message.id, messageIndex, partID: entry.id, content: entry.content })),
       )
 
@@ -636,15 +631,6 @@ export namespace Timeline {
       }
 
       if (messages.at(-1) !== lastAssistant) return
-
-      // The live reasoning row closes its own step, so notices that arrive meanwhile follow it.
-      if (thinking && lastAssistant)
-        rows.push(
-          new TimelineRow.Thinking({
-            userMessageID: turnID,
-            ref: { messageID: lastAssistant.id, partID: contentEntries(lastAssistant).at(-1)!.id },
-          }),
-        )
 
       if (lastStep?.type !== "assistant") return
 
@@ -705,7 +691,7 @@ export namespace Timeline {
     })
     appendAssistantSegment(assistantSegment)
 
-    return insertWorkShells(rows, {
+    const withShell = insertWorkShells(rows, {
       turnID,
       // Empty chrome before tools only while an assistant message is still open.
       streaming,
@@ -716,6 +702,49 @@ export namespace Timeline {
       userCreated: userMessage?.time.created,
       assistantMessages,
     })
+
+    // SiCode: capsules are the openable deliverables; the turn-diff list is the rest of the change
+    // inventory. Paths that already have a capsule drop out of TurnDiff so the same file is not
+    // listed twice. Capsules sit above the remaining change list when both appear.
+    const artifacts = createdArtifacts(assistantMessages)
+    const capsulePaths = new Set(artifacts.map((item) => item.path))
+    const withoutCapsuleDiffs: TimelineRow.TimelineRow[] = []
+    for (const row of withShell) {
+      if (!Predicate.isTagged(row, "TurnDiff") || capsulePaths.size === 0) {
+        withoutCapsuleDiffs.push(row)
+        continue
+      }
+
+      const files = row.files.filter((file) => !capsulePaths.has(file))
+      if (files.length === 0) continue
+
+      const diffs = row.diffs?.filter((diff) => !capsulePaths.has(diff.file))
+      withoutCapsuleDiffs.push(
+        new TimelineRow.TurnDiff({
+          userMessageID: row.userMessageID,
+          messageID: row.messageID,
+          from: row.from,
+          files,
+          diffs: diffs?.length ? diffs : undefined,
+        }),
+      )
+    }
+
+    if (artifacts.length === 0) return withoutCapsuleDiffs
+
+    const artifactsRow = new TimelineRow.Artifacts({
+      userMessageID: turnID,
+      items: artifacts,
+      collapsed: false,
+    })
+    const diffIndex = withoutCapsuleDiffs.findIndex((row) => Predicate.isTagged(row, "TurnDiff"))
+    if (diffIndex < 0) return [...withoutCapsuleDiffs, artifactsRow]
+
+    return [
+      ...withoutCapsuleDiffs.slice(0, diffIndex),
+      artifactsRow,
+      ...withoutCapsuleDiffs.slice(diffIndex),
+    ]
   }
 
   export function resolveContent(message: SessionMessageInfo | undefined, partID: string): Content | undefined {
@@ -777,7 +806,9 @@ function isProcessGroup(row: TimelineRow.TimelineRow) {
   if (!Predicate.isTagged(row, "AssistantPart")) return false
   if (row.group.type === "read" || row.group.type === "file") return true
   // Tool context keys are `context:…`; grouped notices/shells use `message:…`.
-  // Compact detail can put thinking alone in a context group — that is not process work.
+  // Pure reasoning groups still render as process-shell chrome in CurrentContextToolGroup;
+  // they are tracked via isReasoningWork for lastProcessGroupKey / open state, not here —
+  // counting them as process would wrap settled thought-only turns in a zero-tool WorkShell.
   if (row.group.type !== "context" || !row.group.key.startsWith("context:")) return false
   return row.group.refs.some((ref) => !isNonToolPartID(ref.partID))
 }
@@ -918,6 +949,7 @@ function insertWorkShells(
         Predicate.isTagged(row, "TurnDivider") ||
         Predicate.isTagged(row, "Notice") ||
         Predicate.isTagged(row, "TurnDiff") ||
+        Predicate.isTagged(row, "Artifacts") ||
         Predicate.isTagged(row, "CompactionQueued") ||
         Predicate.isTagged(row, "Activity")
       )
@@ -946,7 +978,7 @@ function insertWorkShells(
       // SiCode: the shell is empty until the model produces its first tool, text, or thought. Put a
       // placeholder in the body so the first queue wait (measured at ~4.4 s on this machine) reads as
       // "waiting on the model" instead of a blank gap below the head.
-      const waiting = new TimelineRow.Waiting({ userMessageID: input.turnID })
+      const waiting = new TimelineRow.Waiting({ userMessageID: input.turnID, startedAt })
       const end = new TimelineRow.WorkShellEnd({ userMessageID: input.turnID })
       return [...rows.slice(0, at), head, waiting, end, ...rows.slice(at)]
     }
@@ -993,6 +1025,27 @@ function insertWorkShells(
 
 function isFailedIdle(message: SessionMessageInfo): message is FailedIdle {
   return message.type === "idle" && message.outcome === "failed" && !!message.error
+}
+
+/** SiCode: fold every Artifacts row except the last one in the session. */
+function collapseOlderArtifacts(rows: TimelineRow.TimelineRow[]): TimelineRow.TimelineRow[] {
+  let last = -1
+  for (let index = 0; index < rows.length; index++) {
+    if (Predicate.isTagged(rows[index], "Artifacts")) last = index
+  }
+  if (last < 0) return rows
+
+  return rows.map((row, index) => {
+    if (!Predicate.isTagged(row, "Artifacts")) return row
+    const collapsed = index !== last
+    if (row.collapsed === collapsed) return row
+
+    return new TimelineRow.Artifacts({
+      userMessageID: row.userMessageID,
+      items: row.items,
+      collapsed,
+    })
+  })
 }
 
 // SiCode: process notices are model-facing plumbing, not user-facing events. Instruction-update
@@ -1208,8 +1261,12 @@ function groupPartKey(ref: PartRef) {
 function renderable(content: Content, showReasoning: boolean, detail?: TimelineDetail) {
   if (content.type === "text") return !!content.text.trim()
 
-  if (content.type === "reasoning")
-    return (detail ? detail.thinking.placement !== "hidden" : showReasoning) && !!content.text.trim()
+  if (content.type === "reasoning") {
+    if (detail ? detail.thinking.placement === "hidden" : !showReasoning) return false
+    if (content.text.trim()) return true
+    // SiCode: an empty live thought still needs a process-shell seat so the turn doesn't look stuck.
+    return content.time?.completed === undefined
+  }
 
   if (detail && currentToolFailed(content)) return true
 
@@ -1276,9 +1333,14 @@ function groupContent(
     }
 
     flush()
+    // SiCode: tag question parts so collapsed work-shells can keep them (and their framing prose)
+    // without looking the tool name back up from message content.
+    const question = item.content.type === "tool" && item.content.name === "question"
     groups.push({
       type: "part",
-      key: `part:${item.messageID}:${item.partID}`,
+      key: question
+        ? `part:question:${item.messageID}:${item.partID}`
+        : `part:${item.messageID}:${item.partID}`,
       ref: { messageID: item.messageID, partID: item.partID },
     })
   })

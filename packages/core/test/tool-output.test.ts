@@ -76,7 +76,25 @@ describe("ToolOutput", () => {
         const result = yield* output.truncate({ content: [{ type: "text", text }] })
         const texts = result.content.flatMap((item) => (item.type === "text" ? [item.text] : []))
         expect(texts.at(-1)?.endsWith("FINAL-TOKEN-9F3A")).toBe(true)
-        expect(texts.join("\n")).toMatch(/\[showing lines 1-1200 and 2202-3001 of 3001;/)
+        // SiCode: defaults 400 lines → head 240 + tail 160
+        expect(texts.join("\n")).toMatch(/\[showing lines 1-240 and 2842-3001 of 3001;/)
+      }),
+    ),
+  )
+
+  it.live("still caps when the producer already set truncated:false", () =>
+    withStore((output) =>
+      Effect.gen(function* () {
+        const text = Array.from({ length: 800 }, (_, index) => `line ${index + 1} ${"x".repeat(40)}`).join("\n")
+        const result = yield* output.truncate({
+          content: [{ type: "text", text }],
+          metadata: { truncated: false },
+        })
+        expect(result.metadata?.truncated).toBe(true)
+        expect(typeof result.metadata?.outputPath).toBe("string")
+        const joined = result.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n")
+        expect(joined.length).toBeLessThan(text.length)
+        expect(joined).toContain("full output saved to")
       }),
     ),
   )
@@ -117,14 +135,16 @@ describe("ToolOutput", () => {
     ),
   )
 
-  it.live("skips results that report a truncation state", () =>
+  it.live("keeps under-budget producer truncation flags", () =>
     withStore((output) =>
       Effect.gen(function* () {
         const content: Tool.NormalizedResult["content"] = [{ type: "text", text: "one\ntwo" }]
         const truncated = { content, metadata: { truncated: true, source: "tool" } }
         const retained = { content, metadata: { truncated: false, source: "tool" } }
-        expect(yield* output.truncate(truncated)).toBe(truncated)
-        expect(yield* output.truncate(retained)).toBe(retained)
+        // SiCode: no longer skip the global cap just because truncated is set — under budget we
+        // preserve the producer's flag; over budget still spills (see test above).
+        expect(yield* output.truncate(truncated)).toEqual(truncated)
+        expect(yield* output.truncate(retained)).toEqual(retained)
       }),
     ),
   )

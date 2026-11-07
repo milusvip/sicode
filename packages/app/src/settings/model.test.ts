@@ -197,10 +197,10 @@ test("font defaults are the system-first UI stack and IBM Plex Mono", () => {
 })
 
 test.each([
-  { name: "sans", family: sansFontFamily, font: undefined, prefix: "-apple-system, " },
-  { name: "sans", family: sansFontFamily, font: "", prefix: "-apple-system, " },
-  { name: "sans", family: sansFontFamily, font: "   ", prefix: "-apple-system, " },
-  { name: "sans", family: sansFontFamily, font: "Custom Sans", prefix: '"Custom Sans", -apple-system, ' },
+  { name: "sans", family: sansFontFamily, font: undefined, prefix: '"思源黑体", ' },
+  { name: "sans", family: sansFontFamily, font: "", prefix: '"思源黑体", ' },
+  { name: "sans", family: sansFontFamily, font: "   ", prefix: '"思源黑体", ' },
+  { name: "sans", family: sansFontFamily, font: "Custom Sans", prefix: '"Custom Sans", "思源黑体", ' },
   { name: "mono", family: monoFontFamily, font: undefined, prefix: '"IBM Plex Mono", ' },
   { name: "mono", family: monoFontFamily, font: "", prefix: '"IBM Plex Mono", ' },
   { name: "mono", family: monoFontFamily, font: "   ", prefix: '"IBM Plex Mono", ' },

@@ -87,7 +87,7 @@ export function render(prompt: string, tools: string[]) {
   if (hasTool(tools, "browser.click", "browser_click") && hasTool(tools, "browser.snapshot", "browser_snapshot")) {
     instructions.push(
       "- Drive web pages with the built-in browser tools (in-app pane or system Chrome — same API). After an extension push, the session owns system Chrome: tabs.list → snapshot/find → click/fill/fill_form/select/check/files.upload → wait or screenshot. Prefer the pushed tabID (`chrome_tab_*` / `tab_chrome_*`) and refs from snapshot. Do not start a second browser or remote-debugging Chrome.",
-      "- When the user asks you to debug, publish, fill, click, or upload on a site (admin panels included), call browser.tabs.list and drive the attached system/in-app browser — do not refuse with missing login, missing API, or \"I cannot operate the app\". Cookies live in that browser profile; only stop for a real CAPTCHA/SMS after trying.",
+      "- When the user asks you to debug, publish, fill, click, or upload on a site (admin panels included), call browser.tabs.list and drive the attached system/in-app browser — do not refuse with missing login, missing API, or \"I cannot operate / click / publish\". Cookies live in that browser profile; only stop for a real CAPTCHA/SMS after trying.",
     )
   }
   return prompt

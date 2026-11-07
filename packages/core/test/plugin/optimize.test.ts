@@ -20,6 +20,7 @@ import PROMPT_ASTRA from "../../src/plugin/system-prompt/gpt-astra.txt"
 import PROMPT_KIMI from "../../src/plugin/system-prompt/kimi.txt"
 import PROMPT_TRINITY from "../../src/plugin/system-prompt/trinity.txt"
 import PROMPT_ANTHROPIC from "../../src/plugin/system-prompt/anthropic.txt"
+import PROMPT_DEEPSEEK from "../../src/plugin/system-prompt/deepseek.txt"
 
 const it = testEffect(PluginTestLayer)
 const fallback = SessionSystemPrompt.make([])
@@ -86,6 +87,7 @@ describe("OptimizePlugin", () => {
         ["kimi-k2", PROMPT_KIMI],
         ["trinity", PROMPT_TRINITY],
         ["meta/muse-spark-1.1", PROMPT_META.replaceAll("{{MODEL_NAME}}", "Muse Spark")],
+        ["deepseek-v4.1-flash", PROMPT_DEEPSEEK],
         ["llama-3.3", fallback],
       ] as const
 

@@ -8,7 +8,7 @@ import { getDirectory, getFilename } from "@opencode/util/path"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useExtensionAttachment } from "@/runtime/extension/host-apis"
-import { createPathHelpers } from "./path"
+import { containsFilePath, createPathHelpers } from "./path"
 import { fileContentFromBytes } from "./artifact"
 import {
   approxBytes,
@@ -74,6 +74,24 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
           title: language.t("toast.file.listFailed.title"),
           description: message,
         })
+      },
+      // SiCode: the tree is the only place that learns a file disappeared, so it drops the cached content and marks the
+      // tab. Without this an open tab keeps showing a deleted file's last content forever.
+      onRemove: (paths) => {
+        for (const file of Object.keys(store.file)) {
+          if (!paths.some((path) => containsFilePath(path, file))) continue
+          removeFileContentBytes(file)
+          setStore(
+            "file",
+            file,
+            produce((draft) => {
+              draft.loaded = false
+              draft.loading = false
+              draft.content = undefined
+              draft.notFound = true
+            }),
+          )
+        }
       },
     })
 

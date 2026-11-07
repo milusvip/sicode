@@ -515,6 +515,32 @@ describe("SubagentTool", () => {
             ),
           ).toEqual(["You are a subagent spawned by another session.\nreview this", "continue this"])
           expect(second.content).toEqual([{ type: "text", text: completedOutput(childID) }])
+
+          // SiCode: Flash often omits agent when continuing with sessionID (ses_e508).
+          const third = yield* executeTool(registry, {
+            sessionID: parent.id,
+            ...toolIdentity,
+            call: {
+              type: "tool-call",
+              id: "call-subagent-third-no-agent",
+              name: SubagentTool.name,
+              input: {
+                description: "follow up again",
+                prompt: "keep going",
+                sessionID: childID,
+              },
+            },
+          })
+          expect(outputSessionID(third.metadata)).toBe(childID)
+          expect(
+            (yield* sessions.inbox(childID)).flatMap((message) =>
+              message.type === "user" ? [message.payload.text] : [],
+            ),
+          ).toEqual([
+            "You are a subagent spawned by another session.\nreview this",
+            "continue this",
+            "keep going",
+          ])
         }),
       ),
     ),

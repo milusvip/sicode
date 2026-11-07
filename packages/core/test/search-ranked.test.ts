@@ -46,6 +46,46 @@ test("matches a behavior word whole, never as a prefix of a longer word", async 
   expect(SearchRankedConcepts.extrasOf("re-compress this")).toContain("compaction")
 })
 
+test("only a phrase about the concept fires a behavior word", () => {
+  // A verb-first row only fires when the phrase is about the concept: "超出时压缩" is about the
+  // overflow, not about compaction, and the Chinese row 压缩 must not drag compaction in. `compress`
+  // is the exception and fires on the word — a repo that calls the behavior compaction is the only
+  // reason a query would say `compress`, so even "measure how long compress takes" is about it.
+  expect(SearchRankedConcepts.extrasOf("超出时压缩")).not.toContain("compaction")
+  expect(SearchRankedConcepts.extrasOf("measure how long compress takes")).toContain("compaction")
+  // The concept itself, asked about or asked for, still fires.
+  expect(SearchRankedConcepts.extrasOf("为什么压缩之后模型变笨了")).toContain("compaction")
+  expect(SearchRankedConcepts.extrasOf("compress a long session")).toContain("compaction")
+})
+
+test("a bare behavior word still names the file that implements it", () => {
+  // The gate above must not swallow the plain word — `validate` alone is how a model asks for
+  // `runtime.ts`'s validateStandard, the same way `compress` asks for compaction. Regression from
+  // making the noun gate mandatory: both dropped out of the extras entirely.
+  expect(SearchRankedConcepts.extrasOf("validate")).toContain("runtime")
+  expect(SearchRankedConcepts.extrasOf("truncate")).toContain("recent-text")
+  expect(SearchRankedConcepts.extrasOf("emit")).toContain("session-event")
+  expect(SearchRankedConcepts.extrasOf("emit")).toContain("bus")
+})
+
+test("prefers the implementation over a config watcher that shares its filename", async () => {
+  // Measured on the real repository: `compress` ties `session/compaction.ts` against
+  // `config/plugin/compaction.ts` — both stems equal the extra, neither is a test — and BM25F is a
+  // length-normalized average, so the short config file won by 0.002. The implementation stays at
+  // the top now: infrastructure directories lose the tie, then the file that names the term in its
+  // own body beats one that only observes it.
+  const suggestions = await SearchRanked.suggest(
+    source({
+      "packages/core/src/session/compaction.ts":
+        "export function compact() {}\n// compaction compaction compaction compaction",
+      "packages/core/src/config/plugin/compaction.ts":
+        "export const Plugin = define({ id: 'opencode.config.compaction' })",
+    }),
+    "compress",
+  )
+  expect(suggestions[0]?.path).toBe("packages/core/src/session/compaction.ts")
+})
+
 test("reaches compaction through a chinese compress phrasing", async () => {
   const suggestions = await SearchRanked.suggest(
     source({

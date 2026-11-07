@@ -9,6 +9,8 @@ export function createSessionComposerRegionController(input: {
   openParent: () => void
   setPromptRef: (el: HTMLDivElement) => void
   setDockRef: (el: HTMLDivElement) => void
+  /** SiCode: expand a background shell/tool in the active timeline without a route change. */
+  onReveal?: (target: string) => void
 }) {
   return {
     state: input.state,
@@ -17,6 +19,7 @@ export function createSessionComposerRegionController(input: {
     openParent: input.openParent,
     setPromptRef: input.setPromptRef,
     setDockRef: input.setDockRef,
+    onReveal: input.onReveal,
     parentID: input.parentID,
     child: () => !!input.parentID(),
     showComposer: () => !input.state.blocked() || !!input.parentID(),

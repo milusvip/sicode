@@ -282,17 +282,15 @@ export function createChromeAttachment(input: {
           (canonicalizeBrowserURL(url) === "about:blank" ? entry.focusedTabID : null)
 
         if (reuseID) {
-          const mapped = entry.byTab.get(reuseID as Browser.TabID)
+          const mapped = entry.byTab.get(reuseID)
           if (mapped) {
             const bridge = await input.host.focusTab(mapped.chromeTabId)
             applyBridge(entry, bridge, true)
             entry.focusedTabID = mapped.tabID
             touch(entry, mapped.tabID)
-            // Requested a concrete URL that differs from the focused tab — navigate in place.
-            if (
-              canonicalizeBrowserURL(url) !== "about:blank" &&
-              canonicalizeBrowserURL(bridge.url) !== canonicalizeBrowserURL(url)
-            ) {
+            // Concrete URL that is not already showing — navigate in place (includes a fresh
+            // cache-bust query on the same document, which canonicalize treats as equal).
+            if (canonicalizeBrowserURL(url) !== "about:blank" && bridge.url !== url) {
               const navigated = await input.host.navigateTab(mapped.chromeTabId, url)
               applyBridge(entry, navigated, true)
               publishState(entry)

@@ -45,7 +45,7 @@ describe("buildPromptRequest", () => {
       },
       { uri: "file:///repo/src/bar.ts", mime: "text/plain", name: "bar.ts" },
       { uri: "data:image/png;base64,AAA", mime: "image/png", name: "a.png" },
-      // An external attachment keeps its source path so the model can name the original file.
+      // Absolute sourcePath stays in name; URI stays data: so the bubble can render it.
       { uri: "data:application/pdf;base64,AAA", mime: "application/pdf", name: "C:\\x\\b.pdf" },
     ])
   })

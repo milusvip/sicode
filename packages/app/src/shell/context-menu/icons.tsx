@@ -69,13 +69,6 @@ const GLYPHS: Record<ContextMenuActionID, () => JSX.Element> = {
         <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
       </>,
     ),
-  "edit.selectAll": () =>
-    glyph(
-      <>
-        <path d="M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M21 19a2 2 0 0 1-2 2M5 21a2 2 0 0 1-2-2" />
-        <path d="M9 3h1M9 21h1M14 3h1M14 21h1M3 9v1M21 9v1M3 14v1M21 14v1" />
-      </>,
-    ),
   "link.open": () =>
     glyph(
       <>

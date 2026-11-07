@@ -72,6 +72,12 @@ export type BridgeTab = {
 export type BridgeElement = {
   selector: string
   label: string
+  /** Nearest `data-slot` on the element or an ancestor. */
+  slot?: string
+  /** Nearest `data-component` on the element or an ancestor. */
+  component?: string
+  /** Nearest `data-action` on the element or an ancestor. */
+  action?: string
   role?: string
   name?: string
   text?: string
@@ -108,6 +114,18 @@ export type BridgeClientMessage =
   | { type: "evaluate.result"; requestID: string; value: unknown; tab: BridgeTab }
   | { type: "click.result"; requestID: string; tab: BridgeTab }
   | { type: "fill.result"; requestID: string; tab: BridgeTab }
+  | { type: "select.result"; requestID: string; tab: BridgeTab }
+  | { type: "check.result"; requestID: string; tab: BridgeTab }
+  | { type: "hover.result"; requestID: string; tab: BridgeTab }
+  | { type: "fill_form.result"; requestID: string; tab: BridgeTab }
+  | { type: "wait.result"; requestID: string; tab: BridgeTab }
+  | { type: "files.upload.result"; requestID: string; tab: BridgeTab }
+  | {
+      type: "dialog.result"
+      requestID: string
+      dialog: { type: string; message: string; defaultValue: string } | null
+      tab: BridgeTab
+    }
   | { type: "press.result"; requestID: string; tab: BridgeTab }
   | { type: "scroll.result"; requestID: string; tab: BridgeTab }
   | { type: "screenshot.result"; requestID: string; screenshot: BridgeScreenshot; tab: BridgeTab }
@@ -180,6 +198,35 @@ export type BridgeHostMessage =
       allowDestructive?: boolean
     }
   | { type: "fill"; requestID: string; tabID: string; ref: string; text: string }
+  | { type: "select"; requestID: string; tabID: string; ref: string; values: string[] }
+  | { type: "check"; requestID: string; tabID: string; ref: string; checked: boolean }
+  | { type: "hover"; requestID: string; tabID: string; ref: string }
+  | {
+      type: "fill_form"
+      requestID: string
+      tabID: string
+      fields: Array<
+        | { ref: string; type: "text"; value: string }
+        | { ref: string; type: "select"; values: string[] }
+        | { ref: string; type: "check"; checked: boolean }
+      >
+    }
+  | {
+      type: "wait"
+      requestID: string
+      tabID: string
+      condition: "load" | "text" | "textGone" | "response"
+      text?: string
+      timeoutMs?: number
+    }
+  | {
+      type: "dialog"
+      requestID: string
+      tabID: string
+      action: "get" | "accept" | "dismiss"
+      promptText?: string
+    }
+  | { type: "files.upload"; requestID: string; tabID: string; ref: string; paths: string[] }
   | { type: "press"; requestID: string; tabID: string; key: string }
   | { type: "scroll"; requestID: string; tabID: string; deltaX?: number; deltaY: number }
   | { type: "screenshot"; requestID: string; tabID: string }
@@ -260,6 +307,11 @@ export function parseBridgeClientMessage(raw: string): BridgeClientMessage | und
       elements.push({
         selector: selector.slice(0, 2_048),
         label: label.slice(0, 512),
+        ...("slot" in item && typeof item.slot === "string" ? { slot: item.slot.slice(0, 128) } : {}),
+        ...("component" in item && typeof item.component === "string"
+          ? { component: item.component.slice(0, 128) }
+          : {}),
+        ...("action" in item && typeof item.action === "string" ? { action: item.action.slice(0, 128) } : {}),
         ...("role" in item && typeof item.role === "string" ? { role: item.role.slice(0, 128) } : {}),
         ...("name" in item && typeof item.name === "string" ? { name: item.name.slice(0, 512) } : {}),
         ...("text" in item && typeof item.text === "string" ? { text: item.text.slice(0, 512) } : {}),
@@ -296,6 +348,13 @@ export function parseBridgeClientMessage(raw: string): BridgeClientMessage | und
     "evaluate.result",
     "click.result",
     "fill.result",
+    "select.result",
+    "check.result",
+    "hover.result",
+    "fill_form.result",
+    "wait.result",
+    "files.upload.result",
+    "dialog.result",
     "press.result",
     "scroll.result",
     "screenshot.result",

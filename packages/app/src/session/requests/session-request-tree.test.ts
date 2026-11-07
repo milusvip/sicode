@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode/client/promise"
-import { sessionPermissionRequest, sessionFormRequest, sessionTreeIDs } from "@/session/requests/session-request-tree"
+import {
+  sessionPermissionRequest,
+  sessionPermissionRequests,
+  sessionPermissionBatch,
+  sessionFormRequest,
+  sessionTreeIDs,
+} from "@/session/requests/session-request-tree"
 
 // SAFETY: the request tree reads only a session's id and parentID.
 const session = (input: { id: string; parentID?: string }) =>
@@ -80,6 +86,32 @@ describe("sessionPermissionRequest", () => {
     ["returns undefined when all tree permissions are filtered out", both, () => false, undefined],
   ])("%s", (_name, permissions, include, id) => {
     expect(sessionPermissionRequest(tree, permissions, "root", include)?.id).toBe(id)
+  })
+})
+
+describe("sessionPermissionRequests", () => {
+  test("lists every pending permission in the tree, parents before children", () => {
+    const permissions = {
+      root: [permission("perm-root", "root"), permission("perm-root-2", "root")],
+      child: [permission("perm-child", "child")],
+      other: [permission("perm-other", "other")],
+    }
+
+    expect(sessionPermissionRequests(tree, permissions, "root").map((item) => item.id)).toEqual([
+      "perm-root",
+      "perm-root-2",
+      "perm-child",
+    ])
+  })
+})
+
+describe("sessionPermissionBatch", () => {
+  test("keeps only asks that share the first action", () => {
+    const edit = (id: string) => ({ ...permission(id, "root"), action: "edit" }) as PermissionRequest
+    const shell = (id: string) => ({ ...permission(id, "root"), action: "shell" }) as PermissionRequest
+
+    expect(sessionPermissionBatch([edit("a"), edit("b"), shell("c")]).map((item) => item.id)).toEqual(["a", "b"])
+    expect(sessionPermissionBatch([])).toEqual([])
   })
 })
 

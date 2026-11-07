@@ -277,8 +277,8 @@ describe("ReadToolFileSystem", () => {
 
       expect(lines).toMatchObject({ type: "text-page", truncated: true, next: 2_001 })
       expect(lines.type === "text-page" ? lines.content.split("\n") : []).toHaveLength(2_000)
-      // SiCode: MAX_READ_BYTES 由 50KB 放宽到 128KB，2001 字节/行时首页边界从第 26 行移到第 66 行。
-      expect(bytes).toMatchObject({ type: "text-page", truncated: true, next: 66 })
+      // SiCode: MAX_READ_BYTES is 64KB; 2001-byte lines → first page ends before line 33.
+      expect(bytes).toMatchObject({ type: "text-page", truncated: true, next: 33 })
       expect(bytes.type === "text-page" ? Buffer.byteLength(bytes.content) : Infinity).toBeLessThanOrEqual(
         ReadToolFileSystem.MAX_READ_BYTES,
       )

@@ -19,13 +19,23 @@ import { Tool } from "../tool.js"
 import { SessionClarifyHint } from "./clarify-hint.js"
 import { SessionUiBehaviorHint } from "./ui-behavior-hint.js"
 import { SessionContextHints } from "./context-hints.js"
+import { SessionConstraintLedger } from "./constraint-ledger.js"
+import { SessionDecisionFreeze } from "./decision-freeze.js"
 import { SessionDesignHint } from "./design-hint.js"
+import { SessionBrowserDriveHint } from "./browser-drive-hint.js"
+import { SessionObeyFixHint } from "./obey-fix-hint.js"
+import { SessionPackageRules } from "./package-rules.js"
+import { SessionScopedRules } from "./scoped-rules.js"
+import { SessionTopicSwitch } from "./topic-switch.js"
+import { SessionWorkingPin } from "./working-pin.js"
 import { AgentNotFoundError } from "./error.js"
 import { SessionHistory } from "./history.js"
 import { InstructionEntry } from "./instruction-entry.js"
 import { SessionMessage } from "./message.js"
 import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
+import { Bus } from "../bus.js"
+import { SessionEvent } from "./event.js"
 import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 
@@ -92,6 +102,7 @@ const layer = Layer.effect(
     const referenceInstructions = yield* ReferenceInstructions.Service
     const skillInstructions = yield* SkillInstructions.Service
     const store = yield* SessionStore.Service
+    const bus = yield* Bus.Service
     const registry = yield* Tool.Service
 
     const resolveModel = (session: SessionSchema.Info) => models.resolve(session, model.available)
@@ -192,22 +203,93 @@ const layer = Layer.effect(
         SessionDesignHint.inject({
           messages,
           directory: location.directory,
-          enabled: process.env.OPENCODE_DESIGN === "0" ? false : true,
+          // SiCode: opt-in (OPENCODE_DESIGN=1). Default off — harness-slim; values dump competes with the task.
+          enabled: process.env.OPENCODE_DESIGN === "1",
         }),
       ).pipe(Effect.catch(() => Effect.succeed(messages)))
+      // SiCode: path-scoped rules from `.sicode/rules` — a rule names its own globs, so it only
+      // enters the turn already touching those files. Same request-only pattern as package-rules.
+      const scoped = yield* Effect.tryPromise(() =>
+        SessionScopedRules.inject({
+          messages: designed,
+          directory: location.directory,
+          enabled: process.env.OPENCODE_SCOPED_RULES === "0" ? false : true,
+        }),
+      ).pipe(Effect.catch(() => Effect.succeed(designed)))
+      // SiCode: nested package AGENTS.md only appear when the session directory sits inside that
+      // package. Sessions start at the repo root, so inject them on demand when the turn already
+      // names or touches those paths — same request-only pattern as design-hint.
+      const ruled = yield* Effect.tryPromise(() =>
+        SessionPackageRules.inject({
+          messages: scoped,
+          directory: location.directory,
+          enabled: process.env.OPENCODE_PACKAGE_RULES === "0" ? false : true,
+        }),
+      ).pipe(Effect.catch(() => Effect.succeed(scoped)))
+      // SiCode: sticky "don't edit" locks from explicit user decisions — survive compaction via
+      // session metadata, hot-cached for edit/write/patch. `OPENCODE_DECISION_FREEZE=0` off.
+      const historyMessages = history.entries.map((entry) => entry.message)
+      const meta = selection.session.metadata as Record<string, unknown> | undefined
+      // SiCode: warm freeze + allow-scope caches, then publish one merged metadata patch so the
+      // two ledgers cannot clobber each other (long-context-use P2).
+      const freezeNext = SessionDecisionFreeze.enabled()
+        ? SessionDecisionFreeze.sync({
+            sessionID: selection.session.id,
+            messages: historyMessages,
+            metadata: meta,
+          })
+        : SessionDecisionFreeze.pathsOf(meta)
+      // SiCode: scrub stale allow-scope metadata from the removed constraint ledger.
+      const staleScope = meta?.[SessionConstraintLedger.METADATA_KEY] !== undefined
+      const freezeChanged =
+        SessionDecisionFreeze.enabled() && freezeNext.join("\0") !== SessionDecisionFreeze.pathsOf(meta).join("\0")
+      if (freezeChanged || staleScope) {
+        let nextMeta = meta ?? {}
+        if (SessionDecisionFreeze.enabled()) nextMeta = SessionDecisionFreeze.withPaths(nextMeta, freezeNext)
+        if (staleScope) nextMeta = SessionConstraintLedger.withScope(nextMeta, [])
+        // Publish directly — Session.Service would cycle SessionContext ↔ Session.
+        yield* bus
+          .publish(SessionEvent.MetadataUpdated, {
+            sessionID: selection.session.id,
+            metadata: nextMeta as SessionSchema.Metadata,
+          })
+          .pipe(Effect.catch(() => Effect.void))
+      }
       return {
         session: selection.session,
         agent: selection.agent,
         model,
         initial: history.initial,
-        // SiCode: a request too thin to act on gets what it leaves open named, so the model states
-        // the reading it took instead of guessing silently. Request-only; `OPENCODE_CLARIFY=0` off.
-        messages: SessionUiBehaviorHint.inject({
-          messages: SessionClarifyHint.inject({
-            messages: designed,
-            enabled: process.env.OPENCODE_CLARIFY !== "0",
+        // SiCode: mid-session topic changes get a reorient nudge so Flash stops walking the prior
+        // tool trajectory. Request-only; `OPENCODE_TOPIC_SWITCH=0` off.
+        // SiCode: clarify / ui-behavior / obey-fix / decision-freeze default OFF (`=1`).
+        // Browser-drive / working-pin / topic-switch stay default-on (structural).
+        // SiCode: working-pin is outermost so it sits closest to the latest user message
+        // (long-context-use P1); specialty hints splice under it.
+        messages: SessionWorkingPin.inject({
+          messages: SessionBrowserDriveHint.inject({
+            messages: SessionObeyFixHint.inject({
+              messages: SessionUiBehaviorHint.inject({
+                messages: SessionClarifyHint.inject({
+                  messages: SessionTopicSwitch.inject({
+                    messages: ruled,
+                    enabled: process.env.OPENCODE_TOPIC_SWITCH !== "0",
+                  }),
+                  // SiCode: default OFF — clarify injects still invite ask-theater; opt in with =1.
+                  enabled: process.env.OPENCODE_CLARIFY === "1",
+                }),
+                // SiCode: default OFF — phrase lists removed; key-chord trigger only; opt in with =1.
+                enabled: process.env.OPENCODE_UI_BEHAVIOR === "1",
+              }),
+              // SiCode: default OFF — obey-fix still needs a phrase trigger; opt in with =1.
+              enabled: process.env.OPENCODE_OBEY_FIX === "1",
+            }),
+            tools: selection.tools.definitions.map((tool) => tool.name),
+            metadata: selection.session.metadata as Record<string, unknown> | undefined,
+            enabled: process.env.OPENCODE_BROWSER_DRIVE !== "0",
           }),
-          enabled: process.env.OPENCODE_UI_BEHAVIOR !== "0",
+          frozen: SessionDecisionFreeze.cached(selection.session.id),
+          enabled: process.env.OPENCODE_WORKING_PIN !== "0",
         }),
         tools: selection.tools,
       }
@@ -237,6 +319,7 @@ export const node = makeLocationNode({
   layer,
   deps: [
     Agent.node,
+    Bus.node,
     Model.node,
     Database.node,
     InstructionBuiltIns.node,

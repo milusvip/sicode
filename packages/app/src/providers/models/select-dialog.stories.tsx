@@ -49,6 +49,7 @@ const models = [
 
 function SelectorStory(props: { plan: boolean }) {
   const [current, setCurrent] = createSignal(models[0].id)
+  const [hidden, setHidden] = createSignal(new Set<string>())
 
   return (
     <div class="flex min-h-[280px] items-end justify-center">
@@ -59,9 +60,24 @@ function SelectorStory(props: { plan: boolean }) {
           </Button>
         )}
         all={() => models}
-        models={(search) => models.filter((model) => model.name.toLowerCase().includes(search.toLowerCase()))}
+        models={(search, tab = "mine") =>
+          models.filter((model) => {
+            if (tab === "free") return false
+            if (tab !== "all" && hidden().has(model.id) && !search.trim()) return false
+            return model.name.toLowerCase().includes(search.toLowerCase())
+          })
+        }
         groups={(items) => [{ category: "openai", items }]}
         current={`openai:${current()}`}
+        visible={(item) => !hidden().has(item.id)}
+        setVisibility={(item, visible) => {
+          setHidden((current) => {
+            const next = new Set(current)
+            if (visible) next.delete(item.id)
+            else next.add(item.id)
+            return next
+          })
+        }}
         chatgptPlan={props.plan}
         select={(item) => setCurrent(item.id)}
         onManage={() => undefined}

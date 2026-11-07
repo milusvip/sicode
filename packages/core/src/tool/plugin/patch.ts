@@ -13,6 +13,7 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Patch } from "@opencode/util/patch"
 import { Permission } from "../../permission.js"
+import { SessionDecisionFreeze } from "../../session/decision-freeze.js"
 import DESCRIPTION from "../patch.txt"
 import { fileDiff } from "./file-diff.js"
 
@@ -111,6 +112,16 @@ export const Plugin = {
               )
               if (hunks.length === 0) {
                 return yield* new ToolFailure({ message: "patch rejected: empty patch" })
+              }
+              // SiCode: hard refuse paths the user froze ("别动" / "效果还可以").
+              // Cache is warmed by SessionContext.request before tools run.
+              for (const hunk of hunks) {
+                const frozen = SessionDecisionFreeze.blocked(context.sessionID, hunk.path)
+                if (frozen) return yield* new ToolFailure({ message: frozen })
+                if (hunk.type === "update" && hunk.movePath) {
+                  const moveFrozen = SessionDecisionFreeze.blocked(context.sessionID, hunk.movePath)
+                  if (moveFrozen) return yield* new ToolFailure({ message: moveFrozen })
+                }
               }
               const prepared: Prepared[] = []
               const updates = new Map<string, string | null>()

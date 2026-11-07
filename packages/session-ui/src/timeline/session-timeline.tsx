@@ -7,13 +7,13 @@ import {
   createReactiveTimelineProjection,
   filterCollapsedWorkShellRows,
   openWorkShellOnly,
+  restoreDefaultOpenWorkShells,
   TimelineRow,
   workShellDefaultOpen,
   workShellDisclosureKey,
   type ReasoningMode,
 } from "./projection"
 import { createSessionTimelineRowRenderer, type SessionUserPresentation } from "./session-timeline-row"
-import { ArtifactPanel } from "../components/artifact-panel"
 
 export type { SessionUserPresentation } from "./session-timeline-row"
 
@@ -41,6 +41,12 @@ export function SessionTimeline(props: SessionTimelineProps) {
   })
 
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>({})
+  const accordionClosed = new Set<string>()
+  const workShellDisclosure = () => ({
+    value: (key: string) => toolOpen[key],
+    set: (key: string, open: boolean | undefined) => setToolOpen(key, open),
+    accordionClosed,
+  })
 
   const renderer = createSessionTimelineRowRenderer({
     sessionID: () => props.document.sessionID,
@@ -54,10 +60,19 @@ export function SessionTimeline(props: SessionTimelineProps) {
     timelineDetail: props.timelineDetail && (() => props.timelineDetail!),
     disclosure: {
       value: (key) => toolOpen[key],
-      set: (key, open) => setToolOpen(key, open),
+      set: (key, open) => {
+        setToolOpen(key, open)
+        // A deliberate collapse is not an accordion shove — do not auto-reopen it later.
+        if (open === false) accordionClosed.delete(key)
+      },
       openWorkShell: (userMessageID) => {
-        openWorkShellOnly(projection.rows(), { set: (key, open) => setToolOpen(key, open) }, userMessageID)
-        setToolOpen(workShellDisclosureKey(userMessageID), true)
+        openWorkShellOnly(projection.rows(), workShellDisclosure(), userMessageID)
+        const key = workShellDisclosureKey(userMessageID)
+        setToolOpen(key, true)
+        accordionClosed.delete(key)
+      },
+      restoreDefaultOpen: (except) => {
+        restoreDefaultOpenWorkShells(projection.rows(), workShellDisclosure(), except)
       },
     },
   })
@@ -80,10 +95,6 @@ export function SessionTimeline(props: SessionTimelineProps) {
 
   return (
     <div data-component="session-timeline" class={props.class}>
-      {/* SiCode: HTML demos the assistant writes open in the side drawer, never inline. */}
-      <ArtifactPanel
-        messages={() => props.document.messages.filter((message) => message.type === "assistant")}
-      />
       <For each={rowKeys()}>{(rowKey) => <Row rowKey={rowKey} />}</For>
     </div>
   )

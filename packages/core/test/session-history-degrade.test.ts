@@ -70,4 +70,48 @@ describe("degradeHistory", () => {
     }>
     expect(result[2].content[0].state.content[0].text.split("\n")).toHaveLength(500)
   })
+
+  test("shell noise shrinks harder than an edit summary of the same length", () => {
+    const messages = [
+      ...filler(2),
+      toolMessage(200, "shell"),
+      toolMessage(200, "edit"),
+      ...filler(8),
+    ]
+    const result = degradeHistory(messages)
+    const shellLines = bodyOf(result[2]).split("\n").length
+    const editLines = bodyOf(result[3]).split("\n").length
+    expect(shellLines).toBeLessThan(editLines)
+    expect(shellLines).toBe(15 + 1 + 10)
+    expect(editLines).toBe(200)
+  })
+
+  test("browser snapshot uses the noisy tier", () => {
+    const messages = [...filler(2), toolMessage(200, "browser_snapshot"), ...filler(8)]
+    const lines = bodyOf(degradeHistory(messages)[2]).split("\n")
+    expect(lines).toHaveLength(15 + 1 + 10)
+    expect(lines[15]).toContain("omitted")
+  })
+
+  test("failed tool bodies collapse to a one-line status", () => {
+    const failed = {
+      type: "assistant",
+      content: [
+        {
+          type: "tool",
+          name: "shell",
+          state: {
+            status: "error",
+            error: "exit 1: boom\nmore detail\n",
+            content: [{ type: "text", text: text(200) }],
+          },
+        },
+      ],
+    } as unknown as SessionMessage.Info
+    const messages = [...filler(2), failed, ...filler(8)]
+    const body = bodyOf(degradeHistory(messages)[2])
+    expect(body.split("\n")).toHaveLength(1)
+    expect(body).toContain("shell")
+    expect(body).toContain("exit 1: boom")
+  })
 })

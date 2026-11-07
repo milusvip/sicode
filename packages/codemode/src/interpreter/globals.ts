@@ -83,11 +83,34 @@ const symbolGlobal = <R>(ctx: Interpreter<R>) => {
 
 type Factory = <R>(ctx: Interpreter<R>) => Value
 
+/** SiCode: stub timers so Flash gets a redirect instead of `Unknown identifier 'setTimeout'`. */
+const TIMER_NOTICE =
+  "is unavailable in Code Mode (no timers). For browser page waits use tools.browser.wait; do not sleep inside execute."
+
+const timerStub =
+  (name: string): Factory =>
+  (ctx) =>
+    native(ctx.builtins, {
+      name,
+      length: 1,
+      call: () =>
+        Effect.sync(() => {
+          throw typeError(`${name} ${TIMER_NOTICE}`)
+        }),
+      callback: false,
+    })
+
 // A table rather than a list so the names are known before any runtime exists.
 const table: Record<string, Factory> = {
   tools: () => new ToolReference([]),
   search: (ctx) =>
     native(ctx.builtins, { name: "search", call: (_, args) => ctx.tool(ctx.tools.search, args), callback: false }),
+  // SiCode: present but rejecting — models keep calling setTimeout after a navigate; a clear
+  // TypeError beats "Unknown identifier" and points at browser.wait.
+  setTimeout: timerStub("setTimeout"),
+  setInterval: timerStub("setInterval"),
+  clearTimeout: timerStub("clearTimeout"),
+  clearInterval: timerStub("clearInterval"),
   undefined: () => undefined,
   NaN: () => NaN,
   Infinity: () => Infinity,

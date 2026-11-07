@@ -20,27 +20,12 @@ import { SessionMessage } from "./message.js"
  */
 
 /**
- * Words that name a behavior question rather than a styling task. Deliberately disjoint from the
- * design hint's set (font/color/spacing/...): that one fires on "what should it look like", this
- * one on "what does it do / why does it not do it". A request can carry both, and then both fire.
+ * Structural behavior ask: a modifier key chord (Ctrl+Shift+C). No Chinese/English verb vocabulary.
  */
-/**
- * Only behavior verbs and failure descriptions, not UI nouns. "面板/侧栏/菜单/标签页" name a surface
- * that could be styled or behaved — the design hint owns styling, so a bare noun must not fire here;
- * it needs a behavior verb ("面板点击没反应") to count. "浏览器/网页" stay because a browser task is
- * behavior by definition, not a styling target.
- */
-const BEHAVIOR_WORDS =
-  /快捷键|快捷方式|热键|按键|点击|双击|右键|悬停|拖动|拖拽|选中|选取|聚焦|失焦|触发|弹出|弹窗|跳转|导航|刷新|加载|失灵|没反应|不生效|点了没|失效|交互|行为|浏览器|网页|\b(shortcut|hotkey|keybind|click|dblclick|hover|drag|drop|focus|blur|select|inspect|trigger|popup|modal|navigate|redirect|reload|refresh|respond|interact|behavior|browser|webview)\b/i
-
-/**
- * A request can describe a behavior without using those words ("为什么 Ctrl+Shift+C 不弹"). Anchor
- * it on a concrete trigger instead: a key chord, a modifier-plus-key, or a DOM-ish verb.
- */
-const BEHAVIOR_TRIGGER = /\b(ctrl|shift|alt|cmd|command|meta|win)\s*[+]|\b(?:点击|按下|hover|drag|select|触发|弹出)/i
+const KEY_CHORD = /\b(ctrl|shift|alt|cmd|command|meta|win)\s*[+]/i
 
 /** Whether this request is a UI-behavior question. */
-const isBehaviorRequest = (text: string) => BEHAVIOR_WORDS.test(text) || BEHAVIOR_TRIGGER.test(text)
+const isBehaviorRequest = (text: string) => KEY_CHORD.test(text)
 
 const hintMessage = (): SessionMessage.Synthetic => ({
   id: SessionMessage.ID.create(),

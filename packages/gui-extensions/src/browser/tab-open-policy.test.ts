@@ -8,6 +8,27 @@ test("canonicalize strips hash, default port, and trailing slash", () => {
   expect(canonicalizeBrowserURL("")).toBe("about:blank")
 })
 
+test("canonicalize strips cache-bust query keys but keeps real query", () => {
+  expect(canonicalizeBrowserURL("http://127.0.0.1:5173/stage.html?np=1")).toBe(
+    "http://127.0.0.1:5173/stage.html",
+  )
+  expect(canonicalizeBrowserURL("http://127.0.0.1:5173/stage.html?np=99&id=7")).toBe(
+    "http://127.0.0.1:5173/stage.html?id=7",
+  )
+  expect(canonicalizeBrowserURL("file:///C:/demo/out.html?v=3")).toBe("file:///C:/demo/out.html")
+})
+
+test("reuses when only the cache-bust query differs", () => {
+  const plan = planTabsOpen({
+    tabs: [{ id: "tab_a", url: "http://localhost:4173/preview.html?np=111" }],
+    focusedTabID: "tab_a",
+    url: "http://localhost:4173/preview.html?np=222",
+  })
+
+  expect(plan.reuseTabID).toBe("tab_a")
+  expect(plan.closeTabIDs).toEqual([])
+})
+
 test("reuses the matching URL and closes blank extras", () => {
   const plan = planTabsOpen({
     tabs: [

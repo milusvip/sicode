@@ -10,7 +10,7 @@ const assistant = (id = "a1") =>
 
 describe("ui-behavior-hint", () => {
   test("fires on a behavior question and points at reproducing before grepping", () => {
-    const messages = inject({ messages: [user("Ctrl+Shift+C 元素选取没反应，检查一下")] })
+    const messages = inject({ messages: [user("Ctrl+Shift+C element picker does nothing — check it")] })
     expect(messages).toHaveLength(2)
     const hint = messages[1] as SessionMessage.Synthetic
     expect(hint.type).toBe("synthetic")
@@ -21,30 +21,29 @@ describe("ui-behavior-hint", () => {
   })
 
   test("recognizes the shorthand that names a key chord but no behavior word", () => {
-    // The real session asked "Ctrl+Shift+C 元素选取检查" — a trigger chord, no click/panel verb.
-    const messages = inject({ messages: [user("Ctrl+Shift+C 元素选取检查")] })
+    const messages = inject({ messages: [user("Ctrl+Shift+C element picker check")] })
     expect(messages).toHaveLength(2)
   })
 
   test("stays silent on a styling request, which the design hint owns", () => {
-    const messages = inject({ messages: [user("把侧栏的圆角和间距改一下")] })
+    const messages = inject({ messages: [user("tighten the sidebar radius and spacing")] })
     expect(messages).toHaveLength(1)
   })
 
   test("stays silent when the request names no UI at all", () => {
-    const messages = inject({ messages: [user("把 max-steps 的默认值改成 30")] })
+    const messages = inject({ messages: [user("change the max-steps default to 30")] })
     expect(messages).toHaveLength(1)
   })
 
   test("stays out of the way once work under the request has started", () => {
-    const messages = [user("为什么点击面板没反应"), assistant()]
+    const messages = [user("why does the panel ignore clicks"), assistant()]
     expect(inject({ messages })).toBe(messages)
   })
 
   test("returns the same array when the request is fine or the switch is off", () => {
-    const fine = [user("改一下登录同步的 cookie 写入逻辑")]
+    const fine = [user("change the cookie write path for login sync")]
     expect(inject({ messages: fine })).toBe(fine)
-    const behavior = [user("Ctrl+Shift+C 没反应")]
+    const behavior = [user("Ctrl+Shift+C does nothing")]
     expect(inject({ messages: behavior, enabled: false })).toBe(behavior)
   })
 })

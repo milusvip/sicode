@@ -13,6 +13,7 @@ import { ExternalLink } from "@/runtime/platform/external-link"
 import { useData } from "@/runtime/server/current"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
+import { useGlobal } from "@/runtime/server/runtime"
 import {
   formFromConfig,
   headerRow,
@@ -59,6 +60,7 @@ export function CustomProviderForm(
   const data = useData()
   const language = useLanguage()
   const serverSdk = useServerSDK()
+  const global = useGlobal()
   const editing = () => props.initial?.providerID
 
   const [form, setForm] = createStore<FormState>(
@@ -186,12 +188,29 @@ export function CustomProviderForm(
       form.headers.map((h) => [h.key.trim(), h.value.trim()]).filter(([key, value]) => key && value),
     )
 
+  const resolveProbeApiKey = async () => {
+    const typed = form.apiKey.trim()
+
+    if (typed) return typed
+    // Editing leaves the key blank on purpose ("keep existing"); reuse the stored credential /
+    // env reference so Test and Fetch models still authenticate the same way a saved row does.
+    if (!editing()) return undefined
+    const stored = (await serverSdk.api.credential.list()).find(
+      (item) => item.integrationID === editing() && item.value.type === "key",
+    )
+
+    if (stored && stored.value.type === "key") return stored.value.key
+    const env = props.initial?.config.env?.[0]
+
+    return env ? `{env:${env}}` : undefined
+  }
+
   const probeMutation = useMutation(() => ({
     mutationFn: async () => {
       const headers = probeHeaders()
       return serverSdk.api.provider.models({
         baseURL: form.baseURL.trim(),
-        apiKey: form.apiKey.trim() || undefined,
+        apiKey: await resolveProbeApiKey(),
         headers: Object.keys(headers).length > 0 ? headers : undefined,
       })
     },
@@ -210,15 +229,16 @@ export function CustomProviderForm(
   }))
 
   // SiCode: verify before saving — one minimal turn with the first model id when there is one, the
-  // model listing otherwise.
+  // model listing otherwise. Chat may fail on gateways that still list models fine; the server falls
+  // back to /models so a working key is not reported as "connection failed".
   const testMutation = useMutation(() => ({
-    mutationFn: () => {
+    mutationFn: async () => {
       const headers = probeHeaders()
       const model = form.models.map((m) => m.id.trim()).find(Boolean)
 
       return serverSdk.api.provider.test({
         baseURL: form.baseURL.trim(),
-        apiKey: form.apiKey.trim() || undefined,
+        apiKey: await resolveProbeApiKey(),
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         model,
       })
@@ -348,6 +368,15 @@ export function CustomProviderForm(
       }
 
       await refresh(result.providerID)
+      // Same as a normal provider connect: the model picker hides anything older than six months,
+      // and custom models land with release_date 1970-01-01, so without an explicit show they
+      // stay off until the user opens Models and flips each switch.
+      global.models.show(
+        Object.keys(result.config.models).map((modelID) => ({
+          providerID: result.providerID,
+          modelID,
+        })),
+      )
 
       return result
     },

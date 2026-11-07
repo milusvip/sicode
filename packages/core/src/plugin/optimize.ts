@@ -60,12 +60,12 @@ export const MetaPlugin = make("opencode.prompt.meta", (model) => {
   return PROMPT_META.replaceAll("{{MODEL_NAME}}", model.name)
 })
 
-// Appended rather than replacing the default prompt: the rules are additive and the default prompt
-// already carries the quality-sensitive instructions. Kept short because it ships on every turn.
+// SiCode: override, like the other model-lab prompts. Appending put a second style section
+// underneath the baseline's own Communication, so Flash read two overlapping rule sets and the
+// plain-reply contract lost out. The file is self-contained and carries the tool/search placeholders.
 export const DeepSeekPlugin = make(
   "opencode.prompt.deepseek",
   (model) => (model.id.toLowerCase().includes("deepseek") ? PROMPT_DEEPSEEK : undefined),
-  "append",
 )
 
 export const Plugins = [

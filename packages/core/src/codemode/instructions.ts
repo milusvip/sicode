@@ -6,11 +6,13 @@ import { Instructions } from "../instructions/index.js"
 import { CodeModeCatalog } from "./catalog.js"
 
 // prettier-ignore
+// SiCode: Flash (and similar) read "They cannot be called directly" as applying to grep/edit too,
+// then waste a minute on tools.grep inside execute. Spell out the session-tool carve-out up front.
 const prompt = (hasMoreTools: boolean) => `# Code Mode
 
-Use the \`execute\` tool to call the tools listed below. They cannot be called directly${hasMoreTools ? ", and neither can \`search\`. Both" : ". They"} only work inside code you pass to \`execute\`.
+Use the \`execute\` tool to call the Code Mode tools listed below. Those catalog entries cannot be called as top-level tools${hasMoreTools ? ", and neither can \`search\`. Both" : ". They"} only work inside code you pass to \`execute\`. Session tools (\`grep\`, \`read\`, \`edit\`, \`write\`, \`patch\`, \`glob\`, \`shell\`, …) stay top-level — never call them as \`tools.<name>\` inside \`execute\`.
 
-${hasMoreTools ? `The catalog is partial. Inside \`execute\`, use \`search(...)\` to find a tool, then call it by the \`path\` in the result. \`search\` is synchronous. Call it without \`await\`; it does not return a Promise. Do not guess tool names.
+${hasMoreTools ? `The catalog is partial. Inside \`execute\`, use \`search(...)\` to find a Code Mode tool, then call it by the \`path\` in the result. \`search\` is synchronous and only covers this catalog (not session tools). Call it without \`await\`; it does not return a Promise. Do not guess tool names.
 
 - ${searchSignature}` : "The catalog is complete. Do not guess tool names."}
 

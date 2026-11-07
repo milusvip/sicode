@@ -73,6 +73,7 @@
         box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
         pointer-events: none;
       }
+
     }
 
     &[data-type="file"] {
@@ -197,7 +198,7 @@
         border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
         background: color-mix(in srgb, currentColor 12%, transparent);
         font-size: var(--font-size-x-small);
-        font-weight: 530;
+        font-weight: var(--font-weight-medium);
         line-height: 1.35;
         letter-spacing: 0.02em;
         color: inherit;
@@ -210,7 +211,7 @@
     [data-highlight="file"],
     [data-highlight="agent"] {
       color: inherit;
-      font-weight: 600;
+      font-weight: var(--font-weight-bold);
       direction: ltr;
       unicode-bidi: isolate;
     }
@@ -649,7 +650,7 @@
   width: fit-content;
   font-family: var(--font-family-sans);
   font-size: var(--font-size-small);
-  font-weight: var(--font-weight-regular, 440);
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
   color: var(--v2-text-text-faint, #808080);
@@ -715,7 +716,7 @@
     white-space: nowrap;
     text-overflow: ellipsis;
     font-size: var(--process-shell-size, 12.5px);
-    font-weight: var(--process-shell-weight, 440);
+    font-weight: var(--process-shell-weight, var(--font-weight-regular));
     line-height: var(--process-shell-leading, var(--line-height-compact));
     color: var(--v2-text-text-faint);
   }
@@ -728,7 +729,7 @@
     color: var(--v2-text-text-faint);
     font-family: var(--v2-font-family-sans);
     font-size: var(--process-shell-size, 12.5px);
-    font-weight: var(--process-shell-weight, 440);
+    font-weight: var(--process-shell-weight, var(--font-weight-regular));
     line-height: var(--process-shell-leading, var(--line-height-compact));
     letter-spacing: var(--process-shell-tracking, -0.04px);
 
@@ -747,12 +748,32 @@
     flex-shrink: 0;
   }
 
+  /* Failure count beside the tool count. The icon already turned the row's status colour; this is
+     the only place that says how many calls broke, and it stays on the head whether or not the
+     chain is open. */
+  [data-slot="context-tool-group-failed"] {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--v2-state-fg-danger, var(--icon-critical-base, #e5756a));
+    font-family: var(--v2-font-family-sans);
+    font-size: var(--process-shell-size, 12.5px);
+    font-weight: var(--process-shell-weight, var(--font-weight-regular));
+    line-height: var(--process-shell-leading, var(--line-height-compact));
+    letter-spacing: var(--process-shell-tracking, -0.04px);
+
+    & > [data-slot="context-tool-group-prefix"] {
+      white-space: pre;
+    }
+  }
+
   [data-slot="basic-tool-tool-title"] {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--process-shell-size, 12.5px);
-    font-weight: var(--process-shell-weight, 440);
+    font-weight: var(--process-shell-weight, var(--font-weight-regular));
     line-height: var(--process-shell-leading, var(--line-height-compact));
     color: var(--v2-text-text-faint);
   }
@@ -762,7 +783,7 @@
     margin-inline-start: auto;
     font-family: var(--v2-font-family-sans);
     font-size: var(--process-shell-size, 12.5px);
-    font-weight: var(--process-shell-weight, 440);
+    font-weight: var(--process-shell-weight, var(--font-weight-regular));
     line-height: var(--process-shell-leading, var(--line-height-compact));
     letter-spacing: var(--process-shell-tracking, -0.04px);
     font-variant-numeric: tabular-nums;
@@ -832,7 +853,7 @@
 /* Process head matches design demo: light bar, no sticky chrome, always-visible chevron. */
 [data-component="collapsed-tool-group"][data-process-shell] {
   --process-shell-size: 12.5px;
-  --process-shell-weight: 440;
+  --process-shell-weight: var(--font-weight-regular);
   --process-shell-leading: var(--line-height-compact);
   --process-shell-tracking: -0.04px;
   overflow: visible;
@@ -982,7 +1003,7 @@
   [data-slot="basic-tool-tool-title"] {
   font-family: var(--v2-font-family-sans);
   font-size: var(--process-shell-size, 12.5px);
-  font-weight: var(--process-shell-weight, 440);
+  font-weight: var(--process-shell-weight, var(--font-weight-regular));
   line-height: var(--process-shell-leading, var(--line-height-compact));
   letter-spacing: var(--process-shell-tracking, -0.04px);
 }
@@ -992,7 +1013,7 @@
 }
 [data-component="context-tool-group-list"] {
   --process-shell-size: 12.5px;
-  --process-shell-weight: 440;
+  --process-shell-weight: var(--font-weight-regular);
   --process-shell-leading: var(--line-height-compact);
   --process-shell-tracking: -0.04px;
   /* Match demo .chain: the icon column threads every row (19px wide / 28px row). */
@@ -1157,7 +1178,7 @@
       flex-shrink: 0;
       font-family: var(--v2-font-family-sans);
       font-size: var(--process-shell-size, 12.5px);
-      font-weight: var(--process-shell-weight, 440);
+      font-weight: var(--process-shell-weight, var(--font-weight-regular));
       line-height: var(--process-shell-leading, var(--line-height-compact));
       letter-spacing: var(--process-shell-tracking, -0.04px);
       color: var(--v2-text-text-muted);
@@ -1177,7 +1198,7 @@
       [data-slot="basic-tool-tool-arg"] {
       font-family: var(--v2-font-family-sans);
       font-size: var(--process-shell-size, 12.5px);
-      font-weight: var(--process-shell-weight, 440);
+      font-weight: var(--process-shell-weight, var(--font-weight-regular));
       line-height: var(--process-shell-leading, var(--line-height-compact));
       letter-spacing: var(--process-shell-tracking, -0.04px);
     }
@@ -1196,7 +1217,7 @@
     [data-slot="context-tool-group-matches"] {
       font-family: var(--v2-font-family-sans);
       font-size: var(--process-shell-size, 12.5px);
-      font-weight: var(--process-shell-weight, 440);
+      font-weight: var(--process-shell-weight, var(--font-weight-regular));
       line-height: var(--process-shell-leading, var(--line-height-compact));
       letter-spacing: var(--process-shell-tracking, -0.04px);
       color: var(--v2-text-text-faint);
@@ -1246,7 +1267,7 @@
       margin-inline-start: auto;
       font-family: var(--v2-font-family-sans);
       font-size: var(--process-shell-size, 12.5px);
-      font-weight: var(--process-shell-weight, 440);
+      font-weight: var(--process-shell-weight, var(--font-weight-regular));
       line-height: var(--process-shell-leading, var(--line-height-compact));
       letter-spacing: var(--process-shell-tracking, -0.04px);
       font-variant-numeric: tabular-nums;
@@ -1272,7 +1293,7 @@
       padding-inline-start: calc(var(--ind-col) + 8px);
       font-family: var(--v2-font-family-sans);
       font-size: var(--process-shell-size, 12.5px);
-      font-weight: var(--process-shell-weight, 440);
+      font-weight: var(--process-shell-weight, var(--font-weight-regular));
       line-height: var(--process-shell-leading, var(--line-height-compact));
 
       [data-slot="tool-loaded-label"] {
@@ -1411,7 +1432,7 @@
         margin-inline-start: 0;
         font-family: var(--v2-font-family-sans);
         font-size: var(--process-shell-size, 12.5px);
-        font-weight: var(--process-shell-weight, 440);
+        font-weight: var(--process-shell-weight, var(--font-weight-regular));
         line-height: var(--process-shell-leading, var(--line-height-compact));
         letter-spacing: var(--process-shell-tracking, -0.04px);
         color: var(--v2-text-text-muted);
@@ -1424,7 +1445,7 @@
         margin-inline-start: auto;
         font-family: var(--v2-font-family-sans);
         font-size: var(--process-shell-size, 12.5px);
-        font-weight: var(--process-shell-weight, 440);
+        font-weight: var(--process-shell-weight, var(--font-weight-regular));
         line-height: var(--process-shell-leading, var(--line-height-compact));
         letter-spacing: var(--process-shell-tracking, -0.04px);
         font-variant-numeric: tabular-nums;
@@ -1552,7 +1573,7 @@
         flex-shrink: 0;
         font-family: var(--v2-font-family-sans);
         font-size: var(--process-shell-size, 12.5px);
-        font-weight: var(--process-shell-weight, 440);
+        font-weight: var(--process-shell-weight, var(--font-weight-regular));
         line-height: var(--process-shell-leading, var(--line-height-compact));
         color: var(--v2-text-text-muted);
       }
@@ -1818,7 +1839,7 @@
 
   [data-slot="answer-text"] {
     padding-top: 1px;
-    font-weight: var(--process-shell-weight, 440);
+    font-weight: var(--process-shell-weight, var(--font-weight-regular));
     line-height: var(--process-shell-leading, var(--line-height-compact));
     letter-spacing: var(--process-shell-tracking, -0.04px);
     color: var(--v2-text-text-base);
@@ -2473,7 +2494,7 @@
 
   [data-slot="tool-loaded-label"] {
     flex-shrink: 0;
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
   }
 
   [data-slot="tool-loaded-value"] {
@@ -2606,7 +2627,7 @@
 
     [data-component="button-v2"] {
       font-family: var(--v2-font-family-sans, "Inter", sans-serif);
-      font-weight: 530;
+      font-weight: var(--font-weight-medium);
       font-variation-settings:
         "wght" 530,
         "slnt" 0;

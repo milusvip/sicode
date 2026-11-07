@@ -124,13 +124,26 @@ export const dict = {
 
   "dialog.model.select.title": "Select model",
   "dialog.model.search.placeholder": "Search models",
+  "dialog.model.search.placeholder.rich": "Search by name or provider…",
   "dialog.model.empty": "No model results",
+  "dialog.model.tab.mine": "Mine",
+  "dialog.model.tab.free": "Free",
+  "dialog.model.tab.all": "All",
+  "dialog.model.hidden": "Hidden",
 
   "dialog.theme.select.title": "Select theme",
   "dialog.theme.search.placeholder": "Search themes",
   "dialog.theme.empty": "No theme results",
   "dialog.model.manage": "Manage models",
-  "dialog.model.manage.description": "Customize which models appear in the model selector.",
+  "dialog.model.manage.description": "Control which models appear in the selector. Newly connected providers default to on.",
+  "dialog.model.manage.search.placeholder": "Search providers or models…",
+  "dialog.model.manage.section.mine": "My providers",
+  "dialog.model.manage.section.free": "Free",
+  "dialog.model.manage.shown": "Shown in the selector",
+  "dialog.model.manage.hidden": "Hidden from the selector",
+  "dialog.model.manage.providers": "Manage providers and keys",
+  "dialog.model.manage.reorder": "Drag to reorder",
+  "dialog.model.manage.count": "Showing {{shown}}/{{total}}",
   "dialog.model.chatgptPlan": "Using ChatGPT plan",
   "dialog.model.chatgptManageUsage": "Manage usage",
 
@@ -555,6 +568,8 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "notification.permission.title": "Permission required",
+  "notification.permission.title.batch.one": "{{count}} permission required",
+  "notification.permission.title.batch.other": "{{count}} permissions required",
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.error.title": "Session error",
@@ -618,6 +633,9 @@ export const dict = {
   "session.queue.reverted": "Redo the revert before you reorder or edit queued prompts",
   "session.queue.attachments.one": "{{count}} attachment",
   "session.queue.attachments.other": "{{count}} attachments",
+  "session.todo.moreInProgress": "+{{count}}",
+  "session.todo.label.one": "{{done}} of {{count}} todo done",
+  "session.todo.label.other": "{{done}} of {{count}} todos done",
   "session.timeline.working": "Working",
   "session.running.working.one": "{{count}} working",
   "session.running.working.other": "{{count}} working",
@@ -629,6 +647,11 @@ export const dict = {
   "session.running.additionalRunning.other": "+{{count}} running",
   "session.running.stop.subagent": "Interrupt subagent",
   "session.running.stop.shell": "Kill shell command",
+  "session.running.stop.shell.all": "Kill all",
+  "session.running.shell.panel": "Background shell output",
+  "session.running.shell.empty": "No output yet",
+  "session.running.shell.jobs.one": "{{count}} background shell",
+  "session.running.shell.jobs.other": "{{count}} background shells",
 
   "session.files.selectToOpen": "Select a file to open",
 
@@ -1086,6 +1109,8 @@ export const dict = {
   "settings.providers.tag.other": "Other",
   "settings.models.title": "Models",
   "settings.models.description": "Choose which models appear in model picker",
+  "settings.models.showAll": "Show all",
+  "settings.models.hideAll": "Hide all",
   "settings.models.enableAll": "Enable all models",
   "settings.models.disableAll": "Disable all models",
 

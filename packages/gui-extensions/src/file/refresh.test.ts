@@ -4,15 +4,21 @@ import { refreshFileTree } from "./refresh"
 
 type Dir = { expanded: boolean; loaded?: boolean }
 
-function fakeTree(
+function fakeFiles(
   dirs: Record<string, Dir>,
   nodes: Record<string, FileNode[]>,
   waits: Record<string, Promise<void>> = {},
 ) {
   const forced: string[] = []
+  const files: string[] = []
 
   return {
     forced,
+    files,
+    resolve: (input: string) => {
+      const stripped = input.startsWith("file://") ? input.slice("file://".length) : input
+      return decodeURIComponent(stripped)
+    },
     tree: {
       state: (path: string) => dirs[path],
       list: (path: string) => nodes[path] ?? [],
@@ -23,7 +29,12 @@ function fakeTree(
       },
       expand: () => {},
       collapse: () => {},
-    } satisfies Parameters<typeof refreshFileTree>[0]["tree"],
+    },
+    sync: (path: string, options?: { force?: boolean }) => {
+      if (options?.force) files.push(path)
+
+      return Promise.resolve()
+    },
   }
 }
 
@@ -31,7 +42,7 @@ const dir = (path: string): FileNode => ({ name: path, path, absolute: `/repo/${
 
 describe("refreshFileTree", () => {
   test("lists again each directory the tree has loaded", async () => {
-    const { tree, forced } = fakeTree(
+    const file = fakeFiles(
       {
         "": { expanded: true, loaded: true },
         docs: { expanded: true, loaded: true },
@@ -42,19 +53,28 @@ describe("refreshFileTree", () => {
       { "": [dir("docs"), dir("src"), dir("vendor")], docs: [], src: [dir("src/lib")], "src/lib": [] },
     )
 
-    await refreshFileTree({ tree })
+    await refreshFileTree(file)
 
     // A collapsed directory keeps its rows for the moment it opens again, so it lists again too. `vendor` never
     // listed, so nothing there is stale and its listing belongs to the expand that asks for it.
-    expect(forced).toEqual(["", "docs", "src", "src/lib"])
+    expect(file.forced).toEqual(["", "docs", "src", "src/lib"])
   })
 
   test("does nothing until the root has listed", async () => {
-    const { tree, forced } = fakeTree({ "": { expanded: true }, docs: { expanded: true, loaded: true } }, {})
+    const file = fakeFiles({ "": { expanded: true }, docs: { expanded: true, loaded: true } }, {})
 
-    await refreshFileTree({ tree })
+    await refreshFileTree(file)
 
-    expect(forced).toEqual([])
+    expect(file.forced).toEqual([])
+  })
+
+  test("force-reloads open file tabs by tab id", async () => {
+    const file = fakeFiles({ "": { expanded: true, loaded: true } }, { "": [] })
+
+    await refreshFileTree(file, ["//src/a.ts", "open", "//docs/readme.md"])
+
+    expect(file.forced).toEqual([""])
+    expect(file.files).toEqual(["src/a.ts", "docs/readme.md"])
   })
 
   test("resolves only once every listing has answered", async () => {
@@ -62,20 +82,20 @@ describe("refreshFileTree", () => {
     const pending = new Promise<void>((resolve) => {
       answer = resolve
     })
-    const { tree, forced } = fakeTree(
+    const file = fakeFiles(
       { "": { expanded: true, loaded: true }, docs: { expanded: true, loaded: true } },
       { "": [dir("docs")], docs: [] },
       { docs: pending },
     )
 
     let settled = false
-    const refreshing = refreshFileTree({ tree }).then(() => {
+    const refreshing = refreshFileTree(file).then(() => {
       settled = true
     })
 
     await Promise.resolve()
 
-    expect(forced).toEqual(["", "docs"])
+    expect(file.forced).toEqual(["", "docs"])
     expect(settled).toBe(false)
 
     answer()

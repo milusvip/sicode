@@ -1,13 +1,18 @@
 import { createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { FormInfo, PermissionRequest } from "@opencode/client/promise"
+import { isPermissionNotFoundError, type FormInfo, type PermissionRequest } from "@opencode/client/promise"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@/shell/notifications/toast"
 import { useServerSDK } from "@/runtime/server/client"
 import { useLanguage } from "@/runtime/i18n/language"
 import { projectSettingsKey, useSettings } from "@/settings/model"
 import { useWorkspaceLocation } from "@/workspaces/location"
-import { sessionPermissionRequest, sessionFormRequest, sessionTreeIDs } from "@/session/requests/session-request-tree"
+import {
+  sessionPermissionRequests,
+  sessionPermissionBatch,
+  sessionFormRequest,
+  sessionTreeIDs,
+} from "@/session/requests/session-request-tree"
 import { isDestructiveShell } from "@/session/requests/destructive"
 import { createWebSearchRequest } from "./websearch"
 import { createSessionBackground } from "@/session/requests/background"
@@ -96,23 +101,25 @@ export function createSessionRequestModel() {
     return data.session.form.list("global", ref)?.find((item) => item.metadata?.kind === "mcp-elicitation")
   })
 
-  const permissionRequest = createMemo((): PermissionRequest | undefined => {
+  const permissionRequests = createMemo((): PermissionRequest[] => {
     const id = params.id
 
     const project = projectSettingsKey(serverSDK.scope, id ? data.session.get(id)?.projectID : undefined)
 
-    const pending = sessionPermissionRequest(data.session.list(), data.session.permission.list, id)
+    const pending = sessionPermissionRequests(data.session.list(), data.session.permission.list, id)
 
     // SiCode: 开启「自动接受权限」时，破坏性 shell 命令的请求仍要显示——auto-approve
     // 会跳过它们（不自动批准），这里若不同步放行显示，请求将不可见、会话卡死。
     // 「破坏性命令确认」关闭时删除类命令跟随自动接受，与 auto-approve.ts 保持一致。
     if (settings.permissions.autoApproves(project)) {
-      if (!settings.general.destructiveConfirm()) return undefined
-      return pending && isDestructiveShell(pending) ? pending : undefined
+      if (!settings.general.destructiveConfirm()) return []
+      return sessionPermissionBatch(pending.filter(isDestructiveShell))
     }
 
-    return pending
+    return sessionPermissionBatch(pending)
   })
+
+  const permissionRequest = createMemo((): PermissionRequest | undefined => permissionRequests()[0])
 
   const blocked = createMemo(() => {
     const id = params.id
@@ -165,31 +172,49 @@ export function createSessionRequestModel() {
   const [store, setStore] = createStore<{ responding: string | undefined }>({ responding: undefined })
 
   const permissionResponding = createMemo(() => {
-    const perm = permissionRequest()
-
-    if (!perm) return false
-
-    return store.responding === perm.id
+    const batch = permissionRequests()
+    const head = batch[0]
+    if (!head) return false
+    return store.responding === head.id
   })
 
   const decide = (response: "once" | "always" | "reject") => {
-    const perm = permissionRequest()
+    const batch = permissionRequests()
+    const head = batch[0]
+    if (!head) return
+    if (store.responding === head.id) return
 
-    if (!perm) return
+    setStore("responding", head.id)
+    // SiCode: one dock decision covers every pending ask with the same action.
+    // reject cascades server-side per sessionID; always+save can clear siblings too.
+    // Reply once per session on reject; on always/once reply each ask but ignore
+    // PermissionNotFoundError from the cascade so the user does not see a false failure.
+    const targets =
+      response === "reject"
+        ? [...new Map(batch.map((perm) => [perm.sessionID, perm] as const)).values()]
+        : batch
 
-    if (store.responding === perm.id) return
-
-    setStore("responding", perm.id)
-    serverSDK.api.permission
-      .reply({ sessionID: perm.sessionID, requestID: perm.id, decision: response })
-      .catch((error) => {
+    void Promise.allSettled(
+      targets.map((perm) =>
+        serverSDK.api.permission.reply({ sessionID: perm.sessionID, requestID: perm.id, decision: response }),
+      ),
+    )
+      .then((results) => {
+        const gone = (value: unknown): boolean => {
+          if (isPermissionNotFoundError(value)) return true
+          if (value instanceof Error) return gone(value.cause)
+          if (value && typeof value === "object" && "body" in value) return gone((value as { body: unknown }).body)
+          return false
+        }
+        const error = results.find((result) => result.status === "rejected" && !gone(result.reason))
+        if (!error || error.status !== "rejected") return
         showToast({
           title: language.t("common.requestFailed"),
-          description: error instanceof Error ? error.message : String(error),
+          description: error.reason instanceof Error ? error.reason.message : String(error.reason),
         })
       })
       .finally(() => {
-        setStore("responding", (id) => (id === perm.id ? undefined : id))
+        setStore("responding", (id) => (id === head.id ? undefined : id))
       })
   }
 
@@ -199,6 +224,7 @@ export function createSessionRequestModel() {
     elicitationRequest,
     websearch,
     permissionRequest,
+    permissionRequests,
     permissionResponding,
     background: {
       blocking,

@@ -201,4 +201,29 @@ describe("createSessionBackground", () => {
       dispose()
     })
   })
+
+  test("ignores shell read/list checks so they do not replace the command label with a call id", () => {
+    createRoot((dispose) => {
+      const background = createSessionBackground({
+        sessionID: () => "root",
+        messages: () => [
+          assistant("assistant", [
+            tool(
+              "call_00_start",
+              "shell",
+              { status: "running", shellID: "sh_pack" },
+              { command: "pnpm pack:release", background: "true" },
+            ),
+            tool("call_00_21zs7bgdfk0686tvx2yjx0ys", "shell", { status: "running", shellID: "sh_pack" }, { read: "sh_pack" }),
+          ]),
+        ],
+        sessions: () => [],
+        status: () => "idle",
+        shells: () => [shell("sh_pack", "pnpm pack:release")],
+      })
+
+      expect(background.tasks()).toEqual([{ id: "sh_pack", type: "shell", label: "pnpm pack:release" }])
+      dispose()
+    })
+  })
 })

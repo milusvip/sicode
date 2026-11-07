@@ -26,7 +26,8 @@ type Element = { backendID: number; frameID: string; sessionID?: string }
 
 /**
  * State every page of the pane shares: the element ref allocator, the app-wide trace recording, and
- * the resolved OS proxy. The pane creates one of these per window, so nothing here outlives it.
+ * the resolved OS proxy PAC data-URL (full PROXY…; DIRECT chain). The pane creates one of these per
+ * window, so nothing here outlives it.
  */
 export type Shared = { ref: () => string; recording?: Recording; proxy?: Promise<string | undefined> }
 
@@ -117,23 +118,19 @@ function zoomStep(current: number, direction: "in" | "out" | "reset") {
 // session is a separate network stack that does not inherit the OS proxy — so the side browser went
 // direct and could not reach anything that needs the proxy, while the system browser could. Chromium
 // still knows the OS proxy (registry and any PAC), so resolve it once through the default session
-// and pin it onto the partition's. Local traffic stays direct regardless: this app talks to its own
-// sidecar over loopback, and the upstream `proxy-bypass-list <-loopback>` switch would otherwise
-// send those requests through the proxy too. The promise lives on the pane's shared state so a
-// window that is closed, or an extension that is disabled and reloaded, does not keep it around.
-function systemProxyRules(shared: Shared) {
+// and pin it onto the partition's. Prefer a PAC data-URL that keeps the full `PROXY…; DIRECT`
+// chain — Chromium fails over to DIRECT when the local proxy is down, instead of hanging on a
+// single pinned host. Local traffic stays direct regardless: this app talks to its own sidecar over
+// loopback, and the upstream `proxy-bypass-list <-loopback>` switch would otherwise send those
+// requests through the proxy too. The promise lives on the pane's shared state so a window that is
+// closed, or an extension that is disabled and reloaded, does not keep it around.
+function systemProxyPac(shared: Shared) {
   shared.proxy ??= (async () => {
     try {
-      const answer = await electron.session.defaultSession.resolveProxy("https://example.com")
-
-      const entry = answer
-        .split(";")
-        .map((part) => part.trim())
-        .find((part) => part.toUpperCase().startsWith("PROXY "))
-
-      const host = entry?.slice(6).trim()
-
-      return host ? `http://${host}` : undefined
+      const answer = (await electron.session.defaultSession.resolveProxy("https://example.com")).trim()
+      if (!answer || answer.toUpperCase() === "DIRECT") return undefined
+      const body = `function FindProxyForURL(url, host) { return ${JSON.stringify(answer)}; }\n`
+      return `data:application/x-ns-proxy-autoconfig;charset=utf-8,${encodeURIComponent(body)}`
     } catch {
       return undefined
     }
@@ -143,10 +140,10 @@ function systemProxyRules(shared: Shared) {
 }
 
 async function applySystemProxy(session: Electron.Session, shared: Shared) {
-  const rules = await systemProxyRules(shared)
+  const pacScript = await systemProxyPac(shared)
 
-  if (!rules) return
-  session.setProxy({ proxyRules: rules, proxyBypassRules: "<local>,localhost,127.0.0.1,[::1]" })
+  if (!pacScript) return
+  session.setProxy({ pacScript, proxyBypassRules: "<local>,localhost,127.0.0.1,[::1]" })
 }
 
 export type BrowserPage = ReturnType<typeof createBrowserPage>
@@ -338,6 +335,9 @@ export function createBrowserPage(
   // The first restored navigation consumes the generation reserved in the unloaded inventory.
   let generation = options.restore ? options.restore.generation - 1 : 0
   let revision = 0
+  // SiCode: must live before `return {…}` below — a `let` after that return never initializes
+  // (TDZ forever), so snapshot/find throw "frameCache is not defined" and agents cannot get refs.
+  let frameCache: { at: number; tree: { id: string; parentID?: string; url: string; name: string }[] } | undefined
   cdp.on("Page.frameNavigated", ({ frame }) => {
     documents.set(frame.id, frame.url)
     revision++
@@ -358,6 +358,24 @@ export function createBrowserPage(
   // SiCode: a paste the user just handed over, applied to the next document of its origin even over the values the
   // site had already left in that partition. A restore only fills gaps; a paste is an instruction.
   let storageOverwrite: { origin: string; source: string } | undefined
+  // Device and network overrides applied through browser.emulate. Echoed back so the agent can confirm what is in
+  // force; page-target scoped, so they survive navigation and die with the tab.
+  type EmulationState = {
+    viewport?: { width: number; height: number; deviceScaleFactor: number; mobile: boolean }
+    userAgent?: string
+    timezone?: string
+    locale?: string
+    network?: { offline: boolean; latencyMs: number; downloadKbps: number; uploadKbps: number }
+  }
+  let emulation: EmulationState = {}
+
+  const emulated = (): Browser.Emulation => ({
+    viewport: emulation.viewport ?? null,
+    userAgent: emulation.userAgent ?? null,
+    timezone: emulation.timezone ?? null,
+    locale: emulation.locale ?? null,
+    network: emulation.network ?? null,
+  })
 
   /**
    * Copies this page's localStorage into the workspace store, then stops tracking it. Runs while the document is still
@@ -1317,8 +1335,30 @@ export function createBrowserPage(
 
         const element = target(action.ref)
 
-        if (action.type === "files.upload")
-          await cdp.send("DOM.setFileInputFiles", { files: local, backendNodeId: element.backendID }, element.sessionID)
+        if (action.type === "files.upload") {
+          // Prefer a resolved input[type=file]; if the page only opens a chooser on click
+          // (dynamic input / showPicker), fall back to file-chooser interception.
+          try {
+            const input = await ensureFileInput(element)
+            await cdp.send(
+              "DOM.setFileInputFiles",
+              { files: local, backendNodeId: input.backendID },
+              input.sessionID,
+            )
+          } catch (directError) {
+            try {
+              await uploadViaFileChooser(element, local)
+            } catch (chooserError) {
+              const direct =
+                directError instanceof Error ? directError.message : String(directError)
+              const chooser =
+                chooserError instanceof Error ? chooserError.message : String(chooserError)
+              throw new Error(`${direct} File-chooser fallback also failed: ${chooser}`, {
+                cause: directError,
+              })
+            }
+          }
+        }
 
         if (action.type === "files.drop") {
           const position = await point(element)
@@ -1368,6 +1408,85 @@ export function createBrowserPage(
 
       case "heap.snapshot":
         return result({ tab: state() }, [await transfer(await profiling.heap())])
+      case "emulate": {
+        // SiCode: the chrome-devtools-mcp environment gap — device/network overrides the pane lacked.
+        // Network domain is already enabled by diagnostics.enable(); do not enable it again here or its
+        // capture buffer resets.
+        if (action.reset) {
+          await Promise.all([
+            cdp.send("Emulation.clearDeviceMetricsOverride").catch(() => undefined),
+            cdp.send("Emulation.setUserAgentOverride", { userAgent: "" }).catch(() => undefined),
+            cdp.send("Emulation.setTimezoneOverride", { timezoneId: "" }).catch(() => undefined),
+            cdp.send("Emulation.setLocaleOverride", { locale: "" }).catch(() => undefined),
+            cdp
+              .send("Network.emulateNetworkConditions", {
+                offline: false,
+                latency: 0,
+                downloadThroughput: -1,
+                uploadThroughput: -1,
+              })
+              .catch(() => undefined),
+          ])
+          emulation = {}
+
+          return result({ tab: state(), emulation: emulated() })
+        }
+
+        if (action.viewport) {
+          const mobile = action.viewport.mobile ?? false
+          const deviceScaleFactor = action.viewport.deviceScaleFactor ?? 1
+
+          await cdp.send("Emulation.setDeviceMetricsOverride", {
+            width: action.viewport.width,
+            height: action.viewport.height,
+            deviceScaleFactor,
+            mobile,
+          })
+          await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: mobile }).catch(() => undefined)
+          emulation.viewport = {
+            width: action.viewport.width,
+            height: action.viewport.height,
+            deviceScaleFactor,
+            mobile,
+          }
+        }
+
+        if (action.userAgent !== undefined) {
+          await cdp.send("Emulation.setUserAgentOverride", { userAgent: action.userAgent })
+          emulation.userAgent = action.userAgent
+        }
+
+        if (action.timezone !== undefined) {
+          await cdp.send("Emulation.setTimezoneOverride", { timezoneId: action.timezone })
+          emulation.timezone = action.timezone
+        }
+
+        if (action.locale !== undefined) {
+          await cdp.send("Emulation.setLocaleOverride", { locale: action.locale })
+          emulation.locale = action.locale
+        }
+
+        if (action.network) {
+          // CDP wants bytes per second; the tool speaks kilobits per second. -1 removes a limit.
+          const throughput = (kbps: number | undefined) => (kbps === undefined || kbps < 0 ? -1 : (kbps * 1000) / 8)
+          const next = {
+            offline: action.network.offline ?? emulation.network?.offline ?? false,
+            latencyMs: action.network.latencyMs ?? emulation.network?.latencyMs ?? 0,
+            downloadKbps: action.network.downloadKbps ?? emulation.network?.downloadKbps ?? -1,
+            uploadKbps: action.network.uploadKbps ?? emulation.network?.uploadKbps ?? -1,
+          }
+
+          await cdp.send("Network.emulateNetworkConditions", {
+            offline: next.offline,
+            latency: next.latencyMs,
+            downloadThroughput: throughput(next.downloadKbps),
+            uploadThroughput: throughput(next.uploadKbps),
+          })
+          emulation.network = next
+        }
+
+        return result({ tab: state(), emulation: emulated() })
+      }
       case "trace.analyze":
       case "cpu.analyze":
       case "heap.summary":
@@ -1480,8 +1599,7 @@ export function createBrowserPage(
 
   // getFrameTree costs one roundtrip per attached session, and rect() used to repeat that once
   // per element of a snapshot. Cached until navigation or frame attach/detach bumps the revision.
-  let frameCache: { at: number; tree: FrameList } | undefined
-
+  // (frameCache binding is declared with revision above — before the early return.)
   function frames(): Promise<FrameList> {
     if (frameCache?.at === revision) return Promise.resolve(frameCache.tree)
     const at = revision
@@ -1862,11 +1980,241 @@ export function createBrowserPage(
 
     await walk(root, 0)
 
+    // Accessibility trees omit display:none file inputs; pages still need them for files.upload.
+    await appendFileInputs({ frameID, sessionID, lines, pinned })
+
     const content = (
       action.type === "find" ? lines.filter((line) => line.toLowerCase().includes(action.text.toLowerCase())) : lines
     ).join("\n")
 
     return { content: content.slice(0, Browser.MAX_TEXT), truncated: truncated || content.length > Browser.MAX_TEXT }
+  }
+
+  async function appendFileInputs(input: {
+    frameID: string
+    sessionID?: string
+    lines: string[]
+    pinned: Map<string, string>
+  }) {
+    await cdp.send("DOM.enable", {}, input.sessionID).catch(() => undefined)
+    // pierce:true walks open shadow roots so Web Component upload controls are listed.
+    const doc = await cdp.send("DOM.getDocument", { depth: -1, pierce: true }, input.sessionID)
+    if (!doc.root) return
+
+    const listed = new Set(
+      [...refs.values()].filter((element) => element.frameID === input.frameID).map((element) => element.backendID),
+    )
+
+    // Collect synchronously into a work list, then await visibility checks.
+    const pending: {
+      backendID: number
+      attrs: Map<string, string>
+    }[] = []
+
+    const walk = (node: Protocol.DOM.Node) => {
+      if (pending.length + input.lines.length >= 500) return
+      if (node.nodeName === "INPUT" && node.backendNodeId) {
+        const attrs = new Map<string, string>()
+        const raw = node.attributes ?? []
+        for (let i = 0; i + 1 < raw.length; i += 2) attrs.set(raw[i]!, raw[i + 1]!)
+        if ((attrs.get("type") || "").toLowerCase() === "file" && !listed.has(node.backendNodeId)) {
+          listed.add(node.backendNodeId)
+          pending.push({ backendID: node.backendNodeId, attrs })
+        }
+      }
+      for (const child of node.children ?? []) walk(child)
+      for (const shadow of node.shadowRoots ?? []) walk(shadow)
+    }
+    walk(doc.root)
+
+    for (const item of pending) {
+      if (input.lines.length >= 500) break
+      await pushFileInputLine({
+        backendID: item.backendID,
+        frameID: input.frameID,
+        sessionID: input.sessionID,
+        attrs: item.attrs,
+        lines: input.lines,
+        pinned: input.pinned,
+      })
+    }
+  }
+
+  async function pushFileInputLine(input: {
+    backendID: number
+    frameID: string
+    sessionID?: string
+    attrs: Map<string, string>
+    lines: string[]
+    pinned: Map<string, string>
+  }) {
+    const element = { backendID: input.backendID, frameID: input.frameID, sessionID: input.sessionID }
+    const hidden = !(await call(
+      element,
+      `function() {
+          if (!(this instanceof HTMLElement)) return false
+          if (this.hidden || this.getAttribute("aria-hidden") === "true") return false
+          const style = getComputedStyle(this)
+          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false
+          const rect = this.getBoundingClientRect()
+          return rect.width > 0 && rect.height > 0
+        }`,
+    ).catch(() => false))
+
+    const known = input.pinned.get(`${input.frameID}:${input.backendID}`)
+    const ref = known ?? options.shared.ref()
+    if (!known) refs.set(ref, element)
+
+    const accept = input.attrs.get("accept")
+    const name =
+      input.attrs.get("aria-label") ||
+      input.attrs.get("title") ||
+      input.attrs.get("name") ||
+      input.attrs.get("id") ||
+      (accept ? `file (${accept})` : "file input")
+    const flags = [
+      accept ? `accept=${JSON.stringify(accept)}` : "",
+      input.attrs.has("multiple") || input.attrs.get("multiple") === "" ? "multiple=true" : "",
+      hidden ? "hidden=true" : "",
+    ].filter(Boolean)
+
+    input.lines.push(
+      `@${ref} [file] ${JSON.stringify(String(name).replace(/\s+/g, " ").slice(0, 300))}${
+        flags.length ? ` ${flags.join(" ")}` : ""
+      }`,
+    )
+  }
+
+  /** Prefer the file input itself; otherwise mark and resolve a uniquely associated one. */
+  async function ensureFileInput(element: Element): Promise<Element> {
+    const direct = await call(
+      element,
+      "function() { return this instanceof HTMLInputElement && this.type === 'file' }",
+    )
+    if (direct) return element
+
+    const token = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+    const marked = await call(
+      element,
+      `function(token) {
+        const isFile = (el) => el instanceof HTMLInputElement && el.type === "file"
+        const filesIn = (root) => {
+          const out = []
+          if (!root) return out
+          const visit = (node) => {
+            if (node instanceof HTMLInputElement && node.type === "file") out.push(node)
+            if (node instanceof Element) {
+              if (node.shadowRoot) visit(node.shadowRoot)
+              for (const child of node.children) visit(child)
+            }
+          }
+          visit(root)
+          return out
+        }
+        let input = null
+        if (this instanceof HTMLLabelElement && isFile(this.control)) input = this.control
+        else {
+          const nested = filesIn(this)
+          if (nested.length === 1) input = nested[0]
+        }
+        if (!input) {
+          const form = this.closest && this.closest("form")
+          if (form) {
+            const inputs = filesIn(form)
+            if (inputs.length === 1) input = inputs[0]
+          }
+        }
+        if (!input) {
+          let parent = this.parentElement
+          for (let i = 0; i < 4 && parent && !input; i++, parent = parent.parentElement) {
+            const inputs = filesIn(parent)
+            if (inputs.length === 1) input = inputs[0]
+          }
+        }
+        if (!input) return false
+        input.setAttribute("data-sicode-upload", token)
+        return true
+      }`,
+      [token],
+    )
+    if (!marked) {
+      throw new Error(
+        "Target is not a file input and no associated input[type=file] was found. Call browser.snapshot({tabID}) and choose a [file] ref (including hidden=true), or a control that wraps / labels a single file input.",
+      )
+    }
+
+    // Marked node may live in a shadow tree — resolve via pierce document walk.
+    await cdp.send("DOM.enable", {}, element.sessionID).catch(() => undefined)
+    const doc = await cdp.send("DOM.getDocument", { depth: -1, pierce: true }, element.sessionID)
+    const safe = String(token).replace(/[^a-zA-Z0-9_-]/g, "")
+    const match = findMarkedFileInput(doc.root, safe)
+    if (!match?.backendNodeId) {
+      throw new Error(
+        "File input marker was not found. Call browser.snapshot({tabID}) and retry browser.files.upload with a fresh file-input ref.",
+      )
+    }
+    return { backendID: match.backendNodeId, frameID: element.frameID, sessionID: element.sessionID }
+  }
+
+  function findMarkedFileInput(node: Protocol.DOM.Node | undefined, token: string): Protocol.DOM.Node | undefined {
+    if (!node) return
+    if (node.nodeName === "INPUT" && node.backendNodeId) {
+      const raw = node.attributes ?? []
+      for (let i = 0; i + 1 < raw.length; i += 2) {
+        if (raw[i] === "data-sicode-upload" && raw[i + 1] === token) return node
+      }
+    }
+    for (const child of node.children ?? []) {
+      const found = findMarkedFileInput(child, token)
+      if (found) return found
+    }
+    for (const shadow of node.shadowRoots ?? []) {
+      const found = findMarkedFileInput(shadow, token)
+      if (found) return found
+    }
+    return undefined
+  }
+
+  /** Click opens a chooser; attach files via the intercepted Page.fileChooserOpened backendNodeId. */
+  async function uploadViaFileChooser(element: Element, paths: string[]) {
+    await cdp.send("Page.enable", {}, element.sessionID).catch(() => undefined)
+    await cdp.send("Page.setInterceptFileChooserDialog", { enabled: true }, element.sessionID)
+
+    try {
+      const opened = new Promise<Protocol.Page.FileChooserOpenedEvent>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          off()
+          reject(
+            new Error(
+              "File chooser did not open within the timeout. Call browser.snapshot({tabID}) and retry browser.files.upload with a [file] ref, or click the control that opens the file picker first.",
+            ),
+          )
+        }, 5_000)
+        const off = cdp.on("Page.fileChooserOpened", (params) => {
+          clearTimeout(timer)
+          off()
+          resolve(params)
+        })
+      })
+
+      // Prefer a DOM click so zero-size / hidden triggers still open the chooser under interception.
+      await call(element, "function() { this.click(); return true }")
+      const params = await opened
+      if (!params.backendNodeId) {
+        throw new Error(
+          "File chooser opened without a backing input. Prefer a snapshot [file] ref for browser.files.upload; showOpenFilePicker-style choosers without an input are not supported.",
+        )
+      }
+      await cdp.send(
+        "DOM.setFileInputFiles",
+        { files: paths, backendNodeId: params.backendNodeId },
+        element.sessionID,
+      )
+    } finally {
+      await cdp
+        .send("Page.setInterceptFileChooserDialog", { enabled: false }, element.sessionID)
+        .catch(() => undefined)
+    }
   }
 
   async function toggleInspect(enabled: boolean) {
@@ -2012,13 +2360,35 @@ export function createBrowserPage(
 
   async function describe(element: Element) {
     return Schema.decodeUnknownSync(
-      Schema.Struct({ label: Schema.String, selector: Schema.String, text: Schema.optionalKey(Schema.String) }),
+      Schema.Struct({
+        label: Schema.String,
+        selector: Schema.String,
+        text: Schema.optionalKey(Schema.String),
+        slot: Schema.optionalKey(Schema.String),
+        component: Schema.optionalKey(Schema.String),
+        action: Schema.optionalKey(Schema.String),
+      }),
     )(
       await call(
         element,
         `function() {
           const clip = (value, max) => (value.length > max ? value.slice(0, max - 1) + "\u2026" : value)
-          const label = this.localName + (this.id ? "#" + this.id : "") + Array.from(this.classList, (name) => "." + name).join("")
+          const attr = (node, name) => {
+            const value = node.getAttribute(name)
+            return value && value.trim() ? clip(value.trim(), 128) : ""
+          }
+          // Stable design-system hooks over nth-of-type paths; walk ancestors for inner svg/icons.
+          let slot = "", component = "", action = ""
+          for (let node = this; node; node = node.parentElement) {
+            if (!slot) slot = attr(node, "data-slot")
+            if (!component) component = attr(node, "data-component")
+            if (!action) action = attr(node, "data-action")
+            if (slot && component && action) break
+          }
+          const classes = Array.from(this.classList, (name) => "." + name).join("")
+          const base = this.localName + (this.id ? "#" + this.id : "") + classes
+          const hook = slot || component || action
+          const label = !this.id && !classes && hook ? this.localName + " · " + hook : base
           // One segment per document or shadow root, outermost first; " >>> " steps into a host's shadow root.
           const segments = []
           for (let start = this; start; ) {
@@ -2042,7 +2412,14 @@ export function createBrowserPage(
           const selector = segments.join(" >>> ")
           const text = clip((this.innerText ?? this.textContent ?? "").replace(/\\s+/g, " ").trim(), 160)
           // A cut selector is invalid syntax; leave it out rather than pass it off as usable.
-          return { label: clip(label, 200), selector: selector.length > 2000 ? "" : selector, ...(text ? { text } : {}) }
+          return {
+            label: clip(label, 200),
+            selector: selector.length > 2000 ? "" : selector,
+            ...(text ? { text } : {}),
+            ...(slot ? { slot } : {}),
+            ...(component ? { component } : {}),
+            ...(action ? { action } : {}),
+          }
         }`,
       ),
     )

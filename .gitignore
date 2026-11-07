@@ -34,9 +34,17 @@ opencode-dev
 UPCOMING_CHANGELOG.md
 RELEASE_REVIEW.md
 logs/
+debug.log
+**/debug-storybook.log
 *.bun-build
 tsconfig.tsbuildinfo
 /artifacts/
 
 # WorkBuddy local project data
 .workbuddy/
+
+# SiCode local scratch (notes / dumps); keep out of git status noise
+.sicode/scratch/
+
+# SiCode: locally cached bun runtime binary (100MB+), never commit
+**/.bun-cache/

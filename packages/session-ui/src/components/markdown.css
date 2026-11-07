@@ -62,7 +62,7 @@
   h1 {
     font-size: var(--font-size-x-large);
     color: var(--v2-text-text-base);
-    font-weight: 600;
+    font-weight: var(--font-weight-bold);
     margin-top: 32px;
     margin-bottom: 12px;
     line-height: var(--line-height-large);
@@ -71,7 +71,7 @@
   h2 {
     font-size: var(--font-size-large);
     color: var(--v2-text-text-base);
-    font-weight: 600;
+    font-weight: var(--font-weight-bold);
     margin-top: 28px;
     margin-bottom: 10px;
     line-height: var(--line-height-large);
@@ -80,7 +80,7 @@
   h3 {
     font-size: var(--font-size-base);
     color: var(--v2-text-text-base);
-    font-weight: 600;
+    font-weight: var(--font-weight-bold);
     margin-top: 22px;
     margin-bottom: 8px;
     line-height: var(--line-height-large);
@@ -89,7 +89,7 @@
   h4 {
     font-size: var(--font-size-small);
     color: var(--v2-text-text-base);
-    font-weight: 600;
+    font-weight: var(--font-weight-bold);
     margin-top: 18px;
     margin-bottom: 6px;
     line-height: var(--line-height-large);
@@ -180,6 +180,18 @@
 
   a[data-local-link] {
     cursor: pointer;
+  }
+
+  /* SiCode: an external click is fire-and-forget, so the link itself acknowledges it. It dims until
+     the system browser takes focus (or the host gives up), which covers the few hundred milliseconds
+     a cold shell.openExternal needs. Paint-only: nothing on the line reflows. */
+  a.external-link {
+    transition: opacity 0.12s ease-out;
+  }
+
+  a.external-link[data-opening] {
+    cursor: progress;
+    opacity: 0.55;
   }
 
   .markdown-session-link {
@@ -690,6 +702,10 @@
   [data-component="markdown"] :is([data-markdown-word], code)[data-markdown-enter] {
     animation: none;
   }
+
+  [data-component="markdown"] a.external-link {
+    transition: none;
+  }
 }
 
 [data-component="markdown"] > * {
@@ -711,7 +727,7 @@
     color: var(--v2-text-text-base);
     user-select: none;
     font-size: var(--font-size-x-small);
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     line-height: 12px;
     letter-spacing: 0.05px;
     font-variant-numeric: tabular-nums;

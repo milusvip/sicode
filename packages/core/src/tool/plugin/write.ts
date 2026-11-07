@@ -18,6 +18,7 @@ import { Formatter } from "../../formatter.js"
 import { FileAccess } from "../../file-access.js"
 import { Location } from "../../location.js"
 import { Permission } from "../../permission.js"
+import { SessionDecisionFreeze } from "../../session/decision-freeze.js"
 import { fileDiff } from "./file-diff.js"
 import { BatchEncoding } from "./batch-encoding.js"
 
@@ -71,7 +72,7 @@ export const Plugin = {
           // near-duplicate of something the repo already has; in a tree this large the model only
           // ever sees a slice of it, and "prefer editing" alone does not make it look.
           description:
-            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, check that nothing already covers the same job: search with `grep` or `glob`, and extend what you find. A near-duplicate file is the most expensive mistake this tool makes possible.\n\nSiCode: an HTML page written for a human to view (demo, visualization, mock-up) is shown to the user automatically in a side preview panel next to the conversation. Keep such pages self-contained: inline the CSS and JavaScript in the one .html file so the panel renders it complete the moment it opens — separate .css/.js files load half-dressed until their writes land. Only split into separate files when the user explicitly asks for a real multi-file project. Such pages must be responsive: fluid layout, relative units, no fixed widths wider than ~600px, content centered and legible at that size.",
+            "Writes a file to the local filesystem, overwriting if one exists.\n\nMissing parent directories are created automatically.\n\nUse this tool to create new files or overwrite existing files. For partial changes, use the edit tool instead.\n\nBefore creating a file, check that nothing already covers the same job: search with `grep` or `glob`, and extend what you find. A near-duplicate file is the most expensive mistake this tool makes possible.\n\nSiCode: an HTML page written for a human to view (demo, visualization, mock-up) appears as a clickable capsule in the conversation; the user opens it in the side preview. Keep such pages self-contained: inline the CSS and JavaScript in the one .html file so the preview renders complete when opened — separate .css/.js files load half-dressed until their writes land. Only split into separate files when the user explicitly asks for a real multi-file project. Such pages must be responsive: fluid layout, relative units, no fixed widths wider than ~600px, content centered and legible at that size.",
           input: Input,
           output: Output,
           execute: (input, context) => {
@@ -85,6 +86,10 @@ export const Plugin = {
                 messageID: context.messageID,
                 id: context.id,
               }
+              // SiCode: hard refuse paths the user froze ("别动" / "效果还可以").
+              // Cache is warmed by SessionContext.request before tools run.
+              const frozen = SessionDecisionFreeze.blocked(context.sessionID, input.path)
+              if (frozen) return yield* new ToolFailure({ message: frozen })
               const target = yield* access.resolve({ path: input.path, kind: "file" })
               yield* access.authorizeExternal([target], context)
               const current = yield* FileMutation.readText(environment.files, target.absolute).pipe(

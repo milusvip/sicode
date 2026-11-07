@@ -30,7 +30,7 @@ export function isPackageBehind(installed, expected) {
 /** @typedef {{ type: "ping" }} Ping */
 /** @typedef {{ type: "pong" }} Pong */
 /** @typedef {{ type: "offer.tab"; tab: BridgeTab }} OfferTab */
-/** @typedef {{ selector: string; label: string; role?: string; name?: string; text?: string }} BridgeElement */
+/** @typedef {{ selector: string; label: string; slot?: string; component?: string; action?: string; role?: string; name?: string; text?: string }} BridgeElement */
 /** @typedef {{ type: "offer.element"; tab: BridgeTab; element: BridgeElement; elements?: BridgeElement[]; comment?: string }} OfferElement */
 /** @typedef {{ type: "tabs.list"; requestID: string }} TabsList */
 /** @typedef {{ id: string; chromeTabId: number; url: string; title: string; active: boolean; windowId: number }} BridgeTab */

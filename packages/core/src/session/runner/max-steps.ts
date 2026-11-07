@@ -10,6 +10,7 @@
  */
 
 import type { SessionMessage } from "../message.js"
+import { detectCompletableTodos } from "./completion-gate.js"
 
 /** Steps a turn may take before the runner stops it and hands back to the user. */
 export const DEFAULT_STEPS = 25
@@ -26,15 +27,12 @@ export const DEFAULT_STEPS = 25
  */
 export const TODO_HEADROOM = 25
 
-/** Open todo items that count a turn as a planned, multi-step job. */
-const OPEN_STATUSES = new Set(["pending", "in_progress"])
-
 /**
  * SiCode: the step ceiling that actually applies this turn, given what the model has planned.
  *
- * A configured `agent.steps` always wins. Otherwise a turn whose latest `todowrite` left at least
- * two items open is treated as a real long task and granted `DEFAULT_STEPS + TODO_HEADROOM`; a turn
- * with no such plan keeps the tight `DEFAULT_STEPS` so a runaway spiral is still cut off.
+ * A configured `agent.steps` always wins. Otherwise a turn whose *current-user-turn* todowrite left
+ * at least two items open is treated as a real long task and granted `DEFAULT_STEPS + TODO_HEADROOM`;
+ * a turn with no such plan keeps the tight `DEFAULT_STEPS` so a runaway spiral is still cut off.
  */
 export function effectiveStepLimit(
   messages: ReadonlyArray<SessionMessage.Info>,
@@ -45,25 +43,12 @@ export function effectiveStepLimit(
   return DEFAULT_STEPS
 }
 
-/** Whether the most recent todo list left at least two items open, marking a planned long task. */
+/**
+ * Whether *this user turn* planned a multi-step job (≥2 open todos after the latest user message).
+ * Prior-turn leftovers must not grant headroom or closeout — that fought new asks (ses_e4e536).
+ */
 function plannedMultiStepTurn(messages: ReadonlyArray<SessionMessage.Info>): boolean {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index]
-    if (message.type !== "assistant") continue
-    for (const part of message.content) {
-      if (part.type !== "tool" || part.name !== "todowrite") continue
-      if (part.state.status !== "completed" && part.state.status !== "running") continue
-      const todos = part.state.input?.todos
-      if (!Array.isArray(todos)) continue
-      let open = 0
-      for (const todo of todos) {
-        if (typeof todo !== "object" || todo === null) continue
-        if (OPEN_STATUSES.has(String((todo as Record<string, unknown>).status ?? ""))) open++
-      }
-      return open >= 2
-    }
-  }
-  return false
+  return detectCompletableTodos(messages).length >= 2
 }
 
 export const MAX_STEPS_PROMPT = `CRITICAL - MAXIMUM STEPS REACHED
@@ -75,3 +60,16 @@ Respond with a concise text summary only:
 2. What remains unfinished, and the exact next action that would continue it.
 
 Do not call any tools. End the turn here — the user can ask you to continue and you will pick up from this summary.`
+
+/** Extra steps after the ceiling when todos are still open — close out, do not status-essay. */
+export const TODO_CLOSEOUT_STEPS = 3
+
+/**
+ * Step ceiling hit but todos still open. One short closeout window: finish/cancel via todowrite
+ * or land the in_progress deliverable — not a "remaining work" report.
+ */
+export const MAX_STEPS_TODO_CLOSEOUT_PROMPT = `CRITICAL - STEP BUDGET HIT WITH OPEN TODOS
+
+You hit the step ceiling, but the todo list still has open items. Do not write a status essay.
+
+This closeout window: call \`todowrite\` to mark finished work completed and drop impossible items cancelled, then do at most one real deliverable for the current in_progress item (write/edit). Prefer closing the list over starting new investigation.`

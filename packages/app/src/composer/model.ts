@@ -60,7 +60,8 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
     server.conn.type !== "extension" || !server.conn.managed || server.ctx.sdk.connection.status() === "connected"
 
   const files = useFile()
-  const links = useExtensionHost().links
+  const host = useExtensionHost()
+  const links = host.links
   const extensions = useExtensionAttachment()
   const comments = useComments()
   const dialog = useDialog()
@@ -323,6 +324,37 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
       capture: historyComments,
       clear: comments.clear,
       restore: restoreHistoryComments,
+    },
+    // SiCode: browser notes (extension push or in-app) must bind the agent channel before send.
+    // chrome_tab_* / tab_chrome_* chips also stick system Chrome + pin; await ensure so the first
+    // browser.tabs.list is not [browser.disconnected] (ses_e58cab).
+    prepareSend: async (session, context) => {
+      const notes = context.filter((item) => item.type === "note" && item.origin === "browser")
+      if (notes.length === 0) return
+      const view = extensions.current()
+      if (!view || view.id !== session.id) return
+      const pane = host.context("browser") as
+        | {
+            uses?: {
+              browser?: () => {
+                status: string
+                value?: {
+                  ensure?: (session: unknown, options?: { chromeTabIDs?: readonly string[] }) => Promise<void>
+                }
+              }
+            }
+          }
+        | undefined
+      const live = pane?.uses?.browser?.()
+      if (live?.status !== "active") return
+      const chromeTabIDs = notes.flatMap((item) => {
+        if (item.type !== "note") return []
+        const href = item.href
+        if (typeof href !== "string") return []
+        if (href.startsWith("chrome_tab_") || href.startsWith("tab_chrome_")) return [href]
+        return []
+      })
+      await live.value?.ensure?.(view, { chromeTabIDs })
     },
     clientCommand: (text) => {
       const selected = parseClientSlashCommand(slashCommands(), text)

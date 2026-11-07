@@ -18,6 +18,7 @@ import { Formatter } from "../../formatter.js"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
+import { SessionDecisionFreeze } from "../../session/decision-freeze.js"
 import { fileDiff } from "./file-diff.js"
 import { BatchEncoding } from "./batch-encoding.js"
 
@@ -189,6 +190,60 @@ const matchView = (source: string, oldString: string, newString: string) => {
   }
 }
 
+const hintLines = 12
+const hintLineLength = 200
+
+/**
+ * SiCode: hand-ported from upstream 2f4653bb51.
+ * A short hint for an oldString miss, so the next attempt can succeed without rereading the file: newString is
+ * already there (often an edit that already applied), or the lines closest to oldString, numbered like Read output.
+ * Lines vote for where oldString starts when they match ignoring all whitespace; at least half must agree. Only the
+ * span from the first to the last line that matched is shown, so padding oldString cannot reveal the lines after it.
+ */
+const missHint = (source: string, oldString: string, newString: string) => {
+  const view = source.replaceAll(crlf, "\n")
+  const replacement = newString.replaceAll(crlf, "\n")
+  if (replacement.trim().length >= 20 && normalizeForMatch(view).includes(normalizeForMatch(replacement)))
+    return "newString is already in the file, so this edit may already be applied."
+  const key = (line: string) => normalizeForMatch(line).replace(/\s+/g, " ").trim()
+  const distinct = (line: string) => /[\p{L}\p{N}]/u.test(line)
+  const lines = view.split("\n")
+  const search = oldString.replaceAll(crlf, "\n").split("\n")
+  const positions = new Map<string, number[]>()
+  lines.forEach((line, index) => {
+    const value = key(line)
+    if (!distinct(value)) return
+    const found = positions.get(value)
+    if (found) found.push(index)
+    else positions.set(value, [index])
+  })
+  const votes = new Map<number, number>()
+  const wanted = search.filter((line, offset) => {
+    const value = key(line)
+    if (!distinct(value)) return false
+    for (const index of positions.get(value) ?? []) votes.set(index - offset, (votes.get(index - offset) ?? 0) + 1)
+    return true
+  }).length
+  const [start, count] = [...votes].reduce((best, vote) => (vote[1] > best[1] ? vote : best), [0, 0])
+  if (count === 0 || count * 2 < wanted) return
+  const matched = search.flatMap((line, offset) => {
+    const value = key(line)
+    const index = start + offset
+    return value !== "" && index >= 0 && index < lines.length && key(lines[index]) === value ? [index] : []
+  })
+  const from = matched[0]
+  const to = Math.min(matched.at(-1)! + 1, from + hintLines)
+  return [
+    "The closest lines in the file:",
+    ...lines
+      .slice(from, to)
+      .map(
+        (line, index) =>
+          `${from + index + 1}: ${line.length > hintLineLength ? `${line.slice(0, hintLineLength)}…` : line}`,
+      ),
+  ].join("\n")
+}
+
 /** Number of sorted positions strictly before offset. */
 const countBefore = (positions: number[], offset: number) => {
   let low = 0
@@ -251,6 +306,11 @@ export const Plugin = {
                 })
               }
 
+              // SiCode: hard refuse paths the user froze ("别动" / "效果还可以").
+              // Cache is warmed by SessionContext.request before tools run.
+              const frozen = SessionDecisionFreeze.blocked(context.sessionID, input.path)
+              if (frozen) return yield* new ToolFailure({ message: frozen })
+
               const target = yield* access.resolve({ path: input.path, kind: "file" })
               yield* access.authorizeExternal([target], context)
 
@@ -295,8 +355,19 @@ export const Plugin = {
                 source: permissionSource,
               })
               if (replacements === 0) {
+                // SiCode: hand-ported from upstream 2f4653bb51 — hint shows file contents, so only
+                // when reading this file is already allowed.
+                const readable = yield* permission.allows({
+                  action: "read",
+                  resources: [target.resource],
+                  save: ["*"],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: permissionSource,
+                })
+                const hint = readable ? missHint(source, input.oldString, input.newString) : undefined
                 return yield* new ToolFailure({
-                  message: `Could not find oldString in ${input.path}. It must match exactly, including whitespace and indentation.`,
+                  message: `Could not find oldString in ${input.path}. It must match exactly, including whitespace and indentation.${hint ? `\n\n${hint}` : ""}`,
                 })
               }
               if (replacements > 1 && input.replaceAll !== true) {

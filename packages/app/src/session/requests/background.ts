@@ -54,14 +54,19 @@ export function createSessionBackground(input: {
           return
         }
 
-        const shellID = part.state.metadata.shellID
+        // SiCode: shell read/list/kill also finish as completed+metadata.running, but they are
+        // checks on an existing job — not the job itself. Counting them as tasks replaces the
+        // real command label with the tool-call id (call_00_…) and can duplicate the pill.
         const command = part.state.input.command
+        if (typeof command !== "string") return
+
+        const shellID = part.state.metadata.shellID
         shells.push({
           partID: part.id,
           task: {
             id: typeof shellID === "string" ? shellID : part.id,
             type: "shell",
-            label: typeof command === "string" ? command : part.id,
+            label: command,
           },
         })
       })

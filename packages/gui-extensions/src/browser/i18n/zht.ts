@@ -99,7 +99,7 @@ export default {
   "login.sync.both.one": "已寫入 {{count}} 個 Cookie 和 {{storage}} 項 localStorage，正在開啟網站。",
   "login.sync.both.other": "已寫入 {{count}} 個 Cookie 和 {{storage}} 項 localStorage，正在開啟網站。",
   "push.failed": "推送失敗",
-  "push.noSession": "沒有開啟的工作階段。",
+  "push.noSession": "沒有開啟的對話：請先打開或新建一個對話。",
   "push.page": "已推送到對話",
   "push.element": "元素已推送到對話",
 }

@@ -2,16 +2,35 @@
 
 export const MAX_BROWSER_TABS = 3
 
-export type TabRef = { readonly id: string; readonly url: string }
+/** Generic in the tab id so a branded id (e.g. `Browser.TabID`) flows through unchanged. */
+export type TabRef<ID extends string = string> = { readonly id: ID; readonly url: string }
 
-export type TabOpenPlan = {
+export type TabOpenPlan<ID extends string = string> = {
   /** Existing tab to focus instead of creating. */
-  readonly reuseTabID?: string
+  readonly reuseTabID?: ID
   /** Close these (never includes reuseTabID). Blanks → URL dupes → overflow, oldest first. */
-  readonly closeTabIDs: readonly string[]
+  readonly closeTabIDs: readonly ID[]
 }
 
-/** Match same document across trailing slash, default port, and hash differences. */
+/**
+ * Query keys tools use only to bust cache. They are not document identity — `?np=1` and `?np=2`
+ * on the same path are one page, so open must reuse and refresh instead of stacking tabs.
+ */
+const CACHE_BUST_QUERY = /^(np|v|t|ts|cb|cache|_)$/i
+
+function stripCacheBustQuery(parsed: URL) {
+  if (!parsed.search) return
+  const params = new URLSearchParams(parsed.search)
+  let changed = false
+  for (const key of [...params.keys()]) {
+    if (!CACHE_BUST_QUERY.test(key)) continue
+    params.delete(key)
+    changed = true
+  }
+  if (changed) parsed.search = params.toString()
+}
+
+/** Match same document across trailing slash, default port, hash, and cache-bust query. */
 export function canonicalizeBrowserURL(url: string): string {
   const raw = url.trim() || "about:blank"
   if (raw === "about:blank") return "about:blank"
@@ -20,12 +39,14 @@ export function canonicalizeBrowserURL(url: string): string {
 
   if (parsed.protocol === "file:") {
     parsed.hash = ""
+    stripCacheBustQuery(parsed)
     return parsed.href
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return raw
 
   parsed.hash = ""
+  stripCacheBustQuery(parsed)
   parsed.hostname = parsed.hostname.toLowerCase()
   if ((parsed.protocol === "http:" && parsed.port === "80") || (parsed.protocol === "https:" && parsed.port === "443")) {
     parsed.port = ""
@@ -37,25 +58,31 @@ export function canonicalizeBrowserURL(url: string): string {
   return parsed.href
 }
 
+/** True when two URLs name the same document under {@link canonicalizeBrowserURL}. */
+export function sameBrowserDocument(a: string | undefined, b: string): boolean {
+  if (!a) return false
+  return canonicalizeBrowserURL(a) === canonicalizeBrowserURL(b)
+}
+
 /**
  * Decide whether to reuse a tab and which extras to close before/after open.
  * Callers that create a tab should treat a missing `reuseTabID` as "create one", after applying closes.
  */
-export function planTabsOpen(input: {
-  readonly tabs: ReadonlyArray<TabRef>
-  readonly focusedTabID: string | null
+export function planTabsOpen<ID extends string = string>(input: {
+  readonly tabs: ReadonlyArray<TabRef<ID>>
+  readonly focusedTabID: ID | null
   readonly url: string
   readonly maxTabs?: number
-}): TabOpenPlan {
+}): TabOpenPlan<ID> {
   const max = input.maxTabs ?? MAX_BROWSER_TABS
   const wanted = canonicalizeBrowserURL(input.url)
   const reuse = input.tabs.find((tab) => canonicalizeBrowserURL(tab.url) === wanted)
   const keepID = reuse?.id
   const creating = !reuse
-  const closeTabIDs: string[] = []
-  const closed = new Set<string>()
+  const closeTabIDs: ID[] = []
+  const closed = new Set<ID>()
 
-  const markClose = (id: string) => {
+  const markClose = (id: ID) => {
     if (id === keepID || closed.has(id)) return
     closed.add(id)
     closeTabIDs.push(id)
@@ -67,7 +94,7 @@ export function planTabsOpen(input: {
   }
 
   // Duplicate documents: keep reuse → focused → first remaining.
-  const byURL = new Map<string, TabRef[]>()
+  const byURL = new Map<string, TabRef<ID>[]>()
   for (const tab of input.tabs) {
     if (closed.has(tab.id)) continue
     const key = canonicalizeBrowserURL(tab.url)

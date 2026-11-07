@@ -80,8 +80,14 @@ export const Output = Schema.Array(FileSystem.Entry)
 type EncodedOutput = typeof Output.Encoded
 
 /** Format raw search results into the concise line-oriented output models expect. */
-export const toModelContent = (entries: EncodedOutput, truncated = false, timedOut?: string) => {
-  const lines = entries.length === 0 ? ["No files found"] : entries.map((item) => item.path)
+export const toModelContent = (entries: EncodedOutput, truncated = false, timedOut?: string, pattern = "") => {
+  // SiCode: evidence head (agent-ops Track A) — first line is machine-readable empty/truncated.
+  const lines: string[] =
+    entries.length === 0
+      ? [`[search empty | patterns=${pattern || "(none)"}]`, "No files found"]
+      : truncated
+        ? [`[search truncated | showing ${entries.length} | offset=0]`, ...entries.map((item) => item.path)]
+        : entries.map((item) => item.path)
   if (truncated)
     lines.push(
       "",
@@ -221,6 +227,7 @@ export const Plugin = {
                       `${result.entries.length} path${result.entries.length === 1 ? "" : "s"}; this tree is too large to scan whole. ` +
                       `Narrow it with \`path\`, or search the contents instead with \`grep\` and an \`include\` filter.`
                     : undefined,
+                  input.pattern,
                 ),
                 metadata: { count: result.entries.length, truncated: result.truncated, timedOut: result.timedOut },
               })),

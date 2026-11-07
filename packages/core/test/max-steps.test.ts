@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test"
 import type { SessionMessage } from "../src/session/message.js"
 import { DEFAULT_STEPS, MAX_STEPS_PROMPT, TODO_HEADROOM, effectiveStepLimit } from "../src/session/runner/max-steps.js"
 
+const user = (text: string) =>
+  ({
+    type: "user",
+    text,
+  }) as unknown as SessionMessage.Info
+
 const todoStep = (todos: Array<{ status: string; content: string }>) =>
   ({
     type: "assistant",
@@ -41,12 +47,16 @@ describe("max-steps", () => {
 
   test("a turn with fewer than two open todos is not treated as a planned long task", () => {
     expect(
-      effectiveStepLimit([todoStep([{ status: "completed", content: "a" }, { status: "pending", content: "b" }])]),
+      effectiveStepLimit([
+        user("ship it"),
+        todoStep([{ status: "completed", content: "a" }, { status: "pending", content: "b" }]),
+      ]),
     ).toBe(DEFAULT_STEPS)
   })
 
   test("a turn the model planned with two or more open todos gets headroom", () => {
     const planned = [
+      user("ship the field"),
       todoStep([
         { status: "in_progress", content: "wire the field" },
         { status: "pending", content: "add a test" },
@@ -56,8 +66,21 @@ describe("max-steps", () => {
     expect(effectiveStepLimit(planned)).toBe(DEFAULT_STEPS + TODO_HEADROOM)
   })
 
+  test("prior-turn open todos do not grant headroom after a new ask", () => {
+    expect(
+      effectiveStepLimit([
+        todoStep([
+          { status: "in_progress", content: "wire the field" },
+          { status: "pending", content: "add a test" },
+        ]),
+        user("改成中文提示词"),
+      ]),
+    ).toBe(DEFAULT_STEPS)
+  })
+
   test("an empty todo list after the plan means done, and drops back to the tight ceiling", () => {
     const cleared = [
+      user("ship it"),
       todoStep([{ status: "in_progress", content: "a" }, { status: "pending", content: "b" }]),
       todoStep([]),
     ]

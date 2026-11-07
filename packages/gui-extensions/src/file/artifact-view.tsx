@@ -768,7 +768,8 @@ function ArtifactMarkdown(props: { session: MountedSession; path: string; text: 
       openLocalFile={(href) => void links.open({ href, base: dir(), session: props.session })}
       localFileExists={(href) => untrack(() => links.exists({ href, base: dir(), session: props.session }))}
     >
-      <div class="mx-auto w-full max-w-3xl px-8 py-6">
+      {/* SiCode: grow with the side panel (up to 6xl) but keep px gutters — not a fixed 3xl column, not full-bleed. */}
+      <div data-slot="artifact-markdown" class="mx-auto w-full max-w-6xl px-8 py-6">
         <Markdown text={props.text} cacheKey={props.cacheKey} />
       </div>
     </MarkdownProvider>
@@ -778,7 +779,7 @@ function ArtifactMarkdown(props: { session: MountedSession; path: string; text: 
 /** Mermaid sources render through the same fenced-block pipeline the timeline uses. */
 function ArtifactMermaid(props: { text: string; cacheKey?: string }) {
   return (
-    <div class="mx-auto w-full max-w-4xl px-8 py-6">
+    <div data-slot="artifact-markdown" class="mx-auto w-full max-w-6xl px-8 py-6">
       <Markdown text={`\`\`\`mermaid\n${props.text}\n\`\`\``} cacheKey={props.cacheKey} />
     </div>
   )

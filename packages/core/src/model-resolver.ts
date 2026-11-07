@@ -240,7 +240,11 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
           ...runtime.defaults,
           http: mergeHttpOptions(
             runtime.defaults?.http,
-            new HttpOptions({ ...Provider.timeouts(configured), encoding: Provider.encoding(configured) }),
+            // SiCode: pass model id so DeepSeek (incl. relays) defaults to 900s chunkTimeout.
+            new HttpOptions({
+              ...Provider.timeouts(configured, resolved.id),
+              encoding: Provider.encoding(configured),
+            }),
           ),
         },
       })
@@ -409,7 +413,10 @@ export const layer = Layer.effect(
         limit: selected.limit,
         compaction: runtimeInfo.settings?.compaction,
         transport: provider?.settings?.transport,
-        chunkTimeout: Provider.timeout(provider?.settings?.chunkTimeout),
+        // SiCode: DeepSeek model ids (any provider) default to the long think window when unset.
+        chunkTimeout:
+          Provider.timeout(provider?.settings?.chunkTimeout) ??
+          (selected.id.toLowerCase().includes("deepseek") ? Provider.DEEPSEEK_CHUNK_TIMEOUT_MS : undefined),
       }
     })
     return Service.of({

@@ -2,7 +2,9 @@
 ;(() => {
   const key = "__sicodeBridge"
   const api = "__sicodeBridgeAPI"
-  if (globalThis[api]) return
+  // Bump when helpers are added so Bridge upgrades replace the page API without a tab reload.
+  const pageVersion = 3
+  if (globalThis[api]?.__sicodeVersion === pageVersion) return
 
   const store = () => {
     if (!globalThis[key]) globalThis[key] = { refs: new Map(), seq: 0 }
@@ -18,7 +20,12 @@
     return rect.width > 0 && rect.height > 0
   }
 
+  const isFileInput = (el) => el instanceof HTMLInputElement && el.type === "file"
+
+  // Sites often hide input[type=file] (display:none) and open it from a visible button.
+  // Snapshot must still expose those inputs so browser.files.upload has a ref.
   const interesting = (el) => {
+    if (isFileInput(el)) return true
     if (!visible(el)) return false
     const tag = el.tagName.toLowerCase()
     if (["a", "button", "input", "textarea", "select", "summary", "dialog"].includes(tag)) return true
@@ -54,6 +61,7 @@
       if (type === "radio") return "radio"
       if (type === "submit" || type === "button") return "button"
       if (type === "search") return "searchbox"
+      if (type === "file") return "file"
       return "textbox"
     }
     return tag
@@ -84,6 +92,11 @@
       if (el.readOnly) flags.push("readonly=true")
       if (el.required) flags.push("required=true")
     }
+    if (isFileInput(el)) {
+      if (el.accept) flags.push(`accept=${JSON.stringify(el.accept)}`)
+      if (el.multiple) flags.push("multiple=true")
+      if (!visible(el)) flags.push("hidden=true")
+    }
     return flags
   }
 
@@ -91,6 +104,15 @@
     `Element ref ${ref} is unknown or stale. Call browser.snapshot({tabID}) and use a ref from that tab's newest snapshot. Do not reuse refs after navigation or a newer snapshot.`
 
   const labelOf = (el) => {
+    if (isFileInput(el)) {
+      const raw =
+        el.getAttribute("aria-label") ||
+        el.getAttribute("title") ||
+        el.getAttribute("name") ||
+        el.id ||
+        (el.accept ? `file (${el.accept})` : "file input")
+      return String(raw).replace(/\s+/g, " ").trim().slice(0, 300)
+    }
     const raw =
       el.getAttribute("aria-label") ||
       el.getAttribute("placeholder") ||
@@ -102,6 +124,25 @@
         : "") ||
       (el.textContent || "")
     return String(raw).replace(/\s+/g, " ").trim().slice(0, 300)
+  }
+
+  /** Prefer the file input itself; otherwise a uniquely associated one near a visible control. */
+  const resolveFileInput = (el) => {
+    if (isFileInput(el)) return el
+    if (el instanceof HTMLLabelElement && isFileInput(el.control)) return el.control
+    const nested = el.querySelector?.("input[type=file]")
+    if (nested && isFileInput(nested)) return nested
+    const form = el.closest?.("form")
+    if (form) {
+      const inputs = [...form.querySelectorAll("input[type=file]")].filter(isFileInput)
+      if (inputs.length === 1) return inputs[0]
+    }
+    let parent = el.parentElement
+    for (let i = 0; i < 4 && parent; i += 1, parent = parent.parentElement) {
+      const inputs = [...parent.querySelectorAll("input[type=file]")].filter(isFileInput)
+      if (inputs.length === 1) return inputs[0]
+    }
+    return null
   }
 
   /** Mirror of @opencode/util/destructive-web-ui — keep in sync (extension cannot import util). */
@@ -189,6 +230,8 @@
   }
 
   globalThis[api] = {
+    __sicodeVersion: pageVersion,
+
     snapshot(depth = 8) {
       const state = store()
       state.refs.clear()
@@ -238,6 +281,29 @@
       }
 
       walk(document.body || document.documentElement, 0)
+
+      // Light-DOM walk misses open shadow roots; append any remaining file inputs.
+      const seen = new Set([...state.refs.values()])
+      const visitShadow = (root) => {
+        if (!root || truncated || lines.length >= maxLines) return
+        for (const el of root.querySelectorAll("input[type=file]")) {
+          if (seen.has(el)) continue
+          seen.add(el)
+          if (!interesting(el)) continue
+          state.seq += 1
+          const ref = `e${state.seq}`
+          state.refs.set(ref, el)
+          const flags = flagsOf(el)
+          lines.push(
+            `@${ref} [${roleOf(el)}] ${JSON.stringify(labelOf(el))}${flags.length ? ` ${flags.join(" ")}` : ""}`,
+          )
+        }
+        for (const host of root.querySelectorAll("*")) {
+          if (host.shadowRoot) visitShadow(host.shadowRoot)
+        }
+      }
+      visitShadow(document)
+
       return { content: lines.join("\n"), truncated }
     },
 
@@ -285,6 +351,131 @@
         return true
       }
       throw new Error("Target is not an editable field. Choose a textbox ref from the snapshot.")
+    },
+
+    select(ref, values) {
+      const el = store().refs.get(ref)
+      if (!(el instanceof HTMLSelectElement) || el.disabled) {
+        throw new Error(
+          "Target is not an enabled HTML select. Take a fresh snapshot and choose an enabled dropdown ref.",
+        )
+      }
+      if (!Array.isArray(values) || values.length === 0) {
+        throw new Error("browser.select requires a non-empty values array of option value attributes.")
+      }
+      if (!el.multiple && values.length !== 1) {
+        throw new Error("This dropdown accepts exactly one value; pass a one-item values array.")
+      }
+      for (const value of values) {
+        if (!Array.from(el.options).some((option) => option.value === value && !option.disabled)) {
+          throw new Error(
+            "Option value was not found or is disabled. Inspect option values with browser.evaluate before retrying browser.select; values are not visible labels.",
+          )
+        }
+      }
+      el.scrollIntoView({ block: "center", inline: "center" })
+      for (const option of el.options) option.selected = values.includes(option.value)
+      el.dispatchEvent(new Event("input", { bubbles: true }))
+      el.dispatchEvent(new Event("change", { bubbles: true }))
+      return true
+    },
+
+    check(ref, checked) {
+      const el = store().refs.get(ref)
+      if (!(el instanceof HTMLInputElement) || !["checkbox", "radio"].includes(el.type) || el.disabled) {
+        throw new Error("Target is not an enabled checkbox or radio. Take a fresh snapshot and choose the correct ref.")
+      }
+      if (el.type === "radio" && el.checked && !checked) {
+        throw new Error(
+          "A selected radio cannot be cleared by clicking it. Select a different radio in its group instead.",
+        )
+      }
+      el.scrollIntoView({ block: "center", inline: "center" })
+      if (el.checked !== checked) {
+        if (!(el instanceof HTMLElement)) throw new Error(staleRef(ref))
+        el.click()
+      }
+      if (el.checked !== checked) {
+        throw new Error(
+          "The page did not keep the requested checked state. Inspect the current snapshot and page validation before retrying; do not blindly toggle the control again.",
+        )
+      }
+      return true
+    },
+
+    hover(ref) {
+      const el = store().refs.get(ref)
+      if (!(el instanceof Element)) throw new Error(staleRef(ref))
+      el.scrollIntoView({ block: "center", inline: "center" })
+      const rect = el.getBoundingClientRect()
+      const x = rect.left + rect.width / 2
+      const y = rect.top + rect.height / 2
+      const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }
+      el.dispatchEvent(new MouseEvent("mouseover", opts))
+      el.dispatchEvent(new MouseEvent("mouseenter", opts))
+      el.dispatchEvent(new MouseEvent("mousemove", opts))
+      return true
+    },
+
+    fill_form(fields) {
+      if (!Array.isArray(fields) || fields.length === 0) {
+        throw new Error("browser.fill_form requires a non-empty fields array.")
+      }
+      for (const field of fields) {
+        if (!field || typeof field !== "object" || !field.ref) {
+          throw new Error("Each fill_form field needs a ref from this tab's snapshot.")
+        }
+        if (field.type === "text") globalThis[api].fill(field.ref, String(field.value ?? ""))
+        else if (field.type === "select") globalThis[api].select(field.ref, field.values ?? [])
+        else if (field.type === "check") globalThis[api].check(field.ref, !!field.checked)
+        else throw new Error(`Unknown fill_form field type ${JSON.stringify(field.type)}. Use text, select, or check.`)
+      }
+      return true
+    },
+
+    /** True when document body text includes needle (case-sensitive literal). */
+    hasText(text) {
+      return (document.body?.innerText || "").includes(String(text ?? ""))
+    },
+
+    /** Mark a file input so the extension debugger can click it under file-chooser interception. */
+    markFileInput(ref, token) {
+      const el = store().refs.get(ref)
+      if (!(el instanceof Element)) throw new Error(staleRef(ref))
+      const input = resolveFileInput(el)
+      if (!input) {
+        throw new Error(
+          "Target is not a file input and no associated input[type=file] was found. Call browser.snapshot({tabID}) and choose a [file] ref (including hidden=true), or a control that wraps / labels a single file input.",
+        )
+      }
+      if (visible(input)) input.scrollIntoView({ block: "center", inline: "center" })
+      input.setAttribute("data-sicode-upload", token)
+      return true
+    },
+
+    /** Click a previously marked file input so Page.fileChooserOpened fires under interception. */
+    openMarkedFileInput(token) {
+      const safe = String(token ?? "").replace(/[^a-zA-Z0-9_-]/g, "")
+      if (!safe) throw new Error("Upload marker token was empty.")
+      const input = document.querySelector(`[data-sicode-upload="${safe}"]`)
+      if (!(input instanceof HTMLInputElement) || input.type !== "file") {
+        throw new Error(
+          "File input marker was not found. Call browser.snapshot({tabID}) and retry browser.files.upload with a fresh file-input ref.",
+        )
+      }
+      if (visible(input)) input.scrollIntoView({ block: "center", inline: "center" })
+      input.click()
+      return true
+    },
+
+    /** Clear the temporary upload marker after a successful attach. */
+    clearMarkedFileInput(token) {
+      const safe = String(token ?? "").replace(/[^a-zA-Z0-9_-]/g, "")
+      if (!safe) return false
+      const input = document.querySelector(`[data-sicode-upload="${safe}"]`)
+      if (!(input instanceof Element)) return false
+      input.removeAttribute("data-sicode-upload")
+      return true
     },
 
     evaluate(script, ref, allowDestructive = false) {

@@ -6,8 +6,10 @@ export function protocolError(method: string, error: unknown) {
   const detail = message(error)
 
   const recovery =
-    method === "DOM.setFileInputFiles" && /not.*file input/i.test(detail)
-      ? "Target is not a file input. Call browser.snapshot({tabID}) and choose an input[type=file] ref for browser.files.upload, or use browser.files.drop for a drop area."
+    method === "DOM.setFileInputFiles" && /not allowed/i.test(detail)
+      ? "System Chrome rejected a direct file attach (chrome.debugger). Reinstall SiCode Browser Bridge ≥0.2.42 so upload uses file-chooser interception, then retry browser.files.upload with a [file] ref."
+      : method === "DOM.setFileInputFiles" && /not.*file input/i.test(detail)
+        ? "Target is not a file input. Call browser.snapshot({tabID}) and choose a [file] ref (including hidden=true) for browser.files.upload, or use browser.files.drop for a drop area."
       : method === "Runtime.callFunctionOn" && /not evaluate to a function/i.test(detail)
         ? "With ref, browser.evaluate needs a function that receives the element, for example (element) => element.textContent."
         : /(?:node|object).*(?:not found|not exist)|(?:find|resolve).*(?:node|object)|detached/i.test(detail)

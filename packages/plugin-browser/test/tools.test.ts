@@ -21,6 +21,28 @@ test("URL normalization rejects filesystem paths instead of treating them as hos
   })
 })
 
+test("evaluate accepts CDP expression as an alias for script", () => {
+  const code = `(() => document.title)()`
+  expect(
+    BrowserTools.normalizeAction({ type: "evaluate", tabID, expression: code } as Browser.Action),
+  ).toEqual({ type: "evaluate", tabID, script: code })
+  expect(BrowserTools.normalizeAction({ type: "evaluate", tabID, script: code })).toEqual({
+    type: "evaluate",
+    tabID,
+    script: code,
+  })
+  // Prefer script when both are sent.
+  expect(
+    BrowserTools.normalizeAction({
+      type: "evaluate",
+      tabID,
+      script: "script-wins",
+      expression: "expression-loses",
+    } as Browser.Action),
+  ).toEqual({ type: "evaluate", tabID, script: "script-wins" })
+  expect(() => BrowserTools.normalizeAction({ type: "evaluate", tabID } as Browser.Action)).toThrow(/requires `script`/)
+})
+
 test("URL normalization fails fast when percent-encoding exceeds the command bound", () => {
   const input = `https://example.com/${"é".repeat(400)}`
   expect(input.length).toBeLessThan(2_048)

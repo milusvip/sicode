@@ -64,9 +64,11 @@ export function createComposerAttachments(
     const mime = await attachmentMime(file)
     const destination = input.destination()
 
-    if (native(mime, destination.input) && file.size <= MAX_INLINE_BYTES) return addInline(file, mime, target, clipboard)
     const sourcePath = input.getPathForFile?.(file) || undefined
-
+    // SiCode: native images/PDF keep the inline chip (vision bytes). Request turns absolute
+    // sourcePath into file://. Other local files attach by path. Clipboard pastes (no path) stay
+    // inline and the server persists them under data/attachments/<session>/.
+    if (native(mime, destination.input) && file.size <= MAX_INLINE_BYTES) return addInline(file, mime, target, clipboard)
     if (destination.local && sourcePath) return addPath(target, { filename: file.name, mime, path: sourcePath })
     void stage(file, mime, target, destination)
 

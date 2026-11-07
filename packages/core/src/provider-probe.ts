@@ -171,6 +171,36 @@ async function requestChat(input: ChatProbeInput): Promise<void> {
   throw new Error(attempts.join("; ") || "Unable to reach the provider")
 }
 
+/**
+ * Prefer a one-token chat when a model id is known; if that fails, fall back to the model listing.
+ * Many OpenAI-compatible gateways reject the probe chat (wrong model id, max_tokens quirks, or a
+ * misleading 401 "Invalid token") even when the same key answers real sessions — listing is enough
+ * to prove the base URL and credentials, and avoids a false "connection failed".
+ */
+async function requestTest(input: ProbeInput & { model?: string }): Promise<"chat" | "models"> {
+  const model = input.model?.trim()
+
+  if (!model) {
+    await requestModels(input)
+
+    return "models"
+  }
+
+  try {
+    await requestChat({ ...input, model })
+
+    return "chat"
+  } catch (chatError) {
+    try {
+      await requestModels(input)
+
+      return "models"
+    } catch {
+      throw chatError instanceof Error ? chatError : new Error(String(chatError))
+    }
+  }
+}
+
 const failure = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
 
 export const probeModels = (input: ProbeInput) =>
@@ -178,3 +208,9 @@ export const probeModels = (input: ProbeInput) =>
 
 export const probeChat = (input: ChatProbeInput) =>
   Effect.tryPromise({ try: () => requestChat(input), catch: failure })
+
+export const probeTest = (input: ProbeInput & { model?: string }) =>
+  Effect.tryPromise({
+    try: () => requestTest(input).then((mode) => ({ mode })),
+    catch: failure,
+  })

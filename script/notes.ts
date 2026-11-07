@@ -7,6 +7,7 @@
 //
 //   bun script/notes.ts list
 //   bun script/notes.ts verify      # paths that no longer exist
+//   bun script/notes.ts drop --area "生图与对话"
 //   bun script/notes.ts merge       # collapse "区（2026-10-23）" into "区"
 //
 // Why this exists: several agents work in this repo at once, and each of them "just writes the file". A whole-file
@@ -170,6 +171,17 @@ export function list() {
   }
 }
 
+/** Remove every section whose area matches. Used when a whole topic is deleted from the repo. */
+export function drop(area: string) {
+  const changed = edit((text) => {
+    const { head, sections } = parse(text)
+    const kept = sections.filter((section) => section.area !== area)
+    if (kept.length === sections.length) return text
+    return render(head, kept)
+  })
+  console.log(changed ? `dropped "${area}"` : `nothing to drop for "${area}"`)
+}
+
 /** Correct a note that names the wrong path, in the same lock every writer already takes. */
 export function fix(pairs: ReadonlyArray<readonly [string, string]>) {
   if (pairs.length === 0) throw new Error('fix needs --from "old" --to "new"')
@@ -307,6 +319,10 @@ if (command === "add") {
   list()
 } else if (command === "verify") {
   verify()
+} else if (command === "drop") {
+  const area = option("area")
+  if (!area) throw new Error('drop needs --area "<区域名>"')
+  drop(areaOf(area))
 } else if (command === "fix") {
   const from: string[] = []
   const to: string[] = []
@@ -319,7 +335,9 @@ if (command === "add") {
 } else if (command === "merge") {
   merge(aliases(rest))
 } else {
-  console.log('usage: bun script/notes.ts <add --area NAME|list|verify|merge [--alias "from=to"]...>')
+  console.log(
+    'usage: bun script/notes.ts <add --area NAME|drop --area NAME|list|verify|merge [--alias "from=to"]...>',
+  )
   process.exitCode = 1
 }
 }

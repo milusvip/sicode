@@ -1,5 +1,6 @@
 import { createStore, produce, reconcile } from "solid-js/store"
 import type { FileNode } from "@/runtime/server/types"
+import { containsFilePath } from "./path"
 
 type DirectoryState = {
   expanded: boolean
@@ -14,6 +15,11 @@ type TreeStoreOptions = {
   normalizeDir: (input: string) => string
   list: (input: string) => Promise<FileNode[]>
   onError: (message: string) => void
+  /**
+   * Paths a fresh listing no longer contains, files and whole directories alike. The store drops their nodes; a caller
+   * that also caches the files themselves drops that too, so a deleted file cannot stay on screen.
+   */
+  onRemove?: (paths: readonly string[]) => void
 }
 
 export function createFileTreeStore(options: TreeStoreOptions) {
@@ -69,6 +75,7 @@ export function createFileTreeStore(options: TreeStoreOptions) {
         const prevChildren = tree.dir[dir]?.children ?? []
         const nextChildren = nodes.map((node) => node.path)
         const nextSet = new Set(nextChildren)
+        const removed: string[] = []
 
         setTree(
           "node",
@@ -80,18 +87,18 @@ export function createFileTreeStore(options: TreeStoreOptions) {
               const existing = draft[child]
 
               if (existing?.type === "directory") removedDirs.push(child)
+              removed.push(child)
               delete draft[child]
             }
 
             if (removedDirs.length > 0) {
               const keys = Object.keys(draft)
 
+              // SiCode: a removed directory's own path carries the server's separator and a trailing one, so compare
+              // through containsFilePath instead of joining a separator onto it.
               for (const key of keys) {
-                for (const removed of removedDirs) {
-                  if (!key.startsWith(removed + "/")) continue
-                  delete draft[key]
-                  break
-                }
+                if (!removedDirs.some((removed) => containsFilePath(removed, key))) continue
+                delete draft[key]
               }
             }
 
@@ -100,6 +107,8 @@ export function createFileTreeStore(options: TreeStoreOptions) {
             }
           }),
         )
+
+        if (removed.length > 0) options.onRemove?.(removed)
 
         setTree(
           "dir",

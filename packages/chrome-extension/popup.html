@@ -91,10 +91,21 @@
         font: 11px/26px var(--font);
         cursor: pointer;
         text-align: center;
+        transition: background-color 120ms ease, color 120ms ease;
+      }
+
+      .lang button:hover {
+        background: #efefef;
+        color: var(--text);
       }
 
       .lang button[aria-pressed="true"] {
         background: var(--primary);
+        color: var(--primary-text);
+      }
+
+      .lang button[aria-pressed="true"]:hover {
+        background: #2a2a2a;
         color: var(--primary-text);
       }
 
@@ -203,6 +214,16 @@
         color: #5c4308;
         font: 600 11px/1.3 var(--font);
         cursor: pointer;
+        transition: background-color 120ms ease, border-color 120ms ease;
+      }
+
+      .update-open:hover {
+        background: #fff3d6;
+        border-color: #c9b06e;
+      }
+
+      .update-open:active {
+        background: #ffe9b8;
       }
 
       .actions {
@@ -220,6 +241,7 @@
         padding: 9px 12px;
         font: 600 12px/1.3 var(--font);
         cursor: pointer;
+        transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
       }
 
       .push {
@@ -227,11 +249,30 @@
         color: var(--primary-text);
       }
 
+      .push:hover:not(:disabled) {
+        background: #2a2a2a;
+      }
+
+      .push:active:not(:disabled) {
+        background: #000;
+      }
+
       .pick-element,
       .copy-login {
         border: 1px solid var(--border);
         background: var(--surface);
         color: var(--text);
+      }
+
+      .pick-element:hover:not(:disabled),
+      .copy-login:hover:not(:disabled) {
+        background: #f2f2f2;
+        border-color: #d4d4d4;
+      }
+
+      .pick-element:active:not(:disabled),
+      .copy-login:active:not(:disabled) {
+        background: #ebebeb;
       }
 
       .push:disabled,
@@ -283,10 +324,10 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="push" id="push-tab" data-i18n="push">推送到对话</button>
-        <button type="button" class="pick-element" id="pick-element" data-i18n="pick">选元素推送</button>
+        <button type="button" class="push" id="push-tab" data-i18n="push" disabled>推送到对话</button>
+        <button type="button" class="pick-element" id="pick-element" data-i18n="pick" disabled>选元素推送</button>
         <button type="button" class="copy-login" id="copy-login" data-i18n="copy_login">复制登录态</button>
-        <button type="button" class="copy-login" id="sync-login" data-i18n="sync_login">同步登录态到内置浏览器</button>
+        <button type="button" class="copy-login" id="sync-login" data-i18n="sync_login" disabled>同步登录态到内置浏览器</button>
         <div class="push-feedback" id="push-feedback" aria-live="polite"></div>
       </div>
 

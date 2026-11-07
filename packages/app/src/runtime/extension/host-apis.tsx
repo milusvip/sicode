@@ -290,9 +290,10 @@ export function createHostApis() {
     }),
     screen: () => ({
       current: () => {
-        const attached = current()
-
-        return attached?.current() ? attached.screen() : undefined
+        // SiCode: drafts (new conversation, not yet sent) also publish a SessionScreen so
+        // system-browser push can land chips before a real session exists. Prefer the
+        // MountedSession-backed screen when both exist; otherwise take whatever is published.
+        return current()?.screen()
       },
     }),
     // Before the interface mounts, reads return what an empty layout holds and writes wait for it.
@@ -877,7 +878,7 @@ export function createExtensionAttachment(apis: HostApis) {
         if (session) selectMobile(session, view)
       },
     },
-    /** A screen started rendering: `Screen.current` returns it only while its session matches the route. */
+    /** A session or draft screen started rendering: `Screen.current` returns it until this publisher unmounts. */
     screen(value: SessionScreen) {
       setScreen(() => value)
 

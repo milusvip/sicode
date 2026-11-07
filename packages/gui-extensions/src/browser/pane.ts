@@ -16,6 +16,7 @@ import type { PaneEvent } from "./ipc"
 import { createBrowserRestoreStore } from "./restore"
 import { createLocalStorageStore, storageOrigin, writeScript } from "./local-storage"
 import { createSessionJar } from "./session-jar"
+import { canonicalizeBrowserURL, planTabsOpen } from "./tab-open-policy"
 
 type Target = { readonly server: string; readonly session: string; readonly restore?: Browser.State }
 
@@ -137,8 +138,8 @@ export function createBrowserPane(input: {
         focusedTabID: previous.focusedTabID,
         partition: `opencode-browser-${crypto.randomUUID()}`,
         storageKey,
-        // Panel default: read-only until the user allows writes for this attachment.
-        access: target.access ?? "read",
+        // SiCode: default full — agents need click/fill/upload without a manual grant.
+        access: target.access ?? "full",
         locked: { read: false, write: false },
         fileRoots: [],
         local: server.local === true,
@@ -737,12 +738,56 @@ export function createBrowserPane(input: {
     }
 
     if (action.type === "tabs.open") {
+      // SiCode: one document → one tab. Same path (even with a fresh ?np=) reuses and refreshes;
+      // blanks / duplicate URLs / overflow are pruned before a real create.
+      const url = action.url?.trim() || "about:blank"
+      const state = inventory(entry)
+      const plan = planTabsOpen({
+        tabs: state.tabs.map((tab) => ({ id: tab.id, url: tab.url })),
+        focusedTabID: entry.focusedTabID,
+        url,
+      })
+      for (const id of plan.closeTabIDs) {
+        await closePage(entry, id).catch(() => undefined)
+      }
+
+      const reuseID =
+        plan.reuseTabID ??
+        (canonicalizeBrowserURL(url) === "about:blank" ? entry.focusedTabID : null)
+
+      if (reuseID) {
+        const current = inventory(entry).tabs.find((tab) => tab.id === reuseID)
+        if (current) {
+          if (action.focus !== false) focus(entry, reuseID)
+          const page = load(entry, reuseID)
+          if (page) {
+            await page.ready
+            if (canonicalizeBrowserURL(url) === "about:blank") {
+              publishState(entry)
+              return { value: page.state(), files: [] }
+            }
+            // Same document identity with a different raw URL (cache-bust) → navigate in place.
+            // Exact same URL → reload so a rewritten file/preview shows without a second tab.
+            if (canonicalizeBrowserURL(current.url) !== canonicalizeBrowserURL(url) || current.url !== url) {
+              await page.execute(
+                { action: { type: "navigate", tabID: reuseID, url }, files: [] },
+                signal,
+              )
+            } else {
+              await page.execute({ action: { type: "reload", tabID: reuseID }, files: [] }, signal)
+            }
+            publishState(entry)
+            return { value: page.state(), files: [] }
+          }
+        }
+      }
+
       const page = create(entry)
 
       if (action.focus !== false) focus(entry, page.state().id)
       await page.ready
       await page.execute(
-        { action: { type: "navigate", tabID: page.state().id, url: action.url ?? "about:blank" }, files: [] },
+        { action: { type: "navigate", tabID: page.state().id, url }, files: [] },
         signal,
       )
       publishState(entry)
@@ -773,6 +818,9 @@ export function createBrowserPane(input: {
     await page.ready
     const result = await page.execute(command, signal)
     publishState(entry)
+    // SiCode: navigating (or otherwise driving) an existing tab must still open the Review pane.
+    // tabs.open already focuses; agent navigate used to leave the side region closed while audio played.
+    if (action.type === "navigate") focus(entry, action.tabID)
 
     return result
   }

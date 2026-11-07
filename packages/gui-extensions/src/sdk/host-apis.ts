@@ -598,10 +598,10 @@ export interface SessionScreen {
 /** The session screen, while it routes the mounted session. */
 export interface Screen {
   /**
-   * The mounted session screen: the same object for as long as it stays mounted, whichever session it routes. Defined
-   * exactly when `Sessions.current()` is, after the screen's first render; undefined on Home, on a draft,
-   * while the route has left the mounted screen, and before the app interface mounts. Panel callbacks and session
-   * slots receive a non-null screen directly. Reactive.
+   * The mounted session screen: the same object for as long as it stays mounted, whichever session it routes. Also
+   * defined on a new-session draft (before the first send) so composer attach (e.g. system-browser push) can land
+   * chips. Undefined on Home, while the route has left the mounted screen, and before the app interface mounts.
+   * Panel callbacks and session slots receive a non-null screen directly. Reactive.
    */
   current(): SessionScreen | undefined
 }
@@ -612,9 +612,9 @@ export interface Sessions {
   list(): readonly SessionRef[]
   /**
    * The routed, mounted session: a new object each time a session is routed. Undefined on Home, on a draft, and
-   * before the app interface mounts and during the screen's first render. Defined exactly when `Screen.current()`
-   * is, after that first render. Panel and session-slot inputs are available during render directly.
-   * Reactive.
+   * before the app interface mounts and during the screen's first render. A draft still publishes
+   * `Screen.current()` (composer attach) without a MountedSession. Panel and session-slot inputs are available
+   * during render directly. Reactive.
    */
   current(): MountedSession | undefined
 }

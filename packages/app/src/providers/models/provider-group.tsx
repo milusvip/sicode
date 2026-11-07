@@ -7,12 +7,13 @@ import { ProviderIcon } from "@opencode/ui/provider-icon"
 import type { JSX } from "solid-js"
 import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { consoleProviderGroup, consoleProviderName } from "@/providers/catalog/console"
+import { providerDisplay } from "@/providers/models/display"
 import { OpenCodeLogo } from "@/providers/opencode-logo"
 import { useLanguage } from "@/runtime/i18n/language"
 import customManagedProvider from "@/providers/custom-managed-provider.svg"
 import "@/settings/settings.css"
 
-type ModelProvider = { id: string; canonical?: string; name: string }
+type ModelProvider = { id: string; canonical?: string; name: string; options?: Record<string, unknown> }
 
 type ModelItem = { provider: ModelProvider & { integrationID?: string }; cost?: { input: number } }
 
@@ -55,7 +56,7 @@ export function consoleModelGroup<T extends ModelItem>(items: readonly T[]) {
 /** Provider sections for a model list, with Console workspace providers nested under one OpenCode Console section. */
 export function ProviderModelSections<T extends ModelItem>(props: {
   groups: ModelGroup<T>[]
-  managed: ReturnType<typeof consoleModelGroup<T>>
+  managed?: ReturnType<typeof consoleModelGroup<T>>
   expanded: (key: string) => boolean
   disabled: boolean
   onExpandedChange: (key: string, expanded: boolean) => void
@@ -90,12 +91,22 @@ export function ProviderModelSections<T extends ModelItem>(props: {
   })
 
   // Only the keyless catalog is free; a Zen key or Console account keeps the provider's own name.
-  const name = (group: ModelGroup<T>) =>
-    group.category === "opencode" && group.items.every((item) => !item.cost?.input)
-      ? language.t("provider.connect.opencode.freeName")
-      : group.items[0].provider.name
+  const label = (group: ModelGroup<T>) => {
+    if (group.category === "opencode" && group.items.every((item) => !item.cost?.input)) {
+      return { title: language.t("provider.connect.opencode.freeName"), subtitle: undefined as string | undefined }
+    }
 
-  function Header(input: { id: string; icon: JSX.Element; title: JSX.Element; badge?: string; action?: JSX.Element }) {
+    return providerDisplay(group.items[0].provider)
+  }
+
+  function Header(input: {
+    id: string
+    icon: JSX.Element
+    title: JSX.Element
+    subtitle?: string
+    badge?: string
+    action?: JSX.Element
+  }) {
     return (
       <h3 class="settings-models-group-header" classList={{ "justify-between": !!input.action }}>
         <button
@@ -110,7 +121,12 @@ export function ProviderModelSections<T extends ModelItem>(props: {
           </span>
           <span class="settings-models-group-label">
             {input.icon}
-            <bdi class="settings-models-group-title">{input.title}</bdi>
+            <span class="settings-models-group-copy">
+              <bdi class="settings-models-group-title">{input.title}</bdi>
+              <Show when={input.subtitle}>
+                {(subtitle) => <span class="settings-models-group-subtitle">{subtitle()}</span>}
+              </Show>
+            </span>
             <Show when={input.badge}>{(badge) => <Badge>{badge()}</Badge>}</Show>
           </span>
         </button>
@@ -136,7 +152,8 @@ export function ProviderModelSections<T extends ModelItem>(props: {
                   <Header
                     id={group().category}
                     icon={<ProviderModelIcon provider={group().items[0].provider} class="shrink-0" />}
-                    title={name(group())}
+                    title={label(group()).title}
+                    subtitle={label(group()).subtitle}
                     action={props.action?.(group())}
                   />
                   <Show when={props.expanded(group().category)}>{props.rows(group().items)}</Show>
@@ -164,7 +181,8 @@ export function ProviderModelSections<T extends ModelItem>(props: {
                       <ProviderModelGroup
                         ref={(element) => props.ref?.(group.category, element)}
                         provider={group.items[0].provider}
-                        name={consoleProviderName(managed().group, group.items[0].provider.name)}
+                        name={consoleProviderName(managed().group, providerDisplay(group.items[0].provider).title)}
+                        subtitle={providerDisplay(group.items[0].provider).subtitle}
                         expanded={props.expanded(group.category)}
                         disabled={props.disabled}
                         onSetVisibility={
@@ -191,6 +209,7 @@ export function ProviderModelSections<T extends ModelItem>(props: {
 export function ProviderModelGroup(props: {
   provider: ModelProvider
   name?: string
+  subtitle?: string
   expanded: boolean
   disabled?: boolean
   onSetVisibility?: (visible: boolean) => void
@@ -218,7 +237,12 @@ export function ProviderModelGroup(props: {
         >
           <span class="provider-model-group-label">
             <ProviderModelIcon provider={props.provider} class="shrink-0" />
-            <bdi class="provider-model-group-title">{props.name ?? props.provider.name}</bdi>
+            <span class="settings-models-group-copy">
+              <bdi class="provider-model-group-title">{props.name ?? providerDisplay(props.provider).title}</bdi>
+              <Show when={props.subtitle ?? providerDisplay(props.provider).subtitle}>
+                {(subtitle) => <span class="settings-models-group-subtitle">{subtitle()}</span>}
+              </Show>
+            </span>
             <Icon
               name="chevron-down"
               size="small"
@@ -239,9 +263,9 @@ export function ProviderModelGroup(props: {
                 />
                 <Menu.Portal>
                   <Menu.Content>
-                    <Menu.Item onSelect={() => setVisibility(true)}>{language.t("settings.models.enableAll")}</Menu.Item>
+                    <Menu.Item onSelect={() => setVisibility(true)}>{language.t("settings.models.showAll")}</Menu.Item>
                     <Menu.Item onSelect={() => setVisibility(false)}>
-                      {language.t("settings.models.disableAll")}
+                      {language.t("settings.models.hideAll")}
                     </Menu.Item>
                   </Menu.Content>
                 </Menu.Portal>
@@ -254,5 +278,26 @@ export function ProviderModelGroup(props: {
         <div class="provider-model-group-models">{props.children}</div>
       </Show>
     </section>
+  )
+}
+
+/** Bulk show/hide control for a provider header — not a second visibility switch. */
+export function ProviderVisibilityBulk(props: {
+  allVisible: boolean
+  onChange: (visible: boolean) => void
+}) {
+  const language = useLanguage()
+
+  return (
+    <button
+      type="button"
+      class="settings-models-bulk"
+      onClick={(event) => {
+        event.stopPropagation()
+        props.onChange(!props.allVisible)
+      }}
+    >
+      {props.allVisible ? language.t("settings.models.hideAll") : language.t("settings.models.showAll")}
+    </button>
   )
 }

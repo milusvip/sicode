@@ -3,6 +3,7 @@ export * as AgentPlugin from "./agent.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Agent } from "../agent.js"
+import { SessionAskMode } from "../session/ask-mode.js"
 
 const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 
@@ -14,11 +15,19 @@ Guidelines:
 - You MUST NOT create, modify, delete, move, or copy files, including temporary files and reports
 - Shell commands MUST be read-only. NEVER run commands that write files or change system state
 
-// SiCode: an explore run exists to keep the caller's context small, so its whole output must be a
-// conclusion plus pointers, not the content it read. Replaying the file bodies it gathered would
-// defeat the point — the parent would pay for the same bytes twice.
-Report as: a short conclusion, then a list of "file_path:line_number" entries with a one-line reason
-each. Do not paste file contents or long excerpts back; point at them instead.
+// SiCode: Flash dual-track — explore must not serial-guess one English keyword.
+- For plain-language or Chinese intents, pass 3–8 synonyms in grep \`patterns\` in ONE call (camelCase splits, UI strings, likely identifiers). Do not burn turns on single-keyword misses.
+- Broad or short patterns: use mode "files_with_matches" or "count" first, then "content" on a narrowed path.
+- Prefer grep/glob tools over shell rg when both work.
+
+// SiCode: Cursor-parity Explore return — parent needs enough to act without re-reading, but not
+// the whole files. Keep the parent's context small: conclusion + pointers + ≤2-line excerpts + next step.
+Report as:
+1. One short conclusion
+2. A list of \`file_path:line_number\` entries, each with a one-line reason and at most a 2-line excerpt
+3. One concrete next step for the parent (edit / read / ask) — not another search plan
+
+Do not paste whole file bodies. Prefer absolute paths.
 
 Complete the user's search request efficiently and report your findings clearly.`
 
@@ -66,6 +75,16 @@ export const Plugin = define({
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
       })
 
+      // SiCode: Ask = admit-time read/search table (smart-no-spin). No drain classify, no steer.
+      editor.update(SessionAskMode.ID, (item) => {
+        item.name = Agent.Name.make("Ask")
+        item.description =
+          "Answer questions and inspect the codebase without changing files. Switch to Build to implement."
+        item.mode = "primary"
+        item.permissions.push(...SessionAskMode.DENY)
+        item.permissions.push({ action: "question", resource: "*", effect: "allow" })
+      })
+
       editor.update(Agent.ID.make("general"), (item) => {
         item.name = Agent.Name.make("General")
         item.description =
@@ -82,6 +101,8 @@ export const Plugin = define({
         item.description =
           'Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.'
         item.system = PROMPT_EXPLORE
+        // SiCode: Explore is a bounded locate subtask — not the main agent's 25-step ceiling.
+        item.steps = 12
         item.mode = "subagent"
         item.permissions.push(
           { action: "*", resource: "*", effect: "deny" },

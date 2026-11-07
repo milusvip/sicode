@@ -5,7 +5,9 @@ import { PromptInput } from "@opencode/schema/prompt-input"
 import { SessionInbox } from "@opencode/schema/session-inbox"
 import type { Session } from "@opencode/schema/session"
 import type { SessionMessage } from "@opencode/schema/session-message"
+import { Identifier } from "@opencode/schema/identifier"
 import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
 import { Effect } from "effect"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -16,6 +18,12 @@ import { Plugin } from "../plugin/service.js"
 import { PluginHooks } from "../plugin/hooks.js"
 import { Skill } from "../skill.js"
 import { AttachmentError, SkillNotFoundError } from "./error.js"
+
+/**
+ * Clipboard-only paste copies live here. Files that already exist elsewhere are referenced in
+ * place — never copied into this directory, never cleaned up by SiCode.
+ */
+export const ATTACHMENT_DIRECTORY = "attachments"
 
 // Image types the resizer can decode; others such as HEIC and AVIF go to the provider unchanged.
 const RESIZABLE_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"])
@@ -54,7 +62,9 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
     })
     const input = event.prompt
     const files = input.files
-      ? yield* Effect.forEach(input.files, materializeAttachment, { concurrency: 8 })
+      ? yield* Effect.forEach(input.files, (file) => materializeAttachment(file, request.session.id), {
+          concurrency: 8,
+        })
       : undefined
     const requested = input.skills
     const selected = yield* Effect.gen(function* () {
@@ -93,6 +103,7 @@ export const prepare = Effect.fn("SessionPrompt.prepare")(function* (request: {
 
 const materializeAttachment = Effect.fn("SessionPrompt.materializeAttachment")(function* (
   input: PromptInput.FileAttachment,
+  sessionID: string,
 ) {
   const label = attachmentLabel(input)
   const resolved = input.uri.startsWith("data:")
@@ -123,15 +134,100 @@ const materializeAttachment = Effect.fn("SessionPrompt.materializeAttachment")(f
         )
       : resolved.bytes
   const normalized = yield* normalizeImageAttachment(input, Buffer.from(content).toString("base64"), mime)
+  // SiCode attachment rule (ses_e4d917):
+  //   1. File already on disk → keep that path in `name`. Never copy, never delete.
+  //   2. Pure clipboard (data: with no existing path) → paste copy under data/attachments/<session>/.
+  //   3. data: attachments must stay `source: inline` so the message bubble can render them
+  //      (`attached()` rejects file://). Path for tools lives in `name`, not by rewriting the URI.
+  if (input.uri.startsWith("data:")) {
+    const existing = yield* existingAbsoluteFile(input.name)
+    const absolute =
+      existing ??
+      (yield* persistPasteCopy({
+        bytes: Buffer.from(normalized.data, "base64"),
+        mime: normalized.mime,
+        name: input.name,
+        sessionID,
+      }))
+    return FileAttachment.create({
+      data: normalized.data,
+      mime: normalized.mime,
+      source: { type: "inline" },
+      name: absolute,
+      description: input.description,
+      mention: input.mention,
+    })
+  }
+  const disk = fileUriPath(resolved.source.type === "uri" ? resolved.source.uri : undefined)
   return FileAttachment.create({
     data: normalized.data,
     mime: normalized.mime,
     source: resolved.source,
-    name: input.name ?? resolved.name,
+    name: disk ?? input.name ?? resolved.name,
     description: input.description,
     mention: input.mention,
   })
 })
+
+/** Absolute path that already exists on disk — user's file elsewhere; do not copy it. */
+const existingAbsoluteFile = Effect.fn("SessionPrompt.existingAbsoluteFile")(function* (name: string | undefined) {
+  if (!name) return undefined
+  if (!(name.startsWith("/") || /^[A-Za-z]:[\\/]/.test(name))) return undefined
+  const fs = yield* FSUtil.Service
+  const info = yield* fs.stat(name).pipe(Effect.orElseSucceed(() => undefined))
+  if (info?.type !== "File") return undefined
+  return name
+})
+
+const fileUriPath = (uri: string | undefined) => {
+  if (!uri) return undefined
+  try {
+    const url = new URL(uri)
+    if (url.protocol !== "file:") return undefined
+    url.search = ""
+    url.hash = ""
+    return fileURLToPath(url)
+  } catch {
+    return undefined
+  }
+}
+
+/** Clipboard-only paste: no original path exists, so make a SiCode-owned copy for tool reads. */
+const persistPasteCopy = Effect.fn("SessionPrompt.persistPasteCopy")(function* (input: {
+  readonly bytes: Uint8Array
+  readonly mime: string
+  readonly name: string | undefined
+  readonly sessionID: string
+}) {
+  const fs = yield* FSUtil.Service
+  const dir = path.join(Global.Path.data, ATTACHMENT_DIRECTORY, input.sessionID)
+  const stem = path.basename(input.name ?? "paste", path.extname(input.name ?? ""))
+  const safe = stem.replace(/[^\w.-]+/g, "_").slice(0, 64) || "paste"
+  const file = path.join(dir, `${safe}_${Identifier.create(false)}${extensionFor(input.mime, input.name)}`)
+  yield* fs.writeWithDirs(file, input.bytes).pipe(
+    Effect.mapError(
+      () =>
+        new AttachmentError({
+          uri: input.name ?? "inline attachment",
+          message: `Unable to save attachment: ${input.name ?? "inline attachment"}`,
+        }),
+    ),
+  )
+  return file
+})
+
+const extensionFor = (mime: string, name: string | undefined) => {
+  const fromName = name ? path.extname(name) : ""
+  if (fromName) return fromName
+  if (mime === "image/png") return ".png"
+  if (mime === "image/jpeg") return ".jpg"
+  if (mime === "image/gif") return ".gif"
+  if (mime === "image/webp") return ".webp"
+  if (mime === "image/bmp") return ".bmp"
+  if (mime === "application/pdf") return ".pdf"
+  if (mime === "text/plain") return ".txt"
+  return ".bin"
+}
 
 const normalizeImageAttachment = Effect.fn("SessionPrompt.normalizeImageAttachment")(function* (
   input: PromptInput.FileAttachment,

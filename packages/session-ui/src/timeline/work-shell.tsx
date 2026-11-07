@@ -20,16 +20,50 @@ export function workShellDisclosureKey(userMessageID: string) {
  * open by default (`workShellDefaultOpen`) without anything stored for it — an implicit default would
  * survive the switch and leave two bars open.
  */
+type WorkShellDisclosure = {
+  value: (key: string) => boolean | undefined
+  set: (key: string, open: boolean | undefined) => void
+  /** Keys the accordion closed while opening another bar — restore only these, never a manual close. */
+  accordionClosed?: Set<string>
+}
+
 export function openWorkShellOnly(
   rows: readonly TimelineRow.TimelineRow[],
-  disclosure: { set: (key: string, open: boolean) => void },
+  disclosure: WorkShellDisclosure,
   keep: string,
 ) {
   for (const row of rows) {
     if (!Predicate.isTagged(row, "WorkShell")) continue
     if (row.userMessageID === keep) continue
 
-    disclosure.set(workShellDisclosureKey(row.userMessageID), false)
+    const key = workShellDisclosureKey(row.userMessageID)
+    // Only mark siblings that were actually open; a user-collapsed live turn must stay collapsed
+    // after the reader peeks at history and closes it again.
+    const wasOpen = disclosure.value(key) ?? workShellDefaultOpen(row.status)
+    disclosure.set(key, false)
+    if (wasOpen) disclosure.accordionClosed?.add(key)
+  }
+}
+
+/**
+ * After closing one overview bar, drop accordion-forced `false` on siblings that should be open by
+ * default (live / failed / disconnected). Manual collapses are left alone — they never enter
+ * `accordionClosed`.
+ */
+export function restoreDefaultOpenWorkShells(
+  rows: readonly TimelineRow.TimelineRow[],
+  disclosure: WorkShellDisclosure,
+  except: string,
+) {
+  for (const row of rows) {
+    if (!Predicate.isTagged(row, "WorkShell")) continue
+    if (row.userMessageID === except) continue
+    if (!workShellDefaultOpen(row.status)) continue
+    const key = workShellDisclosureKey(row.userMessageID)
+    if (disclosure.accordionClosed && !disclosure.accordionClosed.has(key)) continue
+    if (disclosure.value(key) !== false) continue
+    disclosure.set(key, undefined)
+    disclosure.accordionClosed?.delete(key)
   }
 }
 
@@ -56,36 +90,64 @@ function isWorkShellProse(row: TimelineRow.TimelineRow) {
   return Predicate.isTagged(row, "AssistantPart") && row.group.type === "part" && /text:\d+$/.test(row.group.key)
 }
 
+/** Question tools are projected as `part:question:…` so collapse can keep them without a content lookup. */
+function isWorkShellQuestion(row: TimelineRow.TimelineRow) {
+  return Predicate.isTagged(row, "AssistantPart") && row.group.type === "part" && row.group.key.startsWith("part:question:")
+}
+
 /**
- * The only prose a collapsed turn still shows: its closing answer — the last run of consecutive
- * text rows. Everything before it is narration about work the bar already summarises ("我先看一下
- * common.closeTab…", "中文只需要改这三个…"), and leaving that visible defeats the point of collapsing:
- * the turn still fills the transcript with paragraphs that the head says in one line.
+ * Prose a collapsed turn still shows: the last continuous text run of each segment. A `question`
+ * is a hard segment boundary — the framing before it stays (users need it to read the Q), and only
+ * the trailing answer of the post-question segment survives. Tool narration inside a segment still
+ * folds: earlier runs in the same segment disappear with the tools.
  *
  * The last run, not "text after the last tool", because a turn often answers and *then* runs one
  * more tool (a todo write, a verification command) — the answer would be before the last tool and
  * would disappear.
  */
 function trailingProseIndexes(rows: readonly TimelineRow.TimelineRow[]) {
-  const runs: { turn: string; indexes: number[] }[] = []
+  const keep = new Set<number>()
+  const segmentTrailing = new Map<string, number[]>()
   let current: { turn: string; indexes: number[] } | undefined
+
+  const sealRun = () => {
+    if (!current) return
+    segmentTrailing.set(current.turn, current.indexes)
+    current = undefined
+  }
+
+  const sealSegment = (turn: string) => {
+    sealRun()
+    const indexes = segmentTrailing.get(turn)
+    if (!indexes) return
+    for (const index of indexes) keep.add(index)
+    segmentTrailing.delete(turn)
+  }
 
   rows.forEach((row, index) => {
     if (isWorkShellProse(row) && row.userMessageID) {
-      if (current?.turn === row.userMessageID) current.indexes.push(index)
-      else {
-        current = { turn: row.userMessageID, indexes: [index] }
-        runs.push(current)
+      if (current?.turn === row.userMessageID) {
+        current.indexes.push(index)
+        return
       }
+      sealRun()
+      current = { turn: row.userMessageID, indexes: [index] }
       return
     }
 
-    current = undefined
+    // Question closes the pre-Q segment so its framing prose is committed, then opens a fresh one.
+    if (isWorkShellQuestion(row) && row.userMessageID) {
+      sealSegment(row.userMessageID)
+      return
+    }
+
+    sealRun()
   })
 
-  const last = new Map<string, number[]>()
-  for (const run of runs) last.set(run.turn, run.indexes)
-  return new Set([...last.values()].flat())
+  sealRun()
+  for (const turn of [...segmentTrailing.keys()]) sealSegment(turn)
+
+  return keep
 }
 
 /** Drop members of collapsed work shells; keep the head so status stays visible. */
@@ -111,7 +173,12 @@ export function filterCollapsedWorkShellRows(
     }
 
     const member = hiding !== undefined && row.userMessageID === hiding
-    // The closing answer survives the fold; earlier narration goes with the tools.
+    // Question UI stays in the overview — it is the ask the turn paused on, not tool chrome.
+    if (member && isWorkShellQuestion(row)) {
+      result.push(row)
+      continue
+    }
+    // Closing / pre-question framing survives the fold; earlier narration goes with the tools.
     if (member && isWorkShellProse(row)) {
       if (answers.has(index)) result.push(row)
       continue
@@ -224,14 +291,19 @@ export function WorkShellHead(props: {
   const i18n = useI18n()
   const [now, setNow] = createSignal(Date.now())
 
+  // Disconnected is still a live turn from the reader's seat — keep the clock moving until reconnect
+  // or settlement, otherwise the meta column blanks the moment the socket drops.
+  const liveClock = () =>
+    props.endedAt === undefined && (props.status === "running" || props.status === "disconnected")
+
   createEffect(() => {
-    if (props.status !== "running" || props.endedAt !== undefined) return
+    if (!liveClock()) return
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     onCleanup(() => window.clearInterval(id))
   })
 
   const elapsed = createMemo(() => {
-    const end = props.endedAt ?? (props.status === "running" ? now() : props.startedAt)
+    const end = props.endedAt ?? (liveClock() ? now() : props.startedAt)
     return formatElapsed(end - props.startedAt)
   })
 
@@ -241,9 +313,25 @@ export function WorkShellHead(props: {
 
   const title = createMemo(() => {
     // Demo head reads "Completed 13 tools": the count is the only signal a collapsed shell carries.
-    if (props.status === "done" && props.toolCount > 0) return i18n.plural("ui.workShell.title.done", props.toolCount)
+    if (props.status === "done" && props.toolCount > 0) {
+      // A turn that answered still keeps its green check — the answer is what the reader came for —
+      // but a failed tool that the delivered answer never mentions has to stay countable, or a
+      // collapsed shell silently claims a clean run.
+      if (props.failedCount > 0)
+        return i18n.plural("ui.workShell.title.doneFailed", props.toolCount, { failed: props.failedCount })
+
+      return i18n.plural("ui.workShell.title.done", props.toolCount)
+    }
     if (props.status === "failed")
       return i18n.plural("ui.workShell.title.failed", props.toolCount, { failed: props.failedCount })
+
+    // With tools, the collapsed head is the only place the span size shows — including live turns.
+    if (props.toolCount > 0) {
+      if (props.status === "running") return i18n.plural("ui.workShell.title.running", props.toolCount)
+      if (props.status === "disconnected") return i18n.plural("ui.workShell.title.disconnected", props.toolCount)
+      if (props.status === "interrupted") return i18n.plural("ui.workShell.title.interrupted", props.toolCount)
+      if (props.status === "error") return i18n.plural("ui.workShell.title.error", props.toolCount)
+    }
 
     return statusLabel(i18n, props.status)
   })
@@ -261,7 +349,9 @@ export function WorkShellHead(props: {
       <span data-slot="work-shell-icon">
         <StatusIcon status={props.status} />
       </span>
-      <span data-slot="work-shell-title">{title()}</span>
+      <span data-slot="work-shell-title" title={title()}>
+        {title()}
+      </span>
       <Show when={silent()}>
         <span data-slot="work-shell-note">{i18n.t("ui.workShell.noReply")}</span>
       </Show>

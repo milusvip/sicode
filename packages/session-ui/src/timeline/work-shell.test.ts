@@ -4,6 +4,7 @@ import {
   filterCollapsedWorkShellRows,
   formatElapsed,
   openWorkShellOnly,
+  restoreDefaultOpenWorkShells,
   toolSpanElapsed,
   workShellDefaultOpen,
   workShellSilent,
@@ -131,6 +132,62 @@ test("filterCollapsedWorkShellRows keeps the answer when a tool runs after it", 
   ])
 })
 
+test("filterCollapsedWorkShellRows keeps pre-question framing and the question", () => {
+  const shell = () =>
+    new TimelineRow.WorkShell({
+      userMessageID: "u1",
+      status: "done",
+      startedAt: 1,
+      endedAt: 2,
+      toolCount: 3,
+      failedCount: 0,
+      hasReply: true,
+    })
+  const prose = (key: string) =>
+    new TimelineRow.AssistantPart({
+      userMessageID: "u1",
+      previousAssistantPart: true,
+      group: { type: "part", key: `part:a:${key}`, ref: { messageID: "a", partID: `a:${key}` } },
+    })
+  const tool = (key: string) =>
+    new TimelineRow.AssistantPart({
+      userMessageID: "u1",
+      previousAssistantPart: true,
+      group: { type: "context", key: `context:${key}`, refs: [{ messageID: "a", partID: key }] },
+    })
+  const question = () =>
+    new TimelineRow.AssistantPart({
+      userMessageID: "u1",
+      previousAssistantPart: true,
+      group: {
+        type: "part",
+        key: "part:question:a:tool_question",
+        ref: { messageID: "a", partID: "tool_question" },
+      },
+    })
+
+  // Narration before the framing folds; framing + question + closing answer stay.
+  const rows = [
+    shell(),
+    tool("grep_0"),
+    prose("text:0"),
+    tool("read_1"),
+    prose("text:1"),
+    question(),
+    tool("edit_2"),
+    prose("text:2"),
+    new TimelineRow.WorkShellEnd({ userMessageID: "u1" }),
+  ]
+
+  const kept = filterCollapsedWorkShellRows(rows, () => false)
+  expect(kept.map((row) => ("group" in row ? row.group.key : row._tag))).toEqual([
+    "WorkShell",
+    "part:a:text:1",
+    "part:question:a:tool_question",
+    "part:a:text:2",
+  ])
+})
+
 test("openWorkShellOnly closes every other turn's bar", () => {
   const shell = (userMessageID: string, status: "done" | "running" = "done") =>
     new TimelineRow.WorkShell({
@@ -149,9 +206,18 @@ test("openWorkShellOnly closes every other turn's bar", () => {
     shell("u2", "running"),
     shell("u3"),
   ]
-  const written = new Map<string, boolean>()
+  const written = new Map<string, boolean | undefined>()
+  const accordionClosed = new Set<string>()
 
-  openWorkShellOnly(rows, { set: (key, open) => written.set(key, open) }, "u2")
+  openWorkShellOnly(
+    rows,
+    {
+      value: (key) => written.get(key),
+      set: (key, open) => written.set(key, open),
+      accordionClosed,
+    },
+    "u2",
+  )
 
   // The opened turn keeps its own state; the others are written closed explicitly, because a live
   // turn is open by default and would otherwise stay open next to the one just clicked.
@@ -159,6 +225,79 @@ test("openWorkShellOnly closes every other turn's bar", () => {
     ["work:u1", false],
     ["work:u3", false],
   ])
+  // Done turns were already closed by default — only an actually-open sibling is accordion-marked.
+  expect([...accordionClosed]).toEqual([])
+})
+
+test("restoreDefaultOpenWorkShells clears accordion-forced closes on live siblings", () => {
+  const shell = (userMessageID: string, status: "done" | "running") =>
+    new TimelineRow.WorkShell({
+      userMessageID,
+      status,
+      startedAt: 1,
+      endedAt: status === "done" ? 2 : undefined,
+      toolCount: 1,
+      failedCount: 0,
+      hasReply: true,
+    })
+
+  const rows = [shell("past", "done"), shell("live", "running")]
+  const store = new Map<string, boolean | undefined>()
+  const accordionClosed = new Set<string>()
+  const disclosure = {
+    value: (key: string) => store.get(key),
+    set: (key: string, open: boolean | undefined) => store.set(key, open),
+    accordionClosed,
+  }
+
+  // Peek at history: accordion closes the live default-open bar and marks it.
+  openWorkShellOnly(rows, disclosure, "past")
+  store.set("work:past", true)
+  expect(store.get("work:live")).toBe(false)
+  expect(accordionClosed.has("work:live")).toBe(true)
+
+  restoreDefaultOpenWorkShells(rows, disclosure, "past")
+
+  // Closing history restores only the accordion shove.
+  expect(store.get("work:live")).toBeUndefined()
+  expect(accordionClosed.has("work:live")).toBe(false)
+  expect(store.get("work:past")).toBe(true)
+})
+
+test("restoreDefaultOpenWorkShells leaves a manual live collapse alone", () => {
+  const rows = [
+    new TimelineRow.WorkShell({
+      userMessageID: "past",
+      status: "done",
+      startedAt: 1,
+      endedAt: 2,
+      toolCount: 1,
+      failedCount: 0,
+      hasReply: true,
+    }),
+    new TimelineRow.WorkShell({
+      userMessageID: "live",
+      status: "running",
+      startedAt: 1,
+      toolCount: 1,
+      failedCount: 0,
+      hasReply: false,
+    }),
+  ]
+  const store = new Map<string, boolean | undefined>([["work:live", false]])
+  const accordionClosed = new Set<string>()
+  const disclosure = {
+    value: (key: string) => store.get(key),
+    set: (key: string, open: boolean | undefined) => store.set(key, open),
+    accordionClosed,
+  }
+
+  // User collapsed live first — openWorkShellOnly must not mark it as accordion-closed.
+  openWorkShellOnly(rows, disclosure, "past")
+  expect(accordionClosed.has("work:live")).toBe(false)
+
+  restoreDefaultOpenWorkShells(rows, disclosure, "past")
+  expect(store.get("work:live")).toBe(false)
 })
 
 test("workShellSilent marks settled turns that produced no prose", () => {

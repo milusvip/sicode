@@ -1,5 +1,6 @@
 export * as SearchRanked from "./index.js"
 
+import { expand, extrasOf, pathMatchesExtra } from "./concepts.js"
 import { pathTerms, termsOf } from "./terms.js"
 import { rank, type Doc, type Hit } from "./score.js"
 
@@ -83,6 +84,9 @@ export const suggest = async (
   query: string,
   options: Options = {},
 ): Promise<readonly Suggestion[]> => {
+  // SiCode: expand Chinese intent into the English identifiers the code uses, otherwise BM25F
+  // only ranks i18n files that share characters with the query.
+  const expanded = expand(query)
   const limit = options.limit ?? 5
   const wanted = options.candidates ?? CANDIDATES
   const files = (await source.files()).slice(0, MAX_FILES)
@@ -131,7 +135,7 @@ export const suggest = async (
   // Path alone is enough to shortlist: the model's guess often looks like a filename.
   const shortlist = rank(
     files.map((relative) => doc(relative, [])),
-    query,
+    expanded,
     wanted + dictionaries.length,
   )
     .map((hit) => hit.path)
@@ -149,7 +153,55 @@ export const suggest = async (
     return doc(relative, content)
   })
 
-  return rank(scored, query, limit)
+  const extras = extrasOf(query)
+  // When concepts fired, rank the whole scored pool — a BM25F head of 15 can drop the real
+  // `session/compaction.ts` behind Chinese-heavy i18n noise before the path preference runs.
+  const hits = rank(scored, expanded, extras.length > 0 ? scored.length : Math.max(limit * 3, 15))
+  if (extras.length === 0) return hits.slice(0, limit)
+
+  // SiCode: paths that contain those English names outrank i18n files that only share Chinese
+  // characters. Prefer an exact filename stem (`compaction.ts`) over tests and compounds.
+  const isTest = (relative: string) =>
+    /(^|\/)(__tests__|test|tests|spec|__mocks__|__fixtures__)(\/|\.|$)/.test(relative) ||
+    /\.(test|spec)\./.test(relative)
+  const stem = (relative: string) => {
+    const base = relative.slice(relative.lastIndexOf("/") + 1)
+    const cut = base.lastIndexOf(".")
+    return (cut > 0 ? base.slice(0, cut) : base).toLowerCase()
+  }
+  const exactness = (relative: string) => {
+    const name = stem(relative)
+    if (extras.some((term) => name === term.toLowerCase())) return 0
+    if (extras.some((term) => name.endsWith("-" + term.toLowerCase()))) return 1
+    return 2
+  }
+  // SiCode: `compress` reaches two files whose stem is exactly `compaction`: the service itself and
+  // a config plugin named after the setting it watches. They tie on exactness and isTest, and BM25F
+  // is a length-normalized average, so the 143-term config file edged out the 9328-term service by
+  // 0.002 — a difference of no meaning. Directories carry that meaning in this repo: the plugin
+  // lives under `config/plugin/`, `config/`, `test/`, `script/` hold plumbing, not the thing named.
+  const INFRA_DIR = /(^|\/)(config|tests?|scripts?|tools?|migrations?|fixtures?|__[^/]+__|i18n|locales?)(\/|$)/
+  const isInfrastructure = (relative: string) => INFRA_DIR.test(relative)
+  /** How much of the file's own text names the term the filename is built from — the implementer's
+   * own vocabulary (`compaction` 101 times) against a watcher that names it 17 times in passing. */
+  const selfMentions = (hit: Hit) => {
+    const name = stem(hit.path)
+    if (!termsOf(hit.path).includes(name)) return 0
+    return termsOf(texts.get(hit.path) ?? "").filter((term) => term === name).length
+  }
+  const preferred = hits
+    .filter((hit) => pathMatchesExtra(hit.path, extras) && !DICTIONARY_PATH.test(hit.path))
+    .sort(
+      (a, b) =>
+        exactness(a.path) - exactness(b.path) ||
+        Number(isTest(a.path)) - Number(isTest(b.path)) ||
+        Number(isInfrastructure(a.path)) - Number(isInfrastructure(b.path)) ||
+        selfMentions(b) - selfMentions(a) ||
+        b.score - a.score ||
+        a.path.localeCompare(b.path),
+    )
+  const rest = hits.filter((hit) => !preferred.some((item) => item.path === hit.path))
+  return [...preferred, ...rest].slice(0, limit)
 }
 
 /** Rendered for the model: the files worth opening, and why each one was offered. */

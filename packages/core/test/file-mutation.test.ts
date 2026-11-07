@@ -1,9 +1,11 @@
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
+import { FileSystem } from "@opencode/schema/filesystem"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
 import { FileMutation } from "@opencode/core/file-mutation"
 import { Environment } from "@opencode/core/environment/index"
 import { Location } from "@opencode/core/location"
@@ -22,7 +24,8 @@ function provide(directory: string, transformFiles: EnvironmentFilesTransform = 
     Location.Service.of(location({ directory: AbsolutePath.make(directory) })),
   )
   return Effect.provide(
-    AppNodeBuilder.build(LayerNode.group([FileAccess.node, FileMutation.node]), [
+    // SiCode: Bus.node is listed so tests can subscribe to filesystem.changed published by writes.
+    AppNodeBuilder.build(LayerNode.group([FileAccess.node, FileMutation.node, Bus.node]), [
       Location.node.replace(activeLocation),
       Permission.node.replace(permissionLayer()),
       Environment.node.replace(transformEnvironmentFiles(transformFiles)),
@@ -46,6 +49,29 @@ describe("FileMutation", () => {
           existed: true,
         })
         expect(yield* Effect.promise(() => fs.readFile(targetPath, "utf8"))).toBe("after")
+      }).pipe(provide(directory)),
+    ),
+  )
+
+  it.live("publishes filesystem.changed so open side-panel tabs can reload", () =>
+    withTempDir(({ path: directory }) =>
+      Effect.gen(function* () {
+        const bus = yield* Bus.Service
+        const access = yield* FileAccess.Service
+        const target = yield* access.resolve({ path: "watched.txt" })
+        const fiber = yield* bus.subscribe(FileSystem.Event.Changed).pipe(
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkScoped,
+        )
+        yield* Effect.yieldNow
+
+        yield* (yield* FileMutation.Service).write({ target, content: "hello" })
+
+        const events = [...(yield* Fiber.join(fiber))]
+        expect(events).toHaveLength(1)
+        expect(events[0]?.type).toBe("filesystem.changed")
+        expect(events[0]?.data).toEqual({ file: "watched.txt", event: "add" })
       }).pipe(provide(directory)),
     ),
   )

@@ -2,9 +2,11 @@ export * as FileMutation from "./file-mutation.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Effect, Layer } from "effect"
+import { FileSystem } from "@opencode/schema/filesystem"
 import { KeyedMutex } from "./effect/keyed-mutex.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Bom } from "@opencode/util/bom"
+import { Bus } from "./bus.js"
 import { Environment } from "./environment/index.js"
 import type { Files } from "./environment/index.js"
 import type { FileAccess } from "./file-access.js"
@@ -67,6 +69,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const environment = yield* Environment.Service
+    const bus = yield* Bus.Service
     const locks = KeyedMutex.makeUnsafe<string>()
     const withLock: Interface["withLock"] = (targets) => (effect) =>
       [...new Set(targets.map(FSUtil.resolve))]
@@ -84,6 +87,14 @@ const layer = Layer.effect(
       existed,
     })
 
+    // SiCode: LocationWatcher only watches VCS HEAD, so agent edits never reached the client.
+    // Publish here so open side-panel tabs and loaded tree dirs reload via filesystem.changed.
+    const publishChanged = (target: Target, existed: boolean) =>
+      bus.publish(FileSystem.Event.Changed, {
+        file: target.resource.replaceAll("\\", "/"),
+        event: existed ? "change" : "add",
+      })
+
     const write = Effect.fn("FileMutation.write")((input: WriteInput) =>
       withTargetLock(input.target)(
         Effect.gen(function* () {
@@ -95,6 +106,7 @@ const layer = Layer.effect(
             input.target.absolute,
             typeof input.content === "string" ? new TextEncoder().encode(input.content) : input.content,
           )
+          yield* publishChanged(input.target, existed)
           return writeResult(input.target, existed)
         }),
       ),
@@ -112,7 +124,9 @@ const layer = Layer.effect(
             input.target.absolute,
             new TextEncoder().encode(Bom.join(next.text, Boolean(current && Bom.has(current)) || next.bom)),
           )
-          return writeResult(input.target, current !== undefined)
+          const existed = current !== undefined
+          yield* publishChanged(input.target, existed)
+          return writeResult(input.target, existed)
         }),
       ),
     )
@@ -121,12 +135,11 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [Environment.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [Environment.node, Bus.node] })
 
 /**
  * Deferred until the corresponding integrations exist.
  */
-// TODO: Publish watcher/file-edit events after watcher integration exists.
 // TODO: Add snapshots / undo after snapshot design exists.
 // TODO: Notify LSP and collect diagnostics after LSP runtime exists.
 // TODO: Design multi-file transactions / rollback if patch needs atomic edits.

@@ -14,7 +14,6 @@ describe("context menu sections", () => {
     expect(actions(sections)).toEqual([
       ["edit.undo", "edit.redo"],
       ["edit.cut", "edit.copy", "edit.paste", "edit.delete"],
-      ["edit.selectAll"],
     ])
     expect(sections[1][1].shortcut).toBe("Ctrl+C")
     expect(sections[1][3].danger).toBe(true)
@@ -27,17 +26,17 @@ describe("context menu sections", () => {
     expect(contextMenuSelected(contextMenuTarget({ editable: true, selection: "  ", dev: false }))).toBe(false)
   })
 
-  test("keeps a read-only selection to copy and select all", () => {
+  test("keeps a read-only selection to copy", () => {
     const sections = contextMenuSections(contextMenuTarget({ editable: false, selection: "hello", dev: false }), "macos")
 
-    expect(actions(sections)).toEqual([["edit.copy", "edit.selectAll"]])
+    expect(actions(sections)).toEqual([["edit.copy"]])
     expect(sections[0][0].shortcut).toBe("⌘C")
   })
 
-  test("still offers select all without a selection", () => {
+  test("offers nothing on plain text with no selection and no message", () => {
     const sections = contextMenuSections(contextMenuTarget({ editable: false, selection: "", dev: false }), "windows")
 
-    expect(actions(sections)).toEqual([["edit.selectAll"]])
+    expect(actions(sections)).toEqual([])
   })
 
   test("puts link actions first and developer tools last", () => {
@@ -48,7 +47,6 @@ describe("context menu sections", () => {
 
     expect(actions(sections)).toEqual([
       ["link.open", "link.copy"],
-      ["edit.selectAll"],
       ["view.inspectElement", "view.toggleDevTools", "view.reload"],
     ])
   })
@@ -68,7 +66,6 @@ describe("context menu sections", () => {
     expect(actions(sections)).toEqual([
       ["link.open", "link.copy"],
       ["image.copy", "image.copyAddress"],
-      ["edit.selectAll"],
     ])
     expect(sections[1].map((item) => item.labelKey)).toEqual([
       "contextMenu.copyImage",
@@ -82,7 +79,7 @@ describe("context menu sections", () => {
       "windows",
     )
 
-    expect(actions(sections)).toEqual([["message.copy", "edit.selectAll"]])
+    expect(actions(sections)).toEqual([["message.copy"]])
     expect(sections[0][0].labelKey).toBe("desktop.menu.copy")
     // No Ctrl+C hint: the shortcut would run the native copy, which has no selection to take.
     expect(sections[0][0].shortcut).toBeUndefined()
@@ -94,7 +91,7 @@ describe("context menu sections", () => {
       "windows",
     )
 
-    expect(actions(sections)).toEqual([["edit.copy", "edit.selectAll"]])
+    expect(actions(sections)).toEqual([["edit.copy"]])
   })
 
   test("omits developer tools outside development builds", () => {

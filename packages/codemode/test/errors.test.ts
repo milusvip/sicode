@@ -21,6 +21,21 @@ describe("source syntax", () => {
   })
 })
 
+describe("timer stubs", () => {
+  // SiCode: setTimeout used to be Unknown identifier; stub points at browser.wait instead.
+  test("setTimeout rejects with a browser.wait redirect", async () => {
+    const failure = await error(`await new Promise((r) => setTimeout(r, 100)); return 1`)
+    expect(failure.message).toContain("setTimeout is unavailable in Code Mode")
+    expect(failure.message).toContain("tools.browser.wait")
+  })
+
+  test("setInterval rejects the same way", async () => {
+    const failure = await error(`setInterval(() => {}, 100); return 1`)
+    expect(failure.message).toContain("setInterval is unavailable in Code Mode")
+    expect(failure.message).toContain("tools.browser.wait")
+  })
+})
+
 describe("error identity", () => {
   test("Error.isError is true for every Error value and nothing else", async () => {
     expect(

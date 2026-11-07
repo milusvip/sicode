@@ -1,4 +1,5 @@
 import type { Files } from "../sdk"
+import { fileTabPath, isFileTab } from "./path"
 
 /**
  * Lists again every directory the tree has already loaded, so its rows match the workspace again. Resolves once
@@ -7,8 +8,14 @@ import type { Files } from "../sdk"
  * Nothing else does it: the tree keeps a directory's rows from the one time it listed them, and the server watches
  * only the git head, so no event arrives for a file that appears or disappears in the workspace. The walk follows the
  * loaded rows only, so it costs one listing per directory the user has already opened.
+ *
+ * SiCode: also force-reloads open file tabs (content), so an idle refresh after agent edits is not tree-only.
+ * Realtime edits still arrive via filesystem.changed from FileMutation; this is the idle/mount backstop.
  */
-export async function refreshFileTree(file: Pick<Files, "tree">) {
+export async function refreshFileTree(
+  file: Pick<Files, "tree" | "sync" | "resolve">,
+  openTabIds: readonly string[] = [],
+) {
   const listings: Promise<void>[] = []
 
   const visit = (dir: string) => {
@@ -20,6 +27,11 @@ export async function refreshFileTree(file: Pick<Files, "tree">) {
   }
 
   visit("")
+
+  for (const id of openTabIds) {
+    if (!isFileTab(id)) continue
+    listings.push(file.sync(fileTabPath(file, id), { force: true, silent: true }).catch(() => undefined))
+  }
 
   await Promise.all(listings)
 }

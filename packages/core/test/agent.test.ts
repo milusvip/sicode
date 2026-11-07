@@ -204,6 +204,9 @@ describe("Agent", () => {
       expect(Permission.evaluate("external_directory", path.join(global.tmp, "*"), permissions).effect).toBe("allow")
       expect(Permission.evaluate("external_directory", "/outside/*", permissions).effect).toBe("allow")
       const explore = yield* agent.get(Agent.ID.make("explore"))
+      // SiCode: Explore is a bounded locate subtask (Cursor-parity step cap).
+      expect(explore?.steps).toBe(12)
+      expect(explore?.system).toContain("next step")
       expect(Permission.evaluate("shell", "git log -5", explore?.permissions ?? []).effect).toBe("allow")
       expect(Permission.evaluate("edit", "src/index.ts", explore?.permissions ?? []).effect).toBe("deny")
       expect(Permission.evaluate("read", ".env", explore?.permissions ?? []).effect).toBe("ask")

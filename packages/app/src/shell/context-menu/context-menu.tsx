@@ -227,6 +227,10 @@ export function AppContextMenu() {
 
         event.preventDefault()
 
+        // SiCode: nothing to offer (blank space, out of a message bubble) — open no menu at all,
+        // otherwise an empty popper would flash. The native menu stays suppressed by the line above.
+        if (contextMenuSections(target, menuPlatform(platform.os)).length === 0) return
+
         // Keyboard-invoked context menus report no pointer position; anchor to the element instead.
         if (event.clientX === 0 && event.clientY === 0) {
           const bounds = node.getBoundingClientRect()

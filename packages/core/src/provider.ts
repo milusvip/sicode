@@ -205,21 +205,33 @@ export const DEFAULT_TIMEOUT_MS = 300_000
  *
  * SiCode: 30s instead of upstream's 900s; see the matching note in `@opencode/ai`'s schema/options. The short window
  * is what turns "hung forever" into "retried in 30 seconds", and the retry policy makes a false positive cheap.
- * Providers whose models reason without streaming set `chunkTimeout` explicitly.
+ * DeepSeek (any provider / openai-compatible relay) is the known exception — see `defaultChunkTimeoutMs`.
  */
 export const DEFAULT_CHUNK_TIMEOUT_MS = 30_000
+
+/** SiCode: DeepSeek can stream nothing for minutes while reasoning; 30s false-timeouts and resends. */
+export const DEEPSEEK_CHUNK_TIMEOUT_MS = 900_000
 
 /** One timeout setting without a default; invalid values are dropped. */
 export function timeout(value: unknown) {
   return Option.getOrUndefined(decodeTimeout(value))
 }
 
+/**
+ * SiCode: model-id heuristic so m-c-api / custom openai-compatible DeepSeek routes get the long
+ * window without requiring the native `deepseek` provider package. Explicit settings still win.
+ */
+export function defaultChunkTimeoutMs(modelID?: string) {
+  if (modelID?.toLowerCase().includes("deepseek")) return DEEPSEEK_CHUNK_TIMEOUT_MS
+  return DEFAULT_CHUNK_TIMEOUT_MS
+}
+
 /** Request timeouts from provider settings, resolved for every route. `timeout` has no default. */
-export function timeouts(settings: Readonly<Record<string, unknown>>) {
+export function timeouts(settings: Readonly<Record<string, unknown>>, modelID?: string) {
   return {
     timeout: timeout(settings.timeout),
     headerTimeout: timeout(settings.headerTimeout) ?? DEFAULT_TIMEOUT_MS,
-    chunkTimeout: timeout(settings.chunkTimeout) ?? DEFAULT_CHUNK_TIMEOUT_MS,
+    chunkTimeout: timeout(settings.chunkTimeout) ?? defaultChunkTimeoutMs(modelID),
   }
 }
 

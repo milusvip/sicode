@@ -32,6 +32,30 @@ describe("parseBridgeClientMessage", () => {
     expect(message?.type).toBe("snapshot.result")
   })
 
+  test("parses autonomy results (select / wait / dialog / upload)", () => {
+    const tab = {
+      id: "chrome_tab_1",
+      chromeTabId: 1,
+      url: "https://a",
+      title: "A",
+      active: true,
+      windowId: 1,
+    }
+    for (const type of ["select.result", "wait.result", "files.upload.result"] as const) {
+      expect(parseBridgeClientMessage(JSON.stringify({ type, requestID: "r1", tab }))?.type).toBe(type)
+    }
+    expect(
+      parseBridgeClientMessage(
+        JSON.stringify({
+          type: "dialog.result",
+          requestID: "r1",
+          dialog: { type: "alert", message: "hi", defaultValue: "" },
+          tab,
+        }),
+      )?.type,
+    ).toBe("dialog.result")
+  })
+
   test("parses offer.tab", () => {
     expect(
       parseBridgeClientMessage(
@@ -76,6 +100,9 @@ describe("parseBridgeClientMessage", () => {
           element: {
             selector: "button.submit",
             label: "Submit",
+            slot: "form-submit",
+            component: "login-form",
+            action: "submit",
             role: "button",
             name: "Submit",
           },
@@ -95,6 +122,9 @@ describe("parseBridgeClientMessage", () => {
       element: {
         selector: "button.submit",
         label: "Submit",
+        slot: "form-submit",
+        component: "login-form",
+        action: "submit",
         role: "button",
         name: "Submit",
       },
@@ -102,6 +132,9 @@ describe("parseBridgeClientMessage", () => {
         {
           selector: "button.submit",
           label: "Submit",
+          slot: "form-submit",
+          component: "login-form",
+          action: "submit",
           role: "button",
           name: "Submit",
         },

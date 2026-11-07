@@ -7,6 +7,9 @@ import type { SessionMessage } from "./message.js"
 
 export const NO_TEXT = "Subagent completed without a text response."
 
+/** SiCode: Explore returns to the parent must stay summary-sized; dump bodies defeat isolation. */
+export const EXPLORE_OUTPUT_CAP = 4_000
+
 export function text(message: SessionMessage.Info | undefined) {
   if (message?.type !== "assistant") return NO_TEXT
   return (
@@ -16,6 +19,13 @@ export function text(message: SessionMessage.Info | undefined) {
       .filter((text) => text.length > 0)
       .join("\n\n") || NO_TEXT
   )
+}
+
+/** Soft-cap Explore output so a runaway paste does not flood the parent session. */
+export function clipExploreOutput(output: string, agentName?: string) {
+  if (!agentName || !/^explore$/i.test(agentName)) return output
+  if (output.length <= EXPLORE_OUTPUT_CAP) return output
+  return `${output.slice(0, EXPLORE_OUTPUT_CAP)}\n\n…(explore output truncated; open the child session for the rest)`
 }
 
 export const deliver = Effect.fnUntraced(function* (
@@ -28,12 +38,13 @@ export const deliver = Effect.fnUntraced(function* (
 ) {
   if (input.status === "running") return
   const recovery = input.recovery
-  const text =
+  const raw =
     input.status === "completed"
       ? (input.output ?? NO_TEXT)
       : input.status === "error"
         ? (input.error ?? "Subagent failed")
         : "Subagent cancelled"
+  const text = input.status === "completed" ? clipExploreOutput(raw, recovery.agent) : raw
   yield* sessions.synthetic({
     ...(input.notificationID ? { id: input.notificationID } : {}),
     sessionID: recovery.parentSessionID,

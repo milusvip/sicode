@@ -221,12 +221,25 @@ function SessionSurfaceState(props: SessionPreviewProps & { onReset: () => void 
         },
       } satisfies WebSearchRequestModel,
       permissionRequest: () => (state.request?.type === "permission" ? state.request.value : undefined),
+      permissionRequests: () => (state.request?.type === "permission" ? [state.request.value] : []),
       permissionResponding: () => false,
       decide: (response) => {
         setState("request", undefined)
         setState("activity", `Permission response: ${response}`)
       },
       blocked: () => state.request !== undefined,
+      background: {
+        blocking: () => [],
+        tasks: () => [],
+        running: {
+          sessionID: () => undefined,
+          blocking: () => [],
+          tasks: () => [],
+        },
+        move: async () => {
+          setState("activity", "Moved work to the background locally")
+        },
+      },
     },
     centered: () => true,
     onResponseSubmit: () => {

@@ -23,13 +23,17 @@ const backgroundResult = (sessionID: SessionSchema.ID) => ({
     `The subagent is working in the background (sessionID: ${sessionID}). You will be notified automatically when it finishes.`,
     "DO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.",
     "Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.",
+    // SiCode: hand-ported from upstream 0e102908e3.
+    "To send it follow-ups or change its instructions while it runs, call subagent again with this sessionID.",
   ].join("\n"),
 })
 
 export const Input = Schema.Struct({
-  agent: Schema.String.annotate({
+  // SiCode: optional when continuing with sessionID — Flash often omits agent on follow-ups
+  // (ses_e508 burned a step on "Missing key: agent"). New spawns still require agent.
+  agent: Schema.optionalKey(Schema.String).annotate({
     description:
-      "The type of specialized agent to use for this task. If the user asks for a subagent by a name that is not one of the available subagents, they most likely mean a model: pick a suitable agent and pass the name through the model parameter instead.",
+      "The type of specialized agent to use for this task. Required when starting a new subagent; omit when continuing with sessionID to keep the child's current agent. If the user asks for a subagent by a name that is not one of the available subagents, they most likely mean a model: pick a suitable agent and pass the name through the model parameter instead.",
   }),
   description: Schema.String.annotate({ description: "A short 3-5 word label for the task, displayed to the user" }),
   prompt: Schema.String.annotate({ description: "The task for the subagent to perform" }),
@@ -38,14 +42,20 @@ export const Input = Schema.Struct({
       'NEVER set this unless the user explicitly asks for a particular model or variant. The value is written as "providerID/modelID", or "providerID/modelID#variant" to include a variant. Do not guess the ID: look the model up with the models tool, filtering to your own provider first.',
   }),
   sessionID: Schema.optionalKey(SessionSchema.ID).annotate({
-    description:
-      "Continue a specific previous subagent conversation by passing its sessionID. Calls without a sessionID start a new conversation.",
+    // SiCode: hand-ported from upstream 0e102908e3.
+    description: "Send a follow-up to an existing subagent, running or finished. Omit to start a new one.",
   }),
   background: Schema.optionalKey(Schema.Boolean).annotate({
     description:
       "Run the subagent in the background and return immediately. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress.",
   }),
-})
+}).check(
+  Schema.makeFilter(
+    (input) =>
+      (typeof input.agent === "string" && input.agent.trim().length > 0) || input.sessionID !== undefined,
+    { message: 'Provide "agent" when starting a new subagent, or "sessionID" to continue an existing one' },
+  ),
+)
 
 export const Output = Schema.Struct({
   sessionID: SessionSchema.ID,
@@ -131,24 +141,6 @@ export const Plugin = {
                 return yield* new ToolFailure({
                   message: `Subagent depth limit reached (${limit}). Increase "experimental.subagent_depth" to allow nested subagents.`,
                 })
-              const agent = yield* agents.resolve(input.agent)
-              if (agent === undefined) return yield* new ToolFailure({ message: `Unknown agent: ${input.agent}` })
-              if (agent.mode === "primary")
-                return yield* new ToolFailure({ message: `Agent ${input.agent} cannot run as a subagent` })
-              yield* permission
-                .assert({
-                  action: name,
-                  resources: [agent.id],
-                  save: [agent.id],
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source: {
-                    type: "tool",
-                    messageID: context.messageID,
-                    id: context.id,
-                  },
-                })
-                .pipe(Effect.mapError((error) => new ToolFailure({ message: `Subagent denied: ${agent.id}`, error })))
 
               const existing =
                 input.sessionID === undefined
@@ -165,6 +157,32 @@ export const Plugin = {
                 return yield* new ToolFailure({
                   message: `Session ${existing.id} is not a child of the current session`,
                 })
+
+              // SiCode: follow-ups may omit agent and keep the child's current agent.
+              const agentName = input.agent?.trim() || existing?.agent
+              if (!agentName)
+                return yield* new ToolFailure({
+                  message: 'Provide "agent" when starting a new subagent, or "sessionID" to continue an existing one',
+                })
+              const agent = yield* agents.resolve(agentName)
+              if (agent === undefined) return yield* new ToolFailure({ message: `Unknown agent: ${agentName}` })
+              if (agent.mode === "primary")
+                return yield* new ToolFailure({ message: `Agent ${agentName} cannot run as a subagent` })
+              yield* permission
+                .assert({
+                  action: name,
+                  resources: [agent.id],
+                  save: [agent.id],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: {
+                    type: "tool",
+                    messageID: context.messageID,
+                    id: context.id,
+                  },
+                })
+                .pipe(Effect.mapError((error) => new ToolFailure({ message: `Subagent denied: ${agent.id}`, error })))
+
               const override = input.model === undefined ? undefined : yield* resolveModel(input.model)
               // Continuing with a different agent switches the child, mirroring create semantics
               // where an explicit model wins over the agent's configured model, which wins over the inherited one.
@@ -252,7 +270,11 @@ export const Plugin = {
               return {
                 sessionID: child.id,
                 status: "completed" as const,
-                output: result?.info.output ?? SubagentCompletion.NO_TEXT,
+                // SiCode: Explore must return a bounded summary to the parent, not a file dump.
+                output: SubagentCompletion.clipExploreOutput(
+                  result?.info.output ?? SubagentCompletion.NO_TEXT,
+                  agent.name,
+                ),
               }
             }).pipe(
               Effect.map((output) => ({

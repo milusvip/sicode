@@ -92,6 +92,10 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 改 packages/chrome-extension 源码后必须立刻 bun packages/chrome-extension/pack.ts \"<chrome.exe>\" 重打 SiCode-Browser-Bridge.crx；只改 js/html 不打包，Install/assertPackedCrxFresh 会拒装或装到旧包。CentBrowser 路径见 chrome-extension/README.md。
 - Bridge 上传（≥0.2.42）：chrome.debugger 下禁止裸 DOM.setFileInputFiles(nodeId)（Chromium #928255）；走 Page.setInterceptFileChooserDialog → 点标记 input/可见控件 → Page.fileChooserOpened.backendNodeId → setFileInputFiles。page.js 快照含隐藏/shadow [file]，带 accept=/hidden=/multiple=。
 - 内置 chromium 上传：先 ensureFileInput 直接 set；失败再 filechooser 兜底。appendFileInputs 用 DOM.getDocument({depth:-1,pierce:true}) 穿 open shadow。
+- openURL/tabs.open 产品规则：同一文档只留一页。`canonicalizeBrowserURL`（`tab-open-policy.ts`）去掉 hash/默认端口/尾斜杠，并剥离 cache-bust query（`np|v|t|ts|cb|cache|_`）；真 query（如 `id=`）保留。
+- 内置 Electron pane 以前 `tabs.open` 无条件 `create`（`pane.ts`），是多标签根因；现走 `planTabsOpen`：命中则 focus + navigate（URL 字面不同）或 reload（完全相同），并 prune blank/重复/溢出。
+- `model.openURL` 不再仅限 file://：所有 scheme 用 `sameBrowserDocument` 找现有 tab，同 URL reload，仅 cache-bust 不同则 navigate + select；`syncLogin` 同口径。
+- Chrome attachment 的 tabs.open 已用 planTabsOpen；补了「canonicalize 相同但 raw URL 不同仍 navigate」，否则 `?np=` 换了只 focus 不刷新。
 
 ## 过程壳与时间线
 
@@ -1778,6 +1782,18 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - M5: graph.ts derives entities from paths/pieces/CamelCase; buildAdjacency + expandHop from lexical seeds only; RRF third list; OPENCODE_MEMORY_GRAPH=0 disables.
 - M6: remember tool (project/persona admit); recall searches loadForInject + conflicts flag; linkContradicts; inject marks conflicting bullets.
 - Consolidation mechanics: mergeBeliefs auto-links prose contradicts (Jaccard topic overlap); verifyBeliefs/verifyPaths path miss→invalidate at MISS_LIMIT; recall runs verifyPaths before search.
+- 用户定调（2026-11-06）：Explore 只读子任务「探查形态对齐 Cursor」、记忆注入质量（巩固/冲突/时效，别再堆表）——都值得做，但排在检索 P0–P3 硬能力稳住之后。
+- Explore：现有 explore 子代理 + exploreForce/soft 是主链止损与入口，不是 Cursor 式隔离探查产品；开干按 cursor-parity-search P4（并行只读、摘要回主会话），勿再堆 prompt。
+- 记忆：M0–M6 / inject / consolidate 骨架已在；下一刀是让「越用越懂」可见（合并、矛盾、时效），默认不开新 memory_* 表。
+- 对照：本轮已收的是概念扩词进主 grep + 定义行/多 pattern 排序；全仓向量 / 加长 system 仍不做。
+- Explore P4 最小落地：子会话跳过 explore-budget（否则 force 砍 grep / handoff 再派被 deny 的 subagent）；explore.steps=12；PROMPT 改为结论+file:line+≤2行摘录+下一步；clipExploreOutput 4k 软裁；search-miss 批搜仍空时改派 explore。
+- 记忆质量（不开新表）：inject 同选 contradict 对端并写出对方命题；lineOf 标 stale/seen~Nd；inject 热路径跑 verifyPaths；mergeBeliefs 同 id 并集 paths/entities + max importance；remember 回报 superseded/conflicts。
+- 验证：packages/core typecheck 0 错；memory-belief/inject、tool-remember、flash-golden、subagent-completion、agent、search-miss、grep-patterns 共 72 pass。
+- Locate intent (structural): broad → 开局一次 Explore；known/implement/other → 主链。不做空搜连败改派、不做 todowrite 透明。
+- searchCap=5：主链 grep/glob 用满则 stop+toolChoice none，禁止再开 Explore 二次猎。
+- search-miss 文案去掉「派 explore」；改为批同义词或停下来问用户。
+- 接线：steer 优先级 searchCapStop > exploreUpfront > exploreHandoff；llm 在 exploreChild 外计算。
+- 验证：locate-intent / steer / flash-golden；packages/core typecheck。
 
 ## codemode-session-tools
 
@@ -1988,10 +2004,30 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - constraint-ledger: image/PDF/AV attachments are reference media and must not enter write allow-scope; only named prose paths and editable @files lock edit/write/patch. Pure media attach = no lock (same as pathless chat). Kill switch still OPENCODE_CONSTRAINT_LEDGER=0.
 - ses_e5d10f71fffeAQ4mLKMXCroPKo stuck: metadata scope locked to two Downloads pngs so workspace 闲鱼服装图 txt/md writes refused. Cause: media attachments entered ledger + persisted scope survives pathless turns.
 - Heal: scrub media paths from fold/scopeOf/remember; skip media attachments when building scope. Cleared that session's sicode.constraintLedger.scope in opencode-local.db. Instant unlock without restart: user says 不限文件.
+- ses_e4e1: attaching .tipa locked write scope to that one file; sibling scripts refused. MEDIA_EXT now includes tipa/ipa/apk/aab/xapk/deb/dmg so packaged binaries do not lock.
+- CLEAR now matches 放开路径 / 放开这两个路径 / unlock scope; refuseMessage mentions 放开路径.
+- pathsInText drops leading-dash matches so ldid flags like -S/tmp/x.plist never become scope.
+- fold filters media via editablePaths before the empty check so tipa-only messages leave/clear scope instead of pinning.
+- Structural: replace-lock is attachment-only; ambient prose/log paths never retarget scope. Expand still reads prose paths; clear drops the lock.
+- Reference media includes packaged binaries (tipa/ipa/apk/…). pathsInText drops leading-dash CLI flags.
+- Allow-scope constraint ledger removed (no-op stubs). edit/write/patch no longer refuse outside attached paths; context scrubs stale sicode.constraintLedger metadata.
 
 ## completion-gate
 
 - completion-gate structural fix (ses_e58cab861ffd): refuse idle while latest todowrite still has pending/in_progress. Same stuck fingerprint forced up to MAX_COMPLETION_CONTINUES=8; completing/cancelling an item resets budget. Once-per-fingerprint removed. Skips when stepLimitReached or waitingOnUser. Kill path still hand back after 8 no-progress continues.
+- completion-gate 结构性修（ses_e58cab 40 次 idle-with-pending）：有 open todo 时不再因同指纹满 MAX_COMPLETION_CONTINUES=8 交还；改为 escalate toolChoice=todowrite + 强文案，必须改 status。
+- 指纹改为 status + id/stableTodoKey：剥离 MB/%/分数进度噪声，只改「下载 11→47MB」不算 progress、不重置预算。
+- 逃逸不变：waitingOnUser / waitingOnBackgroundShell / stepLimitReached 仍清空 pending 允许 idle。
+- llm：completionState.toolChoice 写入下一轮 request；列表清空时清掉 escalate。
+- 验证：completion-gate 16 pass；packages/core typecheck 0 错。
+- Step ceiling with open todos no longer clears pending into MAX_STEPS essay: llm uses todoCloseoutPace (TODO_CLOSEOUT_STEPS=3) + steer stepLimitTodoCloseout → todowrite closeout; only after that window does stepLimitReached wipe pending.
+- ses_e4e536 never-stops: completion-gate kept forcing while model left "wait for user PNG" as pending/in_progress and rewrote the wording each time. Fingerprint was content-based → each rewrite reset the continue budget → soft loop forever until cancelled.
+- Fix: completionFingerprint is status + id/slot only (ignore content). Prompts + todowrite.txt say user-blocked items must be cancelled, not left open.
+- ses_e4e536 last turns: user asked to rewrite desk 提示词 with 摸鱼惯犯, then 要中文的. Model (1) gave English prompt, (2) misread correction as "build Chinese nameplate PNG", (3) after user clarified and model wrote Chinese prompts, completion-gate forced finishing the stale PNG todos — harness made the second wave of dumbness.
+- Fix: completion/escalate/max-steps closeout now say supersede → cancel/align list to latest ask; system.txt: bias within current ask + short corrections rewrite the prior deliverable, do not pivot.
+- Todo hard force is turn-scoped: detectCompletableTodos = open items only when todowrite is after the latest user message. detectPendingTodos stays for ledger/UI.
+- llm completion / idle-ask-open-todos / step closeout / max-steps headroom all use completable (not prior-turn leftovers). Stops yanking after corrections like ses_e4e536 「要中文的提示词」.
+- Deliberately do NOT re-arm on short 「继续」 via isContinueUserPrompt — that helper matches 4-char CJK and would false-adopt 「要中文的」.
 
 ## system-proxy
 
@@ -2016,6 +2052,10 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 这三条 notes 记的失败题**不在受益面**：`compress` 的真实文件是 `session/compaction.ts`，文件名与声明都不含 compress（是 compaction）；`emit` 命中的是接口成员 `readonly emit: (update) => ...` 与注释；`validate` 命中的是第三方 `schema["~standard"].validate(value)` 调用。三者都没有可抓的顶层声明行。
 - 结论：定义行优先 ≠ 补上那 35%。文件名不含关键词 / 命中行是接口成员或第三方调用这类，需要概念映射（`packages/core/src/search-ranked/concepts.ts`），不是排序。grep.ts 的注释已按此改写，勿再把它写成「修 compress/emit/validate」。
 - 验证：`tool-search.test.ts` 37 pass（含新增两条：声明文件压过文件名命中文件、文件内声明行排在使用行前）；`packages/core` typecheck 1838 文件 0 错。改前/改后全基线对照**未做**——原 20 条查询集已随 `.sicode/scratch` 丢失。
+- resolveGrepPatterns now appends SearchRankedConcepts.extrasOf(seed) after seeds so concept synonyms ride the main grep path in one call (compress→compaction) without waiting for a zero-hit shortlist; OPENCODE_QEXPAND=0 still disables.
+- render/toModelContent accept patterns?: readonly string[] so multi-stem filename rank (fileNamesTerm over every pattern) typechecks; tool-search covers concept-extra filename when the label alone is not a stem.
+- emit remapped: BEHAVIOR emit→session-event bus + ALWAYS; prior prune (emit as interface member) was wrong for the durable event path — search-ranked extrasOf asserts session-event/bus.
+- Verify: packages/core typecheck 1841 files 0 err; grep-patterns + tool-search + flash-golden + search-ranked = 76 pass.
 
 ## 英文行为词概念映射
 
@@ -2029,6 +2069,8 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - **踩过的坑**：加门后 `validate` 裸词从第 1 掉到「未命中」——`validate` 不在 `ALWAYS`、又不以概念名词结尾，被门直接 continue 掉。修法是加 `namesIt`：query 以该行为词结尾（或就是该词）即视为在问这个行为，这同时覆盖 `validate`、`truncate` 两种裸词。
 - **端到端实测**（`.sicode/scratch/suggest-probe.ts`，跑真实 `SearchRanked.suggest`，983 文件）：`compress` → `src/session/compaction.ts` **第 1**、`truncate` → `src/session/recent-text.ts` **第 1**、`validate` → `src/tool/runtime.ts` **第 1**。`retry` 与 `permission`（均无 extras）不进 preferred 路径，名次不变（`permission` 第 2）。
 - 验证：`packages/core/test/search-ranked.test.ts` **13 pass**（新增三条：同名干扰时实现文件压过 config 观察者、行为词只在「在问这个概念」时触发、裸词 `validate`/`truncate` 仍映射）；`tool-search.test.ts` 37 pass / 0 fail；`packages/core` typecheck 1841 文件 0 错。全基线对照**仍未做**——原 20 条查询集随 `.sicode/scratch` 丢失，只有这五条定向数字。
+- emit back in ALWAYS with publish→session-event bus (overrides earlier prune that treated emit as interface-only).
+- Concept extras now feed GrepTool.resolveGrepPatterns before nonzero wrong hits, so Flash does not serial-guess after compress lands OpenAI noise.
 
 ## shell-tail-pipe
 
@@ -2054,8 +2096,174 @@ bun script/notes.ts merge    # 把「区（2026-10-23）」并回「区」
 - 内置打开 / syncLogin 先 setPreferSystem(false) 再挂 Electron。
 - 推送后 Agent 仍开不了系统 Chrome：stickSystem 只 setPrefer 不 wake，attachment 未挂时 browser.write 仍 deny，第一轮没有 click 工具。
 - 修复：推送 setPrefer + pinWorkingTab(被推标签进工作集，可排队) + wake 走 chrome register；drive-hint/system 文案明确推送后驱动系统 Chrome。
+- ses_e58cab: 扩展推送 chrome_tab_* 笔记后 Agent browser.tabs.list → [browser.disconnected]；权限有 allow 但 plugin Attachment Map 空、metadata 无 sicode.browserTabs。
+- 根因：prepareSend 只 fire-and-forget wake，不等 RPC attach；推送 stickSystem 同样不等。首工具抢在 bind 完成前。
+- 修复：Browser.ensure(session,{chromeTabIDs}) → stick+pin+reattach+waitBound；prepareSend await ensure；submit await prepareSend；stickSystem 改走 ensure。
 
 ## reply-plain-language
 
 - 用户侧回复密密麻麻（路径/符号/pass-fail/已落盘分区）根因：Communication 只说了白话，没禁工程交接体；GPT/Astra 整段 override 还在鼓励 clear file paths。
 - 结构性修复：system.txt + deepseek/gpt/gpt-astra 钉死「改了什么→卡在哪→下一步」；禁 已落盘/未执行/当前进度 ledger；路径/符号仅在用户要打开或动手时才写；单测钉住关键句。
+- 根因修正（2026-11-06）：上一条只动了 system.txt/deepseek.txt 文案，没解决「append」这个机制问题。DeepSeekPlugin 是 append 模式，deepseek.txt 叠在 system.txt 之后，却又把 system.txt 的 RE/Authorization 原样抄一遍 = 同一件事讲两遍，Communication 反被稀释（GPT/Kimi/Meta 都是 override，只有 Anthropic 和 DeepSeek 是 append）
+- 落地：deepseek.txt 改成自包含 override（自带 Harness/Working in codebases/Batching/Multi-step/占位符 OPENCODE_TOOL_GUIDANCE + OPENCODE_SEARCH_GUIDANCE），Communication 提到最前、压成「按句子数不按 bullet 数，一两句说完」；optimize.ts 的 DeepSeekPlugin 去掉 append 参数
+- deepseek.txt 是我们的文件（最后改动 1b756364ae），非上游，改它无需 // SiCode:
+- 测试：optimize.test.ts 加 deepseek-v4.1-flash → PROMPT_DEEPSEEK 用例；bun test test/plugin/optimize.test.ts test/system-prompt.test.ts 24 pass，typecheck 1844 文件 0 错
+- 未验证：override 是否真让 Flash 少写路径/JSON，需真实会话回放；不够再上回复闸门（.sicode/plans/reply-plain-output.md）
+
+## plan-in-build
+
+- Build-native plan (no Plan agent): design intent → force write .sicode/plans/<topic>.md on pristine turn (planUpfront / toolChoice write), then planAwait stops tools until next user turn.
+- Intent priority: known > broad > design > implement > other. Broad still wins locate wording (在哪); 开干/可以 are other so approval continues into implement.
+- Design suppresses todowrite soft/force until a plan path lands; known/implement never take the plan gate.
+- Wired in locate-intent.ts + steer.ts + llm.ts; system.txt one bullet. Tests: locate-intent + steer.
+
+## ask-theater-gate
+
+- Structural fix for ask→不猜了→下一步 theater: search-miss soft once then searchMissStop (toolChoice none); clarify-hint only forces a one-line reading (no question-tool invite); mixed prose ? + non-question tools → mixedProseQuestion stop.
+- Soft SEARCH_MISS_PROMPT no longer says "ask the user and keep going"; stop prompt forbids narrating less-guessing then grepping again.
+- Wired in llm.ts + steer.ts; tests: search-miss / clarify-hint / continue-intent-gate / steer. typecheck clean.
+
+## todo-cursor-align
+
+- Todo aligned to Cursor split: planning-gate is soft-only (open list discretionary; no toolChoice todowrite for start/继续). completion-gate remains the finish refuse (open todos → no idle; escalate todowrite only when stopping mid-list).
+- Removed TODO_START_FORCE / TODO_CONTINUE_FORCE / forceGrace. Continue-after-finished-plan still softs earlier (step 1) with TODO_CONTINUE_SOFT_PROMPT.
+- Stale list soft remind kept. system.txt: unfinished items refuse idle finish; opening list is discretionary.
+
+## completion-vs-searchcap
+
+- ses_e58cab「弄啊」无限下一步：searchCap 已停（toolChoice none）后 completion-gate 仍因 open todo 逼续；escalate 要 todowrite 但 steer?.toolChoice ?? completion 让 none 赢 → 14 次散文「没找到」+ 5 次 escalate syn。
+- Fix: isCompletionHolding 期间压制 searchCap/searchMiss/mixedProse/exploreHardLocate 撤工具；esolveStepToolChoice 让 completion escalate 的 todowrite 优先于 steer none。
+
+## browser-look-followup
+
+- ses_e52717184：用户先挂事件日志页，再说「你看下日志」；Flash 翻 Temp API 日志后 question「看哪边」——locus 只看本轮 note、且 gate 要 click，跟进轮失效。
+- Fix: ecentBrowserLocus + isBrowserLookFollowUp；gate/hint 跨轮认 locus；看日志只需 canInspectBrowser（snapshot+tabs）；follow-up hint 禁止问来源 / 禁 question 二选一。
+
+## harness-slim
+
+- 体感「变笨」主因是 soft harness 肥胖 + narrowTools 砸 DeepSeek 前缀缓存，不是模型本身。
+- 修法（2026-11-06）：`llm.ts` 每步始终广告全量 `loaded.tools`；不再 `narrowTools` 改 system/definitions。硬约束只靠 `toolChoice`（handoff/upfront/stop）。
+- Soft 默认关（`=1` 才开）：`OPENCODE_EXPLORE_SOFT`（含 force）、`OPENCODE_BATCH_NUDGE`、`OPENCODE_TODO_SOFT`、`OPENCODE_NARRATE`、`OPENCODE_CLARIFY`、`OPENCODE_UI_BEHAVIOR`、`OPENCODE_CHECKPOINT`。
+- 仍默认开：步数/loop/edit-spiral/searchCap/searchMiss 硬停、exploreHandoff+toolChoice、completion-gate、topic-switch、working-pin、obey-fix、browser-drive、memory inject。
+- 验证：checkpoint/steer/batch/planning/explore 74 pass；packages/core typecheck 1845 文件绿。需重启 sidecar/桌面端才进安装包。
+- Round 2 harness slim (2026-11-06): prompt 噪 + DeepSeek 假超时 + pin/memory 减噪 + upfront 默认关。
+- anthropic append 去掉重复的 RE/Authorization（system.txt 已有）；7 个 provider txt 的字面量 `\u2014` 改成真正的 —。
+- DeepSeek provider 显式 `http.chunkTimeout: 900_000`，避免吃到 fork 默认 30s 后整份重发。
+- memory inject：CHAR_BUDGET 2400→1600、MAX_BELIEFS 8→5、PERSONA_BUDGET 800→480；有 query 无 lexical 命中时不再 byImportance 灌噪声。
+- working-pin：MAX_CHARS 1500→800、GOAL 400→200、anchors 5→3。
+- 默认关（`=1` 才开）：`OPENCODE_EXPLORE_UPFRONT`、`OPENCODE_PLAN_UPFRONT`、`OPENCODE_DESIGN`、`OPENCODE_PROVENANCE`。
+- 验证：locate/provenance/memory/working-pin/flash-golden/steer 相关测绿；core+ai typecheck 绿。需重启 sidecar/桌面端。
+- 全面检查（2026-11-06）：19 个 harness 相关测 221 pass；core/ai typecheck 绿。
+- 代码一致：soft 默认关、narrowTools 已删、anthropic 无双份 RE、\u2014 已清、DeepSeek 原生 provider 有 900s chunkTimeout。
+- 体检中修：exploreForce/batch/handoff/upfront 文案不再谎称「tools are narrowed」（定义表已常开，硬绑靠 toolChoice）。
+- 残留风险：① 自定义 openai-compatible 中转（如 m-c-api）若不走 `@opencode/ai/providers/deepseek`，吃不到 900s chunkTimeout，仍可能 30s 假超时。② 旧 notes 区（澄清/设计/checkpoint）仍写「=0 关、默认开」，以 `harness-slim` 为准。③ exploreHandoff / searchCap / completion-gate / freeze / ledger / topic-switch / working-pin / memory 仍默认开。④ soft 开回 `=1` 时 force/batch 只有文案约束、不再收窄工具表。
+- DeepSeek chunkTimeout 全覆盖（2026-11-06）：`Provider.defaultChunkTimeoutMs(modelID)` — id 含 deepseek → 900s，否则 30s；显式 settings 仍优先（含 false）。
+- 接线：`Provider.timeouts(settings, modelID)`；`aisdk.prepareOptions` 与 `model-resolver` 原生路由 merge 都传 model id。修了「native deepseek 路由设 900s 又被 timeouts 默认 30s 盖掉」的漏洞。
+- 覆盖 m-c-api 等 openai-compatible 中转，只要 model id 带 deepseek。验证：provider.test 新断言 + typecheck 绿。
+- 再体检（2026-11-06 下午）：19 文件 216 pass；core 1845 + ai 298/299 typecheck 绿。
+- 一致项：soft/upfront/design/provenance/checkpoint 默认关；无 narrowTools；无 \u2014 字面量；anthropic 无双份 RE；DeepSeek chunkTimeout 经 Provider.timeouts(modelID)+aisdk+model-resolver 覆盖中转；文案无「tools are narrowed」谎称。
+- 小修：llm batch 注释去掉「仍在 narrowing」歧义。
+- 残留非阻塞：旧 notes 区（澄清/设计）仍写默认开，以 harness-slim 为准；steer 测试名仍写 narrows tools（仅命名）；需重启安装包才进用户机。
+- Restored harness-slim defaults: soft steers (explore/batch/todo/narrate) and explore/plan upfront + DESIGN inject are opt-in (=1). Hard stops (loop/searchCap/searchMiss/completion/browser-drive) stay on — those make the model finish, not lecture it.
+- system.txt: dropped forced plan-wait and design phrase list; communication/batching softened to preferences; bias-to-action kept.
+- Idle/mixed/continue prompts shortened to action-first (fewer Do-not walls).
+
+## runner-systemic-steers
+
+- Subagent wait: detectSubagentWait soft then stop when parent narrates waiting on background children (OPENCODE_SUBAGENT_WAIT=0 kills).
+- Probe script: detectProbeScript soft nudge on repeated write→shell of .py/_tools probes (OPENCODE_PROBE_SCRIPT=0 kills).
+- Search-miss early when user text is CJK but empty greps stay ASCII-only; SEARCH_MISS_PROMPT asks for Chinese+English patterns batch.
+- Wired through selectSteer + llm.ts drain state; tests in subagent-wait/probe-script/steer/search-miss.
+
+## todo-midlist-ask
+
+- Root cause of mid-list ask: turnAwaitingUser treated idle prose ending in ? as waiting-on-user, which wiped pending todos for completion-gate so Flash could stop after one item with 要不要继续.
+- Fix: turnAwaitingUser is question-tool-only; prose ? still skips continue-intent via endsAsQuestion but no longer escapes open-todo refuse.
+- Prompt: system.txt + todowrite.txt + completionGatePrompt say finish the checklist, do not ask mid-list.
+
+## todo-cursor-shape
+
+- Todo prompt aligned to Cursor shape: few large verb-led items (~14 words), skip 1-2 step / when in doubt skip, ban search/read/lint chores, no chat checklist reprint.
+- Touched todowrite.txt, system Multi-step plans, planning soft/stale prompts, todo schema descriptions, completionGatePrompt.
+- Todo prompts aligned to Cursor shape: fewer larger verb-led items (~14 words, ~5+ min), ban search/read/lint micro-chores, when-in-doubt skip, no chat checklist narration.
+- Touched todowrite.txt, system Multi-step plans, planning-gate soft/stale prompts, todo schema annotations, completionGatePrompt.
+
+## plan-default-on
+
+- PLAN_UPFRONT flipped default ON (kill OPENCODE_PLAN_UPFRONT=0). Soft system.txt never yielded plan files; Cursor-shaped approve-then-build needs the hard write+await gate.
+- Soft harness slim had made plan/design feel absent while developing SiCode itself.
+
+## feel-audit
+
+- Feel audit (post plan-default-on): still-off hurts = EXPLORE_UPFRONT, DESIGN inject, TODO_SOFT remind, EXPLORE_SOFT/force, BATCH_NUDGE; soft-only never matches Cursor Plan UX; residual on-by-default friction = searchCap/handoff aggression, memory/pin budgets already slimmed, no first-class Plan mode UI.
+
+## feel-systemic-fix
+
+- Feel systemic fix: hard gates default ON — PLAN_UPFRONT, EXPLORE_UPFRONT, DESIGN inject, UI_BEHAVIOR. Kill each with =0.
+- Soft pacing default ON (prompt-only, no narrowTools): EXPLORE_SOFT, BATCH_NUDGE, TODO_SOFT. Kill =0. NARRATE/CLARIFY/CHECKPOINT/PROVENANCE stay opt-in or off (noise / ask theater).
+- Tests: locate-intent explore/plan kill switches; 95 related pass.
+
+## reply-style-gate
+
+- Reply style gate: idle messy handover (ledger / path inventory / heading tree) forces one 大白话 rewrite. Soft Communication alone never stuck. Kill OPENCODE_REPLY_STYLE=0.
+- Wired after final-answer in llm.ts; system.txt + deepseek Communication tightened to 大白话 / 2-4 sentences.
+
+## proxy-llm-failover
+
+- LLM doStream now clears OPENCODE_MIRRORED_PROXY env and retries direct once on proxy death (same as webfetch). Previously only cleared and waited for delayed runner Transport retry — user still saw network error.
+- Widened PROXY_DEATH to cover bare fetch failed / Unable to connect.
+
+## bias-to-action
+
+- Over-ask root: question tool description invited menus / mid-work decisions; system+deepseek said call question whenever deciding; trinity/kimi told vague→ask first.
+- Bias to action: question.ts + system.txt + deepseek/trinity/kimi — default and act; question only when wrong choice is costly / missing secret. Clarify stays default off.
+- Idle prose ask / numbered choice menu without question tool: idleAskFingerprint + IDLE_ASK_PROMPT forces recommend-and-act (OPENCODE_IDLE_ASK=0 kills). Mixed-prose ask prompt also tells model to pick recommended and continue.
+- question tool / system / deepseek / kimi / trinity: Cursor-shaped recommend-first; no A/B menus in prose.
+- 已过时：原先「Idle prose ask / numbered choice menu → idleAskFingerprint」整闸已删，见 `idle-ask` 区；bias-to-action 只保留 question 工具描述 + system 偏干。
+
+## reply-language
+
+- Reply language gate: when recent user turns are Chinese-dominant (or ask 中文) but idle reply is English prose, force one 简体中文 rewrite (OPENCODE_REPLY_LANGUAGE=0). system/deepseek also say match user language.
+- Checked: constraint ledger still no-op; idle-ask gate tests pass.
+- 已过时：「idle-ask gate tests pass」——idle-ask 闸已删；reply-language 闸独立保留。
+
+## reply-style
+
+- Reply style target is Cursor layout: lead sentence + short bullets with bold key phrases (or table/numbered list). Forbid ledger dumps only — not clean structured 白话. system/deepseek/REPLY_* prompts updated; Cursor-shaped sample must not trip isMessyReply.
+
+## browser-drive
+
+- browser-drive inventoryHint previously listed tabs but never said "drive publish/click" — Flash still refused "我做不到替你点发布" with open publish tab. Gate + inventory + note hints now say drive click/fill/publish; do not refuse operate/click/publish.
+- system.txt diagnosis "stop and wait for agree" softened — proceed unless user forbade; ask for unreachable targets instead of inventing.
+- browser-drive-gate.test fixtures cleaned of refuse-theater Chinese.
+
+## inline-image-path
+
+- ses_e4d917: user pasted Downloads desk PNG (inline + name=absolute path). Model (Flash) got media bytes but no Attached-file path label, spent many steps hunting Temp/opencode caches, then cutout on a supposedly opaque thumb — user: 本来就是透明的啊.
+- Fix: buildPromptRequest prefers file:// when image.sourcePath is absolute; to-llm-message labels inline image/PDF with name + "bytes already in message / do not search Temp"; system.txt one line.
+- Clipboard/data: pastes now persist under Global.Path.data/attachments/<sessionID>/ during SessionPrompt.materializeAttachment; source becomes file:// so to-llm-message always emits Attached file: <path> while keeping media bytes for vision (ses_e4d917).
+- Absolute sourcePath still prefers original file:// from buildPromptRequest; true pastes get a SiCode-owned path.
+- Any mime: data: pastes persist under data/attachments/<session>/ with name=absolute path; file:// attachments also set name to the disk path.
+- to-llm-message: text/dir/media/binary all emit Attached file: <disk path>; binary/unknown mime no longer vanish (empty parts).
+- Retention: opportunistic 7-day cleanup of attachments/ at most hourly on paste.
+- Client: native image/PDF still inline (vision + request file:// when sourcePath); other local files attach by path.
+- No auto-cleanup of attachments/. Only clipboard pastes are copied under data/attachments/<session>/; originals elsewhere are never moved or deleted. Removed the 7-day retention sweep.
+- Cursor-shaped attachment semantics: path is always readable context; default edit locus is the current project; only edit the attached path when the user asked to change that file; assets to use → import/copy into the project (ses_e4d917 desk PNG scenario).
+- Labels: Attached file (context): <path> + short guidance; system.txt aligned. Not a hard ban on operating outside — judgment of whether to.
+- 气泡不显示附件根因：`session-ui` `attached()` 只认 `inline` / `data:` / `blob:`，拒绝 `file://`。此前把带 sourcePath 的图改成 `file://` 请求 + materialize 写成 `source: uri(file://)`，气泡和视觉字节都挂了。
+- 修法：请求侧 inline 仍用 `data:`，绝对路径只放 `name`；materialize 对 `data:` 保持 `source: inline`，paste 副本/已有盘路径写进 `name`（工具可读），不改 URI。
+- 验证：`session-prompt` / `session-runner-message` / `request.test` 93 绿。
+
+## idle-ask
+
+- 整闸已删：无 `idleAskFingerprint` / `isIdleAsk` / `IDLE_ASK_*` / `OPENCODE_IDLE_ASK`；`llm.ts` Completed 路径不对散文问句 force continue。
+- 等人：仅 running `question`（`turnAwaitingUser`）。本回合 open todo：`detectCompletableTodos` + completion-gate。
+- continue-intent 仍在：短句 + 尾 `:`/`…` 且无工具 → 逼一次动手；尾 `?` 不算 announce。
+- mixed-prose-? + 非 question 工具：仍 `mixedProseQuestionFingerprint` 撤工具（`steer`），与已删 idle-ask 无关。
+- ses_e4d917：todowrite=0；旧 hasChoiceMenu 把编号步骤当二选一 → idle-ask 逼调工具 → 回到上一任务。测试只锁抽象 numbered how-to，不嵌会话原文。
+- 注意：`bias-to-action` / `reply-language` 区里仍可能有「idleAsk 还在」的旧句，以本区为准。
+
+## smart-no-spin
+
+- smart-no-spin：禁叠会话闸。三刀已落地：(1) Ask agent 入队 `SessionAskMode.DENY` 去掉 edit/execute→snapshot 无 write/edit/patch/execute；(2) explore-budget 将 error 态 write/edit/patch/execute 计为非进展且计入 spinning；(3) grep/glob 结果首行 Evidence 头 `[search empty|…]` / `[search truncated|…]`。不改 steer、不加 OPENCODE_*、不恢复 idle-ask。
+- 测：explore-budget / ask-mode / tool-search evidence+empty 绿。

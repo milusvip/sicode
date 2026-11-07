@@ -1198,14 +1198,25 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
   })
 
 export const finishEvents = Effect.fnUntraced(function* (state: ParserState) {
-  if (state.finishReason === undefined && state.requireFinishReason)
-    return yield* new AIError({
-      reason: new InvalidProviderOutputError({
-        message: "OpenAI Chat stream ended without finish_reason",
-        classification: "incomplete-stream",
-        route: ADAPTER,
-      }),
-    })
+  // SiCode: OpenAI-compatible relays (hyai666 / m-c-api) often omit the terminal finish_reason
+  // chunk after narration text (ses_e508). Infer stop when the stream already delivered
+  // text/reasoning and no tool call is in flight. Cuts inside tool-argument streaming still fail
+  // as incomplete-stream so the session runner can retry/continue — finishing half-built JSON
+  // would execute broken tools.
+  if (state.finishReason === undefined && state.requireFinishReason) {
+    const toolInFlight = Object.keys(state.pendingTools).length > 0 || Object.keys(state.tools).length > 0
+    const usable =
+      !toolInFlight &&
+      (state.lifecycle.text.size > 0 || state.lifecycle.reasoning.size > 0 || state.toolCallEvents.length > 0)
+    if (!usable)
+      return yield* new AIError({
+        reason: new InvalidProviderOutputError({
+          message: "OpenAI Chat stream ended without finish_reason",
+          classification: "incomplete-stream",
+          route: ADAPTER,
+        }),
+      })
+  }
   const events: LLMEvent[] = []
   const toolCallEvents =
     state.finishReason === undefined && Object.keys(state.tools).length > 0

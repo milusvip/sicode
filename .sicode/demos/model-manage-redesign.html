@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SiCode · 管理模型 redesign v2</title>
+  <style>
+    :root {
+      --bg: #0e0e0e;
+      --surface: #141414;
+      --hover: rgba(255, 255, 255, 0.04);
+      --press: rgba(255, 255, 255, 0.07);
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f2f2f2;
+      --muted: #8a8a8a;
+      --faint: #5c5c5c;
+      --accent: #7dd3a0;
+      --blue: #6b8cff;
+      --font: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 36px 24px 72px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0 0 24px;
+      max-width: 58ch;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 920px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .col-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .col-title h2 {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .col-title span { color: var(--faint); font-size: 11px; }
+
+    .stage {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #0c0c0c;
+      padding: 18px;
+    }
+
+    .dialog {
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      max-height: 560px;
+      overflow: hidden;
+    }
+
+    .head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 14px 10px;
+    }
+    .head h3 {
+      margin: 0 0 2px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .btn {
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 530;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn:hover { background: var(--hover); }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 30px;
+      margin: 0 14px 8px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #101010;
+    }
+    .search input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+    }
+    .search input::placeholder { color: var(--faint); }
+    .search svg { opacity: 0.4; flex: none; }
+
+    .body {
+      flex: 1;
+      overflow: auto;
+      padding: 0 8px 10px;
+    }
+
+    /* —— OLD: floaty cards —— */
+    .old-card {
+      margin: 0 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #1a1a1a;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+    .old-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+    }
+    .old-head .name { flex: 1; font-size: 13px; font-weight: 600; }
+    .old-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .old-row .grow { flex: 1; }
+    .old-hint { color: var(--faint); font-size: 11px; margin-top: 2px; }
+
+    /* —— NEW: flat sheet —— */
+    .section {
+      margin-top: 6px;
+    }
+    .section-label {
+      padding: 8px 8px 4px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 530;
+    }
+
+    .sheet {
+      border-top: 1px solid var(--line);
+    }
+
+    .prov {
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+    }
+    .prov.dragging {
+      background: var(--press);
+      opacity: 0.85;
+    }
+    .prov-row {
+      display: grid;
+      grid-template-columns: 18px 16px 1fr auto;
+      gap: 6px;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 6px 0 4px;
+    }
+    .prov-row:hover { background: var(--hover); }
+
+    .handle {
+      width: 18px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      background: transparent;
+      color: var(--faint);
+      cursor: grab;
+      padding: 0;
+      font-size: 12px;
+      letter-spacing: -1px;
+      line-height: 1;
+      user-select: none;
+    }
+    .handle:active { cursor: grabbing; }
+    .handle:disabled { opacity: 0.35; cursor: default; }
+
+    .chev {
+      width: 16px;
+      height: 16px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0;
+      font-size: 10px;
+    }
+    .chev[aria-expanded="false"] { transform: rotate(-90deg); }
+
+    .who {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: 4px 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: start;
+      cursor: pointer;
+      font: inherit;
+    }
+    .who .title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 530;
+      line-height: 16px;
+    }
+    .who .meta {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--faint);
+      font-size: 11px;
+      font-family: var(--mono);
+      line-height: 14px;
+    }
+
+    .models { padding: 0 0 2px; }
+    .model {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 6px 0 46px;
+    }
+    .model:hover { background: var(--hover); }
+    .model .id {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 440;
+      line-height: 16px;
+      color: var(--text);
+    }
+
+    .switch {
+      position: relative;
+      width: 28px;
+      height: 16px;
+      border-radius: 999px;
+      border: 0;
+      background: #333;
+      cursor: pointer;
+      padding: 0;
+      flex: none;
+    }
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ddd;
+      transition: transform 100ms ease;
+    }
+    .switch[aria-checked="true"] { background: #3553b8; }
+    .switch[aria-checked="true"]::after {
+      transform: translateX(12px);
+      background: #9db4ff;
+    }
+
+    .notes {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 900px) {
+      .notes { grid-template-columns: 1fr; }
+    }
+    .note {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #121212;
+    }
+    .note strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .status {
+      margin-top: 14px;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .ghost-url {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>管理模型 · redesign v2</h1>
+    <p class="lead">
+      去掉卡片浮层和厚阴影。一张扁平表：提供商默认折叠，左侧拖排序，右侧开关批量；展开后才是模型行。
+    </p>
+
+    <div class="grid">
+      <section>
+        <div class="col-title"><h2>现在（体感差）</h2><span>卡片 + 阴影 + 全展开</span></div>
+        <div class="stage">
+          <div class="dialog">
+            <div class="head">
+              <div>
+                <h3>管理模型</h3>
+                <p>控制选择器里显示哪些模型。</p>
+              </div>
+              <button class="btn" type="button">+ 连接提供商</button>
+            </div>
+            <div class="search">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-linecap="round"/></svg>
+              <input placeholder="搜索…" disabled />
+            </div>
+            <div class="body">
+              <div class="old-card">
+                <div class="old-head"><span class="name">https://api.zzzai.vip/v1</span><button class="switch" aria-checked="false"></button></div>
+                <div class="old-row"><div class="grow">glm-5.3<div class="old-hint">会在选择器中显示</div></div><button class="switch" aria-checked="false"></button></div>
+              </div>
+              <div class="old-card">
+                <div class="old-head"><span class="name">M-C API</span><button class="switch" aria-checked="true"></button></div>
+                <div class="old-row"><div class="grow">deepseek-v4.1-flash<div class="old-hint">会在选择器中显示</div></div><button class="switch" aria-checked="true"></button></div>
+                <div class="old-row"><div class="grow">claude-sonnet-4<div class="old-hint">会在选择器中显示</div></div><button class="switch" aria-checked="true"></button></div>
+              </div>
+              <div class="old-card">
+                <div class="old-head"><span class="name">SiCode Free</span><button class="switch" aria-checked="false"></button></div>
+                <div class="old-row"><div class="grow">Beam Free<div class="old-hint">已从选择器隐藏</div></div><button class="switch" aria-checked="false"></button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="col-title"><h2>提案</h2><span>可拖 · 默认折叠</span></div>
+        <div class="stage">
+          <div class="dialog">
+            <div class="head">
+              <div>
+                <h3>管理模型</h3>
+                <p>显示哪些模型。拖动左侧排序；新连接默认开启。</p>
+              </div>
+              <button class="btn" type="button" id="connect">+ 连接提供商</button>
+            </div>
+            <div class="search">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-linecap="round"/></svg>
+              <input id="q" placeholder="搜索提供商或模型…" autocomplete="off" />
+            </div>
+            <div class="body" id="body"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="notes">
+      <div class="note">
+        <strong>不浮</strong>
+        <p>无卡片底、无投影。只有一行分割线；hover 用极淡底色，拖拽时也不弹起浮层。</p>
+      </div>
+      <div class="note">
+        <strong>先进来是名单</strong>
+        <p>默认只看提供商行。要点模型再展开。搜索时临时展开匹配项。</p>
+      </div>
+      <div class="note">
+        <strong>排序有抓手</strong>
+        <p>⋮⋮ 手柄拖动。开关只管显示，点名字才展开，互不抢手势。</p>
+      </div>
+    </div>
+
+    <p class="status" id="status">拖动手柄可改顺序</p>
+  </div>
+
+  <script>
+    const providers = [
+      {
+        id: "zzz",
+        name: "zzzai",
+        url: "https://api.zzzai.vip/v1",
+        kind: "mine",
+        models: [{ id: "glm-5.3", on: false }],
+      },
+      {
+        id: "vortex",
+        name: "vortex",
+        url: "https://vortexapi.xyz/v1",
+        kind: "mine",
+        models: [{ id: "deepseek-v4.1-flash", on: false }],
+      },
+      {
+        id: "mc",
+        name: "M-C API",
+        url: "",
+        kind: "mine",
+        models: [
+          { id: "deepseek-v4.1-flash", on: true },
+          { id: "claude-sonnet-4", on: true },
+        ],
+      },
+      {
+        id: "free",
+        name: "SiCode Free",
+        url: "",
+        kind: "free",
+        models: [
+          { id: "Beam Free", on: false },
+          { id: "DeepSeek V4.1 Flash Free", on: false },
+          { id: "Flint 40B Free", on: false },
+        ],
+      },
+    ]
+
+    const open = new Set()
+    let query = ""
+    let dragId = null
+
+    const body = document.getElementById("body")
+    const status = document.getElementById("status")
+
+    function providerOn(p) {
+      return p.models.every((m) => m.on)
+    }
+
+    function setProvider(p, on) {
+      for (const m of p.models) m.on = on
+    }
+
+    function filtered() {
+      const q = query.trim().toLowerCase()
+      if (!q) return providers
+      return providers.filter((p) => {
+        if (p.name.toLowerCase().includes(q) || p.url.toLowerCase().includes(q)) return true
+        return p.models.some((m) => m.id.toLowerCase().includes(q))
+      })
+    }
+
+    function render() {
+      const items = filtered()
+      const mine = items.filter((p) => p.kind === "mine")
+      const free = items.filter((p) => p.kind === "free")
+      body.innerHTML = ""
+
+      for (const [label, list] of [
+        ["我的提供商", mine],
+        ["免费", free],
+      ]) {
+        if (!list.length) continue
+        const section = document.createElement("div")
+        section.className = "section"
+        section.innerHTML = `<div class="section-label">${label}</div>`
+        const sheet = document.createElement("div")
+        sheet.className = "sheet"
+
+        for (const p of list) {
+          const expanded = open.has(p.id) || !!query.trim()
+          const el = document.createElement("div")
+          el.className = "prov"
+          el.dataset.id = p.id
+          if (dragId === p.id) el.classList.add("dragging")
+
+          const head = document.createElement("div")
+          head.className = "prov-row"
+
+          const handle = document.createElement("button")
+          handle.type = "button"
+          handle.className = "handle"
+          handle.title = "拖动排序"
+          handle.textContent = "⋮⋮"
+          handle.draggable = !query.trim()
+          handle.disabled = !!query.trim()
+          handle.addEventListener("dragstart", (e) => {
+            dragId = p.id
+            e.dataTransfer.effectAllowed = "move"
+            e.dataTransfer.setData("text/plain", p.id)
+            status.textContent = `拖动：${p.name}`
+            render()
+          })
+          handle.addEventListener("dragend", () => {
+            dragId = null
+            render()
+          })
+
+          el.addEventListener("dragover", (e) => {
+            if (!dragId || dragId === p.id) return
+            e.preventDefault()
+          })
+          el.addEventListener("drop", (e) => {
+            e.preventDefault()
+            if (!dragId || dragId === p.id) return
+            const from = providers.findIndex((x) => x.id === dragId)
+            const to = providers.findIndex((x) => x.id === p.id)
+            if (from < 0 || to < 0) return
+            const [moved] = providers.splice(from, 1)
+            providers.splice(to, 0, moved)
+            dragId = null
+            status.textContent = `顺序已更新：${moved.name}`
+            render()
+          })
+
+          const chev = document.createElement("button")
+          chev.type = "button"
+          chev.className = "chev"
+          chev.setAttribute("aria-expanded", expanded ? "true" : "false")
+          chev.textContent = "▾"
+          chev.addEventListener("click", () => {
+            if (open.has(p.id)) open.delete(p.id)
+            else open.add(p.id)
+            render()
+          })
+
+          const who = document.createElement("button")
+          who.type = "button"
+          who.className = "who"
+          who.innerHTML = `<span class="title">${p.name}</span>${
+            expanded && p.url ? `<span class="meta">${p.url}</span>` : ""
+          }`
+          who.addEventListener("click", () => {
+            if (open.has(p.id)) open.delete(p.id)
+            else open.add(p.id)
+            render()
+          })
+
+          const sw = document.createElement("button")
+          sw.type = "button"
+          sw.className = "switch"
+          sw.setAttribute("aria-checked", providerOn(p) ? "true" : "false")
+          sw.addEventListener("click", (e) => {
+            e.stopPropagation()
+            setProvider(p, !providerOn(p))
+            status.textContent = `${p.name}：${providerOn(p) ? "全部显示" : "全部隐藏"}`
+            render()
+          })
+
+          head.append(handle, chev, who, sw)
+          el.appendChild(head)
+
+          if (expanded) {
+            const models = document.createElement("div")
+            models.className = "models"
+            for (const m of p.models) {
+              if (query.trim() && !`${p.name} ${p.url} ${m.id}`.toLowerCase().includes(query.trim().toLowerCase()) && !p.name.toLowerCase().includes(query.trim().toLowerCase()) && !p.url.toLowerCase().includes(query.trim().toLowerCase())) {
+                if (!m.id.toLowerCase().includes(query.trim().toLowerCase())) continue
+              }
+              const row = document.createElement("div")
+              row.className = "model"
+              row.innerHTML = `<div class="id">${m.id}</div>`
+              const ms = document.createElement("button")
+              ms.type = "button"
+              ms.className = "switch"
+              ms.setAttribute("aria-checked", m.on ? "true" : "false")
+              ms.addEventListener("click", () => {
+                m.on = !m.on
+                status.textContent = `${m.id}：${m.on ? "显示" : "隐藏"}`
+                render()
+              })
+              row.appendChild(ms)
+              models.appendChild(row)
+            }
+            el.appendChild(models)
+          }
+
+          sheet.appendChild(el)
+        }
+
+        section.appendChild(sheet)
+        body.appendChild(section)
+      }
+
+      if (!items.length) {
+        body.innerHTML = `<div class="section-label" style="padding:18px;text-align:center">没有匹配项</div>`
+      }
+    }
+
+    document.getElementById("q").addEventListener("input", (e) => {
+      query = e.target.value
+      render()
+    })
+    document.getElementById("connect").addEventListener("click", () => {
+      status.textContent = "连接提供商：保存后模型默认开启"
+    })
+    document.querySelectorAll(".stage:first-of-type .switch").forEach((el) => {
+      el.addEventListener("click", () => {
+        status.textContent = "左边是现状：厚卡片 + 阴影，体感发飘"
+      })
+    })
+
+    render()
+  </script>
+</body>
+</html>

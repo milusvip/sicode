@@ -62,6 +62,7 @@ const found = search(second.kept, query).map((fact) => ({
   text: fact.text,
   paths: [...fact.paths],
   stale: fact.misses > 0,
+  conflicts: false,
 }))
 
 console.log(`\n召回（query: "${query}"）—— agent 看到的内容：\n`)

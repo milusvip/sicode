@@ -58,6 +58,9 @@ export function createSessionTimelineInteraction(session: SessionModel) {
 
   // The active timeline's navigation, registered by its virtualizer.
   let revealMessage = (_id: string, _partID?: string) => {}
+  // SiCode: same-session background-pill clicks cannot rely on route state — the virtualizer's
+  // mount effect does not re-run — so the pill calls this directly.
+  let revealPart = (_target: string) => false
 
   let scrollToEnd = () => {}
 
@@ -362,6 +365,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
     actions: {
       navigateMessage,
       revealMessage: (id: string, partID?: string) => revealMessage(id, partID),
+      revealPart: (target: string) => revealPart(target),
       resume,
       scrollToMessage,
       setActiveMessage,
@@ -389,6 +393,9 @@ export function createSessionTimelineInteraction(session: SessionModel) {
       },
       setRevealMessage: (reveal: (id: string, partID?: string) => void) => {
         revealMessage = reveal
+      },
+      setRevealPart: (reveal: (target: string) => boolean) => {
+        revealPart = reveal
       },
       // The tool call the route opened the session on, revealed once per history entry.
       reveal: {

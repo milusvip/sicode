@@ -18,6 +18,12 @@ const created = DateTime.makeUnsafe(0)
 const id = (value: string) => SessionMessage.ID.make(`msg_${value}`)
 const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.ID.make("provider") })
 const build = Agent.defaultID
+const attachedHeader = (path: string) =>
+  `Attached file (context): ${path}\nReadable path — use when relevant. Prefer changing the current project unless the user asked to edit this path itself.`
+const attachedInline = (path: string) =>
+  `${attachedHeader(path)}\nBytes are already in this message — do not search Temp caches for the paste.`
+const attachedDir = (path: string) =>
+  `Attached directory (context): ${path}\nReadable path — use when relevant. Prefer changing the current project unless the user asked to edit this path itself.`
 
 describe("toLLMMessages", () => {
   test("background user shells enter model context only through their completion notification", () => {
@@ -215,6 +221,10 @@ describe("toLLMMessages", () => {
         role: "user",
         content: [
           { type: "text", text: "Inspect this image" },
+          {
+            type: "text",
+            text: attachedInline("hello.png"),
+          },
           { type: "media", media: Media.base64("aGVsbG8=", "image/png"), filename: "hello.png" },
         ],
         metadata: { agents: [{ name: "build" }] },
@@ -413,7 +423,7 @@ Earlier work
         { type: "text", text: "Review this file" },
         {
           type: "text",
-          text: "\n\nAttached file: main.ts\n\nexport const value = 1",
+          text: `\n\n${attachedHeader("main.ts")}\n\nexport const value = 1`,
           metadata: { attachment: { source: file.source, name: "main.ts" } },
         },
       ],
@@ -509,7 +519,7 @@ Earlier work
       { type: "text", text: "Review this file" },
       {
         type: "text",
-        text: "\n\nAttached file: inline.txt\n\ninline content",
+        text: `\n\n${attachedHeader("inline.txt")}\n\ninline content`,
       },
     ])
   })
@@ -543,7 +553,7 @@ Earlier work
         { type: "text", text: "Review this directory" },
         {
           type: "text",
-          text: `\n\nAttached directory: ${location}\n\nlib/\nindex.ts`,
+          text: `\n\n${attachedDir(location)}\n\nlib/\nindex.ts`,
           metadata: { attachment: { source: directory.source, name: "harness-engineering" } },
         },
       ],
@@ -581,8 +591,8 @@ Earlier work
     expect(messages).toHaveLength(1)
     expect(messages[0]?.content.map((part) => (part.type === "text" ? part.text : part.type))).toEqual([
       "Review these attachments",
-      `\n\nAttached directory: ${directory}\n\nindex.ts`,
-      "\n\nAttached file: main.ts\n\nexport const value = 1",
+      `\n\n${attachedDir(directory)}\n\nindex.ts`,
+      `\n\n${attachedHeader("main.ts")}\n\nexport const value = 1`,
     ])
   })
 
@@ -610,7 +620,7 @@ Earlier work
 
     expect(messages).toHaveLength(1)
     expect(messages[0]?.content).toMatchObject([
-      { type: "text", text: `\n\nAttached directory: ${directory}\n\nindex.ts` },
+      { type: "text", text: `\n\n${attachedDir(directory)}\n\nindex.ts` },
     ])
   })
 
@@ -639,8 +649,70 @@ Earlier work
 
     expect(messages[0]?.content).toEqual([
       { type: "text", text: "Inspect this image" },
+      {
+        type: "text",
+        text: attachedInline("image.png"),
+      },
       { type: "media", media: Media.base64(data, "image/png"), filename: "image.png" },
+      {
+        type: "text",
+        text: attachedInline("document.pdf"),
+      },
       { type: "media", media: Media.base64("JVBERg==", "application/pdf"), filename: "document.pdf" },
+    ])
+  })
+
+  test("labels inline images that keep a disk path in name", () => {
+    const data = Base64.make("AAECAw==")
+    // SiCode: neutral placeholder so the fixture does not carry the developer machine's username.
+    const disk = "C:\\Users\\test\\Downloads\\desk_thumb.png"
+    const messages = toLLMMessages(
+      [
+        SessionMessage.User.make({
+          id: id("user-inline-disk-name"),
+          type: "user",
+          text: "桌子换成这个",
+          files: [FileAttachment.make({ data, mime: "image/png", source: { type: "inline" }, name: disk })],
+          time: { created },
+        }),
+      ],
+      model,
+    )
+    expect(messages[0]?.content).toEqual([
+      { type: "text", text: "桌子换成这个" },
+      {
+        type: "text",
+        text: attachedInline(disk),
+      },
+      { type: "media", media: Media.base64(data, "image/png"), filename: disk },
+    ])
+  })
+
+  test("labels binary attachments with a disk path so tools can open them", () => {
+    const data = Base64.make("AAECAw==")
+    const location = path.resolve("/project/package.tipa")
+    const messages = toLLMMessages(
+      [
+        SessionMessage.User.make({
+          id: id("user-binary-path"),
+          type: "user",
+          text: "看看这个包",
+          files: [
+            FileAttachment.make({
+              data,
+              mime: "application/octet-stream",
+              source: { type: "uri", uri: pathToFileURL(location).href },
+              name: location,
+            }),
+          ],
+          time: { created },
+        }),
+      ],
+      model,
+    )
+    expect(messages[0]?.content).toEqual([
+      { type: "text", text: "看看这个包" },
+      { type: "text", text: attachedHeader(location) },
     ])
   })
 
@@ -669,7 +741,7 @@ Earlier work
 
     expect(messages[0]?.content).toEqual([
       { type: "text", text: "Inspect this image" },
-      { type: "text", text: `Attached file: ${location}` },
+      { type: "text", text: attachedHeader(location) },
       { type: "media", media: Media.base64(data, "image/png"), filename: "IMG_3480.JPG" },
     ])
   })
@@ -706,7 +778,7 @@ Earlier work
       { type: "text", text: "Inspect these attachments" },
       {
         type: "text",
-        text: "\n\nAttached directory: src/\n\nindex.ts",
+        text: `\n\n${attachedDir("src/")}\n\nindex.ts`,
         metadata: {
           attachment: {
             source: { type: "uri", uri: "file:///project/src%2Flib" },
@@ -784,9 +856,12 @@ Earlier work
       model,
     )
 
+    const inlineLabel = attachedInline("image.png")
     expect(messages[0]?.content).toEqual([
       { type: "text", text: "[Image 1] [Image 1] [Image 2]" },
+      { type: "text", text: inlineLabel },
       { type: "media", media: Media.base64(data, "image/png"), filename: "image.png" },
+      { type: "text", text: inlineLabel },
       {
         type: "media",
         media: Media.base64(data, "image/png"),

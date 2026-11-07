@@ -75,7 +75,7 @@ export default {
   "login.sync.both.one": "Wrote {{count}} cookie and {{storage}} localStorage entries, opening the site.",
   "login.sync.both.other": "Wrote {{count}} cookies and {{storage}} localStorage entries, opening the site.",
   "push.failed": "Push failed",
-  "push.noSession": "No session is open.",
+  "push.noSession": "No conversation is open — open or start one first.",
   "push.page": "Pushed to the conversation",
   "push.element": "Element pushed to the conversation",
   "search.engine": "Search engine",

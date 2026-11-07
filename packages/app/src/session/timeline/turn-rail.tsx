@@ -252,6 +252,38 @@ export function SessionTurnRail(props: {
     onCleanup(() => observer.disconnect())
   })
 
+  // Native overflow scroll is unreliable on this narrow absolute rail (Electron + hidden
+  // scrollbar). Drive scrollTop from wheel ourselves, non-passive so preventDefault sticks.
+  createEffect(() => {
+    const element = trackEl()
+
+    if (!element) return
+
+    const onWheel = (event: WheelEvent) => {
+      if (!layout().scrollable) return
+
+      const max = element.scrollHeight - element.clientHeight
+
+      if (max <= 0) return
+
+      let delta = event.deltaY
+
+      if (event.deltaMode === 1) delta *= tickPitch
+      if (event.deltaMode === 2) delta *= element.clientHeight
+
+      const next = Math.min(max, Math.max(0, element.scrollTop + delta))
+
+      if (next === element.scrollTop) return
+
+      element.scrollTop = next
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    element.addEventListener("wheel", onWheel, { passive: false })
+    onCleanup(() => element.removeEventListener("wheel", onWheel))
+  })
+
   // Keep the active tick in view when the ladder is taller than the rail viewport. Scrolling the track itself
   // leaves every other scroller alone, which `scrollIntoView` would not.
   createEffect(() => {
@@ -296,11 +328,6 @@ export function SessionTurnRail(props: {
           data-hovering={hover() ? "true" : undefined}
           data-scrollable={layout().scrollable ? "true" : undefined}
           onScroll={followHover}
-          onWheel={(event) => {
-            if (!layout().scrollable) return
-            // Keep chat scroll from fighting the rail ladder while the pointer is over it.
-            event.stopPropagation()
-          }}
         >
           <div
             data-slot="session-turn-rail-ladder"

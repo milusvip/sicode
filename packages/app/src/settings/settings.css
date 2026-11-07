@@ -8,12 +8,14 @@
 .settings-screen {
   display: flex;
   flex: 1;
+  /* SiCode: 四周同一 inset——左边与项目侧栏留出间距并露出圆角；
+     内部不再叠 padding-inline，避免导航再被往里推一截。 */
   width: calc(100% - 2 * var(--shell-inline-inset, 8px));
   min-width: 0;
   min-height: 0;
   margin-inline: var(--shell-inline-inset, 8px);
   margin-block: var(--shell-top-inset, 8px) var(--shell-bottom-inset, 8px);
-  justify-content: center;
+  justify-content: flex-start;
   overflow: hidden;
   border-radius: 10px;
   background: var(--v2-background-bg-base);
@@ -26,8 +28,8 @@
   display: flex;
   width: 100%;
   min-width: 0;
-  /* SiCode: 侧栏面板贴住工具栏，内容列吃掉剩下的宽度。之前这里限宽 1048 又靠左，
-     窗口一宽右侧就空出一条 150px 上下的死白带；限宽挪到内容列自己去管。 */
+  /* SiCode: 禁止再给整行加 padding-inline——会在导航面板左侧空出一条底色带。 */
+  padding-inline: 0;
 }
 
 @media (max-width: 767px) {
@@ -41,12 +43,11 @@
   > .settings-sidebar {
   min-height: 0;
   flex-shrink: 0;
-  width: 328px;
-  min-width: 328px;
-  /* SiCode: TRAE 式独立侧栏面板 —— 自己的底色 + 右侧分隔线，不再平铺在窗口背景上。 */
-  padding-block: 20px 24px;
-  padding-inline-start: 16px;
-  padding-inline-end: 24px;
+  width: 200px;
+  min-width: 200px;
+  /* SiCode: TRAE 式侧栏 —— 底色铺满到卡边，内边距只留给导航行本身。 */
+  padding-block: 16px 20px;
+  padding-inline: 8px;
   border-inline-end: 0.5px solid var(--v2-border-border-muted);
   background: var(--v2-background-bg-layer-01);
 }
@@ -57,10 +58,9 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  /* SiCode: 阅读宽度留给内容列（原来是 720），两侧多出来的空间对半分，窗口很宽时
-     卡片不会被拉成一整条，也不会全挤在左边。 */
+  /* SiCode: 阅读宽度留给内容列；多出来的空间只堆在右边，避免导航和正文之间再空一截。 */
   max-width: 880px;
-  margin-inline: auto;
+  margin-inline: 0 auto;
 }
 
 .settings-screen .settings-tab-header {
@@ -97,7 +97,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 6px 14px;
+  padding: 8px 4px 12px;
 }
 
 .settings-account-avatar {
@@ -125,27 +125,31 @@
 
 .settings-account-name {
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 }
 
 .settings-account-plan {
   font-size: 11px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-faint);
 }
 
 .settings-nav-groups {
   display: flex;
+  /* SiCode: 撑满侧栏剩余高度，最后一组（关于）才有地方沉底；内容超长时这一层自己滚。
+     padding/border 置零，覆盖 upstream tabs settings list，避免和侧栏 padding 叠出双边距。 */
   width: 100%;
-  /* SiCode: 撑满侧栏剩余高度，最后一组（关于）才有地方沉底；内容超长时这一层自己滚。 */
+  min-width: 0;
   flex: 1;
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
   min-height: 0;
+  padding: 0;
+  border-inline-end: 0;
 }
 
 /* SiCode: 改版演示稿里「关于」被 margin-top:auto 压在侧栏底部，实装漏了这一步，
@@ -166,8 +170,8 @@
   width: 100%;
   height: 100%;
   justify-content: flex-start;
-  gap: 10px;
-  padding: 0 8px;
+  gap: 8px;
+  padding: 0 6px;
 }
 
 .settings-nav-groups [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
@@ -206,7 +210,7 @@
   border-radius: 4px;
   color: var(--v2-text-text-faint);
   font-size: 12px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
 }
 
@@ -277,7 +281,7 @@
   padding-block: 80px calc(80px + var(--settings-bottom-inset, 0px));
   color: var(--v2-text-text-muted);
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-base);
   letter-spacing: -0.04px;
   text-align: center;
@@ -388,12 +392,12 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--v2-text-text-base);
-  font-weight: 540;
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-notice-heading span {
   color: var(--v2-text-text-faint);
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
 }
 
 .settings-notice-heading a {
@@ -436,7 +440,7 @@
 .settings-crates h4 {
   margin-top: 8px;
   color: var(--v2-text-text-base);
-  font-weight: 540;
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-crate-list {
@@ -474,7 +478,7 @@
 
 .settings-crate-heading strong {
   color: var(--v2-text-text-base);
-  font-weight: 540;
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-crate p {
@@ -580,7 +584,7 @@
 
 .settings-tab-title {
   font-size: 18px;
-  font-weight: 640;
+  font-weight: var(--font-weight-bold);
   line-height: var(--line-height-base);
   color: var(--v2-text-text-base);
 }
@@ -616,7 +620,7 @@
 .settings-section-title {
   padding: 0 2px;
   font-size: 12.5px;
-  font-weight: 560;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 }
@@ -676,7 +680,7 @@
 [data-slot="settings-row-title"] {
   font-style: normal;
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
   color: var(--v2-text-text-base);
@@ -686,7 +690,7 @@
 [data-slot="settings-row-description"] {
   margin-block: -3.5px;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 20px;
   color: var(--v2-text-text-muted);
 }
@@ -740,17 +744,13 @@
 }
 
 @container settings-screen (min-width: 800px) and (max-width: 1047px) {
-  .settings-screen > .settings {
-    padding-inline: 24px;
-  }
-
+  /* SiCode: 不再给 .settings 加 padding-inline，否则导航左侧会空出一条卡底色。 */
   .settings-screen
     > .settings[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"]
     > .settings-sidebar {
-    width: 240px;
-    min-width: 240px;
-    padding-inline-start: 16px;
-    padding-inline-end: 24px;
+    width: 200px;
+    min-width: 200px;
+    padding-inline: 8px;
   }
 }
 
@@ -921,7 +921,7 @@
   background: transparent;
   color: var(--v2-text-text-muted);
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   cursor: pointer;
 }
@@ -967,7 +967,7 @@
   background: transparent;
   color: var(--v2-text-text-base);
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   text-align: start;
   cursor: pointer;
@@ -1054,7 +1054,7 @@
 
 .settings-provider-name {
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 }
@@ -1062,7 +1062,7 @@
 .settings-provider-description {
   margin: 0;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 20px;
   color: var(--v2-text-text-muted);
 }
@@ -1070,7 +1070,7 @@
 .settings-provider-empty {
   padding-block: var(--settings-list-row-padding, 20px);
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-muted);
 }
@@ -1078,7 +1078,7 @@
 .settings-provider-env-hint {
   padding-inline-end: 12px;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-muted);
   opacity: 0;
@@ -1111,7 +1111,7 @@
 .settings-provider-account-input {
   max-width: min(240px, 45%);
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 20px;
   color: var(--v2-text-text-base);
 }
@@ -1139,13 +1139,14 @@
   }
 }
 
+
 .settings-providers-view-all {
   margin-top: 20px;
   padding: 0;
   border: 0;
   background: transparent;
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-accent);
   cursor: pointer;
@@ -1298,14 +1299,17 @@
 .settings-models-group-header {
   display: flex;
   align-items: center;
-  height: 28px;
+  min-height: 28px;
+  height: auto;
+  padding-block: 2px;
 }
 
 .settings-models-group-trigger {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 28px;
+  min-height: 28px;
+  height: auto;
   padding: 4px 8px 4px 4px;
   border: 0;
   border-radius: 4px;
@@ -1356,10 +1360,48 @@
   gap: 8px;
 }
 
+.settings-models-group-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
 .settings-models-group-title {
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
+}
+
+.settings-models-group-subtitle {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-compact);
+  color: var(--v2-text-text-faint);
+}
+
+.settings-models-bulk {
+  flex-shrink: 0;
+  margin-inline-end: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--v2-text-text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-compact);
+  cursor: pointer;
+}
+
+.settings-models-bulk:hover {
+  color: var(--v2-text-text-base);
 }
 
 .provider-model-groups {
@@ -1441,7 +1483,7 @@
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1544,7 +1586,7 @@
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1558,7 +1600,7 @@
   gap: 4px;
   padding-block: 48px;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-muted);
   text-align: center;
@@ -1593,7 +1635,7 @@
 }
 
 .settings-shortcuts [data-component="settings-list"] > div > span {
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   font-size: 13px;
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
@@ -1648,14 +1690,14 @@
 
 .settings-servers-name {
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 }
 
 .settings-servers-meta {
   font-size: 11px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 1;
   color: var(--v2-text-text-muted);
 }
@@ -1813,7 +1855,7 @@
   color: var(--v2-text-text-base);
   font-family: inherit;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   letter-spacing: -0.04px;
   text-overflow: ellipsis;
@@ -1825,12 +1867,12 @@
 
 .settings-workspaces-path-name {
   color: var(--v2-text-text-base);
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-workspaces-meta {
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-faint);
 }
@@ -1843,7 +1885,7 @@
 .settings-workspaces-more {
   flex-shrink: 0;
   font-size: 11px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 1;
   color: var(--v2-text-text-faint);
 }
@@ -1871,7 +1913,7 @@
   padding-block: 10px;
   padding-inline: 12px 16px;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: 16px;
   color: var(--v2-text-text-base);
 }
@@ -1901,14 +1943,14 @@
   align-items: flex-start;
   gap: 4px;
   font-size: 13px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-muted);
 }
 
 .settings-workspaces-empty-title {
   color: var(--v2-text-text-base);
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
 }
 
 @media (max-width: 639px) {
@@ -2015,14 +2057,14 @@
 
 .settings-server-dialog-label {
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
   color: var(--v2-text-text-base);
 }
 
 .settings-server-dialog-error {
   font-size: 11px;
-  font-weight: 440;
+  font-weight: var(--font-weight-regular);
   /* Pairing errors are full sentences that wrap. */
   line-height: var(--line-height-compact);
   color: var(--v2-state-fg-danger);
@@ -2088,7 +2130,7 @@
 
 .settings-extension-name {
   font-size: 13px;
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-compact);
 }
 

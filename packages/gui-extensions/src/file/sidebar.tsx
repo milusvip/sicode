@@ -1,8 +1,9 @@
-import { createMemo, Match, onCleanup, Show, Switch } from "solid-js"
+import { createMemo, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { Tabs } from "@opencode/ui/tabs"
 import type { ChangeKind } from "../review/contract"
 import { createKeyed, useExtension, type MountedSession, type SessionScreen } from "../sdk"
 import { current, useShared } from "./context"
+import { refreshFileTree } from "./refresh"
 import FileTree from "./tree"
 
 /** The file tree beside the side panel: the session's changed files, or every workspace file. */
@@ -44,6 +45,30 @@ export default function FileSidebar(props: { session: MountedSession; screen: Se
   const ready = createMemo(() => changes()?.ready(props.session) ?? false)
   const diffFiles = createMemo(() => (changes()?.diffs(props.session) ?? []).map((diff) => diff.file))
   const kinds = createMemo(() => changes()?.kinds(props.session) ?? empty)
+
+  // SiCode: a directory keeps the rows it listed once, and the server watches only the git head, so a file the
+  // session deleted stays in them. List the loaded directories again when the tree shows and after each turn: the
+  // cached expansion and the scroll offset stay, so the rows only move where the workspace changed. Open file
+  // tabs reload content too (FileMutation publishes realtime events; this is the idle/mount backstop).
+  const openTabs = () => ctx.layout.stored(props.session)
+
+  createKeyed(
+    () => props.session.server.connected && tab() === "all",
+    () => void refreshFileTree(file, openTabs()),
+  )
+
+  const finished = createMemo(
+    on(
+      () => props.session.server.data.session.status(props.session.id),
+      (next, previous) => (next === "idle" && previous !== undefined && previous !== "idle" ? {} : undefined),
+      { defer: true },
+    ),
+  )
+
+  createKeyed(
+    () => props.session.server.connected && tab() === "all" && finished(),
+    () => void refreshFileTree(file, openTabs()),
+  )
 
   const nofiles = createMemo(() => {
     const state = file.tree.state("")

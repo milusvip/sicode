@@ -204,8 +204,28 @@ const layer = Layer.effect(
         catch: () => null,
       }).pipe(Effect.orElseSucceed(() => null))
 
+    /**
+     * SiCode: Crepe-style generation key. When HEAD moves (checkout, pull), force a rebuild even if
+     * mtime/size fingerprints somehow look unchanged. Missing git is fine — fingerprint path still runs.
+     */
+    const gitHead = Effect.promise(async () => {
+      try {
+        const proc = Bun.spawn(["git", "-C", location.directory, "rev-parse", "HEAD"], {
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+        const code = await proc.exited
+        if (code !== 0) return null
+        const text = (await new Response(proc.stdout).text()).trim()
+        return /^[0-9a-f]{40}$/i.test(text) ? text.toLowerCase() : null
+      } catch {
+        return null
+      }
+    })
+
     const build = Effect.gen(function* () {
       const db = (index ??= TrigramIndex.open({ file }))
+      const head = yield* gitHead
       // Enumerate the current file set first: reuse is only sound if the index covers
       // exactly these files. A previous run may have exited before its watcher flushed
       // (crash, kill), so trusting root+version+size alone can silently miss files that
@@ -241,7 +261,12 @@ const layer = Layer.effect(
       const current = new Map<string, Fingerprint>()
       for (const item of stats) if (item) current.set(item[0], item[1])
 
+      // SiCode: commit generation must match when we know HEAD. A changed HEAD invalidates reuse
+      // even if fingerprints appear identical (rare, but cheap to check).
+      const commitOk = head === null || db.getMeta("commit") === head
+
       if (
+        commitOk &&
         db.getMeta("root") === location.directory &&
         db.getMeta("version") === String(SCHEMA_VERSION) &&
         current.size > 0
@@ -273,6 +298,8 @@ const layer = Layer.effect(
       }
       db.replaceAll(files)
       db.setMeta("root", location.directory)
+      if (head) db.setMeta("commit", head)
+      else db.setMeta("commit", "")
     }).pipe(Effect.orDie)
 
     /** Start the build if none is running; resolve when one completes. */

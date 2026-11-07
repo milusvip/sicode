@@ -68,14 +68,41 @@ export type Inventory = {
 }
 
 // Invariant model-facing guidance; the changing tool catalog is delivered through Instructions.
+// SiCode: name the session-tool carve-out in the tool description too — Flash often skips the
+// instructions block and only re-reads execute's description after a failed tools.grep.
 const description = [
   "Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.",
-  "`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable; all other external access goes through `tools`.",
-  "Within `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.",
+  // SiCode: name browser.wait here — Flash keeps writing setTimeout inside execute after navigate
+  // and only re-reads this description after the failure.
+  "`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers (`setTimeout` / `setInterval`) are unavailable — for page waits use `tools.browser.wait`, not a sleep in execute; all other external access goes through `tools`.",
+  "Within `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Session tools such as grep, read, edit, write, patch, glob, and shell are not in that catalog — call them directly as top-level tools, never as `tools.grep` / `tools.edit` inside execute.",
   'Call tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>["tool-name"](input)`.',
   "Prefer an explicit `return`; if omitted, the final top-level expression becomes the result.",
   "Await every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.allSettled`.",
 ].join("\n")
+
+/** Top-level session tools models commonly mis-route into `tools.*` inside execute. */
+const SESSION_TOOLS = new Set([
+  "grep",
+  "read",
+  "edit",
+  "write",
+  "patch",
+  "glob",
+  "shell",
+  "lsp",
+  "webfetch",
+  "websearch",
+  "question",
+  "todowrite",
+  "skill",
+  "subagent",
+  "history",
+  "chats",
+  "callgraph",
+  "recall",
+  "remember",
+])
 
 export const create = (
   inventory: Inventory,
@@ -339,17 +366,31 @@ function displayInput(input: unknown): Record<string, typeof Schema.Json.Type> |
 }
 
 function formatResult(result: CodeMode.Result) {
-  const output = result.ok
-    ? formatValue(result.value)
-    : [result.error.message, ...(result.error.suggestions ?? []).filter((hint) => !result.error.message.includes(hint))]
-        .join("\n")
-        .trim()
+  const output = result.ok ? formatValue(result.value) : formatError(result.error)
   const warnings =
     result.ok && result.warnings && result.warnings.length > 0
       ? `Warnings:\n${result.warnings.map((item) => `- [${item.kind}] ${item.message}`).join("\n")}`
       : undefined
   const logs = result.logs && result.logs.length > 0 ? `Logs:\n${result.logs.join("\n")}` : undefined
   return [output, warnings, logs].filter((part) => part !== undefined && part !== "").join("\n\n")
+}
+
+function formatError(error: Extract<CodeMode.Result, { ok: false }>["error"]) {
+  // SiCode: "Use search to find available tools" after tools.grep pushes Flash into the browser
+  // catalog. Replace that dead-end with an explicit "call the session tool directly" hint.
+  const sessionHint = sessionToolMisuseHint(error.message)
+  if (sessionHint !== undefined) return [error.message, sessionHint].join("\n")
+  return [error.message, ...(error.suggestions ?? []).filter((hint) => !error.message.includes(hint))]
+    .join("\n")
+    .trim()
+}
+
+function sessionToolMisuseHint(message: string) {
+  const match = /^Unknown tool '([^']+)'/.exec(message)
+  if (match === null) return
+  const name = match[1].split(".").at(-1) ?? match[1]
+  if (!SESSION_TOOLS.has(name)) return
+  return `\`${name}\` is a session tool — call it directly, not as \`tools.${name}\` inside execute. \`search()\` only lists Code Mode catalog tools.`
 }
 
 function formatValue(value: CodeMode.DataValue) {

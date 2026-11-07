@@ -17,6 +17,7 @@ import { recordable, remember, withIcon } from "./history"
 import type definition from "./index"
 import { workspaceFileURL } from "./link"
 import { BrowserPane, type PaneEvent } from "./ipc"
+import { sameBrowserDocument } from "./tab-open-policy"
 
 type Session = Pick<SessionRef, "key">
 
@@ -275,6 +276,9 @@ export function createModel(ctx: SetupContext<typeof definition>) {
           open(tabID) {
             if (layout.state(key(tabID), ref) !== "closed") return
 
+            // System-Chrome working-set ids have no in-app embeds — mirroring them opens blank tabs.
+            if (tabID.startsWith("tab_chrome_") || tabID.startsWith("chrome_tab_")) return
+
             // A tab `openFile`/`syncLogin` asked for (openingURL) brings the pane forward selected.
             // Other inventory mirrors — wake after idle, push stickSystem, restore — join quietly.
             // Agent tabs.open/navigate already report focus → layout select, so side-closed audio
@@ -448,21 +452,20 @@ export function createModel(ctx: SetupContext<typeof definition>) {
   }
 
   const openURL = (session: Session, url: string) => {
-    // A file the pane already shows reloads in place: a rewritten demo must refresh the tab the
-    // user has, not pile up another one. HTTP(s) keeps the browser's own new-tab semantics.
-    if (url.startsWith("file:")) {
-      const entry = live.get(session.key)
+    // SiCode: one document → one tab for every scheme. Same path (including a fresh cache-bust
+    // query) selects the existing tab and reloads or navigates in place — never stacks another.
+    const entry = live.get(session.key)
 
-      if (entry) {
-        const existing = attachment(entry.ref)?.browser?.tabs.find((item) => sameURL(item.url, url))
+    if (entry) {
+      const existing = attachment(entry.ref)?.browser?.tabs.find((item) => sameBrowserDocument(item.url, url))
 
-        if (existing) {
-          entry.openingURL = undefined
-          command(session, { type: "reload", tabID: existing.id })
-          layout.open(key(existing.id), entry.ref, { tab: "select" })
+      if (existing) {
+        entry.openingURL = undefined
+        if (sameURL(existing.url, url)) command(session, { type: "reload", tabID: existing.id })
+        else command(session, { type: "navigate", tabID: existing.id, url })
+        layout.open(key(existing.id), entry.ref, { tab: "select" })
 
-          return
-        }
+        return
       }
     }
 
@@ -485,9 +488,16 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     // Cookie paste writes into the Electron pane store — stick off system Chrome first.
     const bridge = chromeBridge()
     if (bridge.status === "active") {
-      await bridge.value.setPreferSystem({ session: view.id, prefer: false })
+      const before = await bridge.value.status({ session: view.id })
+      if (before.preferSystem !== false) {
+        await bridge.value.setPreferSystem({ session: view.id, prefer: false, reattach: false })
+      }
+      if (before.owningAttach) {
+        entry.connection.reattach()
+        await entry.connection.waitBound().catch(() => undefined)
+      }
     }
-    // Prefer flip emits force → reattach; if this session was idle, wake so the write has an owner.
+    // If this session was idle, wake so the write has an owner.
     entry.connection.wake()
 
     try {
@@ -496,11 +506,12 @@ export function createModel(ctx: SetupContext<typeof definition>) {
       // No registration answered, or neither half landed — which main refuses to report as success.
       if (!written || written.cookies + written.storage === 0)
         return { ok: false, message: ctx.t("login.sync.unavailable") }
-      const existing = attachment(view)?.browser?.tabs.find((item) => sameURL(item.url, url))
+      const existing = attachment(view)?.browser?.tabs.find((item) => sameBrowserDocument(item.url, url))
 
       // A page already on this site reloads in place, so the login it just received shows without a second tab.
       if (existing) {
-        command(view, { type: "reload", tabID: existing.id })
+        if (sameURL(existing.url, url)) command(view, { type: "reload", tabID: existing.id })
+        else command(view, { type: "navigate", tabID: existing.id, url })
         layout.open(key(existing.id), view, { tab: "select" })
       } else {
         // Selected once the desktop reports the tab, so the pane comes forward instead of appending it quietly.
@@ -587,11 +598,20 @@ export function createModel(ctx: SetupContext<typeof definition>) {
     open(session: SessionRef) {
       if (!available(session)) return
       opening.add(session.key)
-      // In-app open sticks off system Chrome before tabs.open registers, or the open lands in Chrome.
+      // In-app open sticks off system Chrome before tabs.open. Do not force-reattach via IPC —
+      // that raced tabs.open (binding torn down mid-command) and looked like a dead menu item.
       void (async () => {
         const bridge = chromeBridge()
+        const entry = live.get(session.key)
         if (bridge.status === "active") {
-          await bridge.value.setPreferSystem({ session: session.id, prefer: false })
+          const before = await bridge.value.status({ session: session.id })
+          if (before.preferSystem !== false) {
+            await bridge.value.setPreferSystem({ session: session.id, prefer: false, reattach: false })
+          }
+          if (before.owningAttach && entry) {
+            entry.connection.reattach()
+            await entry.connection.waitBound().catch(() => undefined)
+          }
         }
         command(session, { type: "tabs.open" })
       })()
@@ -602,6 +622,38 @@ export function createModel(ctx: SetupContext<typeof definition>) {
      */
     wake(session: SessionRef) {
       live.get(session.key)?.connection.wake()
+    },
+    /**
+     * SiCode: before a prompt with browser notes leaves the client — stick system Chrome when the
+     * chips name chrome_tab_* / tab_chrome_*, reattach if needed, then wait until the agent RPC
+     * channel is bound. Without the wait, browser.tabs.list races attach and returns disconnected.
+     */
+    async ensure(session: SessionRef, options?: { chromeTabIDs?: readonly string[] }) {
+      const entry = live.get(session.key)
+      if (!entry) return
+
+      const chromeTabs = (options?.chromeTabIDs ?? []).filter(
+        (id) => id.startsWith("chrome_tab_") || id.startsWith("tab_chrome_"),
+      )
+      const bridge = chromeBridge()
+
+      if (chromeTabs.length > 0 && bridge.status === "active") {
+        const before = await bridge.value.status({ session: session.id })
+        if (!before.owningAttach) {
+          await bridge.value.setPreferSystem({ session: session.id, prefer: true, reattach: false })
+          entry.connection.reattach()
+        } else {
+          entry.connection.wake()
+        }
+        await entry.connection.waitBound().catch(() => undefined)
+        for (const tabID of chromeTabs) {
+          await bridge.value.pinWorkingTab({ session: session.id, tabID })
+        }
+        return
+      }
+
+      entry.connection.wake()
+      await entry.connection.waitBound().catch(() => undefined)
     },
     /** Whether the user just opened a tab in this session; true once, for the pane that focuses its address. */
     opened: (session: Session) => opening.delete(session.key),

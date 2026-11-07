@@ -54,7 +54,13 @@ const setup: MainSetup<typeof definition> = (ctx) => {
   const bridgeStatus = (session?: string) => {
     const status = chromeHost.status()
     const prefer = preferOf(session)
-    const owning = status.enabled && status.connected && prefer
+    // Match owningFor: only an explicit sticky owns chrome attach. Prefer inherit/default
+    // must keep the in-app pane — otherwise reattach + Agent routes open empty side tabs.
+    const owning =
+      status.enabled &&
+      status.connected &&
+      !!session &&
+      ctx.stores.chromeBridgePreferSystem.value[session] === true
     return {
       ...status,
       defaultSystem: true,
@@ -66,9 +72,12 @@ const setup: MainSetup<typeof definition> = (ctx) => {
 
   const blockedDomains = () => ctx.stores.chromeBridgeBlockedDomains.value
 
+  // Only an explicit sticky (extension push / setPreferSystem true) owns Agent chrome attach.
+  // Default inherit must not steal the in-app pane — chrome has no embeds, so the side browser
+  // would open empty tabs and look broken.
   const owningFor = (session: string) => {
     const status = chromeHost.status()
-    return status.enabled && status.connected && preferOf(session)
+    return status.enabled && status.connected && ctx.stores.chromeBridgePreferSystem.value[session] === true
   }
 
   // The pane brings the CDP driver and the full RPC client with every protocol schema;
@@ -105,8 +114,13 @@ const setup: MainSetup<typeof definition> = (ctx) => {
   const provider = ctx.provide(BrowserPane, {
     register: async (input, caller) => {
       if (owningFor(input.session)) {
-        backends.set(input.binding, "chrome")
-        return (await loadChrome()).register(caller.window, input.binding, input)
+        try {
+          backends.set(input.binding, "chrome")
+          return await (await loadChrome()).register(caller.window, input.binding, input)
+        } catch {
+          // Bridge dropped mid-register — keep the in-app pane usable.
+          backends.set(input.binding, "pane")
+        }
       }
       backends.set(input.binding, "pane")
       return (await load()).register(caller.window, input.binding, input)
@@ -192,11 +206,16 @@ const setup: MainSetup<typeof definition> = (ctx) => {
       return bridgeStatus()
     },
     setPreferSystem: async (input) => {
+      const was = owningFor(input.session)
+      const prev = ctx.stores.chromeBridgePreferSystem.value[input.session]
+      if (prev === input.prefer) return bridgeStatus(input.session)
       ctx.stores.chromeBridgePreferSystem.update((draft) => {
         draft[input.session] = input.prefer
       })
-      // Flip may need the live session to drop the other backend and re-register.
-      emitConnection(true)
+      // Only force reattach when chrome ↔ electron ownership actually flips. A no-op stick
+      // (or inherit→false while already on the pane) must not tear down the live binding —
+      // that raced tabs.open and made Ctrl+Shift+B look like a no-op.
+      if (was !== owningFor(input.session) && input.reattach !== false) emitConnection(true)
       return bridgeStatus(input.session)
     },
     pinWorkingTab: async (input) => {

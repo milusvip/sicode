@@ -7,7 +7,6 @@ import { LineCommentEditor } from "@opencode/ui/line-comment"
 import { Loader } from "@opencode/ui/loader"
 import { Keybind } from "@opencode/ui/keybind"
 import { Menu } from "@opencode/ui/menu"
-import { Switch } from "@opencode/ui/switch"
 import { showToast } from "@opencode/ui/toast"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { ScrollView } from "@opencode/ui/scroll-view"
@@ -290,6 +289,13 @@ export default function SessionBrowserPane(props: {
     const live =
       props.session.key === current.sessionKey && tab?.id === current.tabID && tab.generation === current.generation
 
+    // SiCode: picking an element for the agent must wake the RPC attachment so browser.* tools
+    // and tab inventory are granted before the next prompt (idle eviction otherwise leaves the
+    // pane visible while the model sees no browser).
+    props.model.wake(props.session)
+    const bridge = props.model.chromeBridge()
+    if (bridge.status === "active") void bridge.value.setPreferSystem({ session: props.session.id, prefer: false })
+
     // The owning screen's composer serves the session the pane shows.
     props.screen.composer.attach(
       commentNote({
@@ -327,6 +333,10 @@ export default function SessionBrowserPane(props: {
     const current = store.note
 
     if (!current) return
+    // SiCode: same wake as element pick — page notes must also keep the agent channel alive.
+    props.model.wake(props.session)
+    const bridge = props.model.chromeBridge()
+    if (bridge.status === "active") void bridge.value.setPreferSystem({ session: props.session.id, prefer: false })
     props.screen.composer.attach(
       pageNote({
         origin: extension.id,
@@ -678,10 +688,6 @@ export default function SessionBrowserPane(props: {
 
                     return tab ? props.model.clearSite(props.session, tab.id) : undefined
                   }}
-                  agentAccess={() => props.model.agentAccess(props.session)}
-                  agentLocked={() => props.model.agentLocked(props.session)}
-                  setAgentAccess={(access) => props.model.setAgentAccess(props.session, access)}
-                  refreshAgentAccess={() => props.model.refreshAgentAccess(props.session)}
                 />
               </Show>
             </Show>
@@ -1188,7 +1194,8 @@ const connections = {
 
 /**
  * What the page can do and what can reach it, under the site button at the address field's start: its connection,
- * its stored data, the permissions it never gets, the agent's access, and the network it loads through.
+ * its stored data, the permissions it never gets, and the network it loads through.
+ * SiCode: agent write is always on when the pane attaches — no UI switch; the model operates directly.
  */
 function SiteInformation(props: {
   url: string
@@ -1198,11 +1205,6 @@ function SiteInformation(props: {
   /** The page's cookie count; undefined while the pane cannot answer. */
   site: () => Promise<{ cookies: number }> | undefined
   clear: () => Promise<void> | undefined
-  /** Agent write access for this attachment; default read (switch off). */
-  agentAccess: () => "full" | "read"
-  agentLocked: () => { read: boolean; write: boolean }
-  setAgentAccess: (access: "full" | "read") => Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }> | undefined
-  refreshAgentAccess: () => Promise<{ access: "full" | "read"; locked: { read: boolean; write: boolean } }> | undefined
 }) {
   const extension = useExtension()
 
@@ -1212,29 +1214,11 @@ function SiteInformation(props: {
     cookies?: number
     clearing: boolean
     load: number
-    write: boolean
-    lockedWrite: boolean
-    lockedRead: boolean
   }>({
     open: false,
     clearing: false,
     load: 0,
-    // Default off = read-only: worst case on first open is the agent can only look.
-    write: props.agentAccess() === "full" && !props.agentLocked().read && !props.agentLocked().write,
-    lockedWrite: props.agentLocked().write,
-    lockedRead: props.agentLocked().read,
   })
-
-  // A config deny outranks this switch: a locked read grants nothing, so the whole browser is
-  // unavailable and the switch must read as off rather than claim a grant that is not in effect.
-  const syncAccess = () => {
-    const locked = props.agentLocked()
-    setState({
-      write: props.agentAccess() === "full" && !locked.read && !locked.write,
-      lockedWrite: locked.write,
-      lockedRead: locked.read,
-    })
-  }
 
   const kind = () => {
     const value = connection(props.url, { certificateWarning: props.certificateWarning })
@@ -1279,11 +1263,7 @@ function SiteInformation(props: {
       onOpenChange={(open) => {
         setState("open", open)
 
-        if (open) {
-          syncAccess()
-          void (props.refreshAgentAccess() ?? Promise.resolve()).then(syncAccess, () => undefined)
-          load()
-        }
+        if (open) load()
       }}
     >
       <Tooltip placement="top" value={extension.t("site.info")}>
@@ -1350,37 +1330,6 @@ function SiteInformation(props: {
               detail={extension.t("site.permissions.description")}
             />
           </Show>
-          <SiteRow
-            icon="select-element"
-            title={extension.t("site.agent")}
-            detail={extension.t(
-              state.lockedRead
-                ? "site.agent.locked.read"
-                : state.lockedWrite
-                  ? "site.agent.locked"
-                  : "site.agent.description",
-            )}
-          >
-            <Switch
-              appearance="compact"
-              hideLabel
-              aria-label={extension.t("site.agent.write")}
-              checked={state.write}
-              disabled={state.lockedWrite || state.lockedRead}
-              onChange={(checked) => {
-                if (state.lockedWrite || state.lockedRead) return
-                const access = checked ? "full" : "read"
-                setState("write", checked)
-                void (props.setAgentAccess(access) ?? Promise.resolve())
-                  .then(syncAccess, () => {
-                    setState("write", !checked)
-                    showToast({ title: extension.t("common.requestFailed") })
-                  })
-              }}
-            >
-              {extension.t("site.agent.write")}
-            </Switch>
-          </SiteRow>
           <Show when={props.server}>
             {(server) => <SiteRow icon="server" title={extension.t("site.network", { server: server() })} />}
           </Show>

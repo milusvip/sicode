@@ -139,8 +139,10 @@ export function useOpenInApp(input: { session: MountedSession; path: () => strin
     const openWith = item && "openWith" in item ? item.openWith : undefined
     request.set(app)
 
+    // SiCode: the file manager always reveals the exact file — a new Explorer/Finder window with the item
+    // selected — rather than opening the file with its default app. Other apps still launch the file.
     const launched =
-      app === "finder" && reveal
+      app === "finder"
         ? desktop
             .reveal(target)
             .then((revealed) => (revealed ? undefined : desktop.launch(openInAppParentPath(target))))

@@ -39,6 +39,7 @@ import { SessionRunnerRetry } from "./runner/retry.js"
 import { toLLMMessages } from "./runner/to-llm-message.js"
 import { SessionRecentText } from "./recent-text.js"
 import { SessionCompactionDurable } from "./compaction-durable.js"
+import { SessionTopicSwitch } from "./topic-switch.js"
 import { contentFilterError, toSessionError } from "./to-session-error.js"
 import { SessionUsage } from "./usage.js"
 
@@ -61,11 +62,17 @@ export type Estimate = { readonly measured: number; readonly estimated: number }
 export type Trigger =
   /** `overflow`: the provider just rejected this context as too long. */
   | { readonly reason: "auto" | "overflow"; readonly context: SessionContext.Loaded }
+  /**
+   * SiCode: structural topic switch — bypass the size ceiling, keep from the latest user message,
+   * summarize the prior locus so Flash stops walking old tool traces. Published as `auto` on the bus
+   * (schema only allows auto|manual).
+   */
+  | { readonly reason: "topic-switch"; readonly context: SessionContext.Loaded }
   /** `inputID` is the `/compact` inbox item, whose message shows the outcome. */
   | { readonly reason: "manual"; readonly context: SessionContext.Loaded; readonly inputID: SessionMessage.ID }
 
 export type Outcome =
-  /** Only `auto` skips: the context fits, or automatic compaction is off. */
+  /** Only `auto` / `topic-switch` skip: the context fits, switch is too small, or automatic compaction is off. */
   | { readonly status: "skipped" }
   | { readonly status: "completed" }
   | { readonly status: "failed"; readonly error: SessionError.Error }
@@ -398,6 +405,10 @@ export const layer = Layer.effect(
       if (trigger.reason !== "manual" && !settings.auto) return { status: "skipped" }
       if (trigger.reason === "auto" && !due(context, calculateCeiling(context.model.limit, settings.buffer)))
         return { status: "skipped" }
+      // SiCode: topic-switch already decided the locus moved; still skip tiny prefixes where the
+      // hint alone is cheaper than a summarize call.
+      if (trigger.reason === "topic-switch" && estimateContext(context) < SessionTopicSwitch.COMPACT_MIN_ESTIMATE)
+        return { status: "skipped" }
       const held = precomputed.get(context.session.id)
       precomputed.delete(context.session.id)
       // SiCode: the held summary is consumed here, so its persisted copy is stale the moment the
@@ -627,7 +638,10 @@ export const layer = Layer.effect(
     ): Effect.fn.Return<Result, Failure> {
       const context = trigger.context
       const messages = background?.messages ?? context.messages
-      const split = splitConversation(messages, keep)
+      // SiCode: topic-switch keeps from the latest user message (new locus), not a token-sized tail
+      // that might still include the previous turn's tool traces.
+      const split =
+        trigger.reason === "topic-switch" ? splitAtLatestUser(messages) : splitConversation(messages, keep)
       if (split === undefined) return yield* Effect.fail(NOTHING_TO_COMPACT)
       // A background summary covers all of its messages; what follows them is kept when it is swapped in.
       const keepID = background ? undefined : split.keepID
@@ -1195,6 +1209,16 @@ const splitConversation = (messages: ReadonlyArray<SessionMessage.Info>, keep: n
   return {
     keepID: first?.message.id,
   }
+}
+
+/**
+ * SiCode: keep the latest user message and everything after it; summarize only the prior locus.
+ * Undefined when there is no prior exchange to drop.
+ */
+export const splitAtLatestUser = (messages: ReadonlyArray<SessionMessage.Info>) => {
+  const index = messages.findLastIndex((message) => message.type === "user")
+  if (index <= 0) return undefined
+  return { keepID: messages[index]!.id }
 }
 
 /** The request without the retained tail, which starts at the message with ID `from`. */

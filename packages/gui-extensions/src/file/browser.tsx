@@ -65,7 +65,7 @@ export function SessionFileBrowserTab(props: {
     const started = performance.now()
     setRefreshing(true)
 
-    void refreshFileTree(file).finally(() => {
+    void refreshFileTree(file, ctx.layout.stored(props.session)).finally(() => {
       const elapsed = performance.now() - started
       const spin = Math.ceil(Math.max(elapsed, refreshSpinPeriod) / refreshSpinPeriod) * refreshSpinPeriod
       setTimeout(() => setRefreshing(false), spin - elapsed)

@@ -62,8 +62,10 @@ const layer = Layer.effect(
       name: "image",
       initial: () => ({
         autoResize: true,
-        maxWidth: 2_000,
-        maxHeight: 2_000,
+        // SiCode: 2000px still left phone-photo batches (ses_e5d81d66, 17 clothing shots) spending
+        // minutes decoding/resizing. 1280 is enough for pairing, UI screenshots, and bug photos.
+        maxWidth: 1_280,
+        maxHeight: 1_280,
         maxBase64Bytes: 5 * 1024 * 1024,
       }),
       editor: (editor) => ({

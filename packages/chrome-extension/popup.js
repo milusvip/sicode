@@ -148,8 +148,12 @@ const renderStatus = (status, needsUpdate = updateRequired) => {
       ? table[channelKey]
       : table.detail_wait
   updateEl.dataset.show = updateRequired ? "true" : "false"
-  pushBtn.disabled = lastStatus !== "connected"
-  pickBtn.disabled = lastStatus !== "connected"
+  const online = lastStatus === "connected"
+  pushBtn.disabled = !online
+  pickBtn.disabled = !online
+  // Sync talks to the desktop; leave it greyed out offline so the click path is not a dead end.
+  // Copy only reads the page + clipboard, so it stays available without a bridge.
+  syncLoginBtn.disabled = !online
 }
 
 /**
@@ -221,7 +225,7 @@ syncLoginBtn.addEventListener("click", () => {
     } catch {
       setFeedback(table.sync_fail)
     } finally {
-      syncLoginBtn.disabled = false
+      syncLoginBtn.disabled = lastStatus !== "connected"
     }
   })()
 })

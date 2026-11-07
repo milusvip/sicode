@@ -38,6 +38,7 @@ import { makeParser } from "effect/encoding/Sse"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { AsyncLocalStorage } from "node:async_hooks"
 import type { ID, RuntimeInfo } from "./model.js"
+import { failoverMirroredProxy } from "./proxy-failover.js"
 import { Provider } from "./provider.js"
 import { State } from "./state.js"
 import { stringify } from "./tool/runtime.js"
@@ -130,7 +131,8 @@ function prepareOptions(model: RuntimeInfo, pkg: string) {
   }
 
   const customFetch = options.fetch
-  const timeouts = Provider.timeouts(options)
+  // SiCode: pass model id so openai-compatible DeepSeek relays get 900s, not the 30s dead-relay default.
+  const timeouts = Provider.timeouts(options, String(model.id))
   delete options.headerTimeout
   delete options.chunkTimeout
   delete options.compaction
@@ -727,11 +729,23 @@ function streamLanguage(language: LanguageModelV3, options: LanguageModelV3CallO
     Stream.unwrap(
       Effect.gen(function* () {
         const context = yield* Effect.context<never>()
+        const openStream = () =>
+          http ? httpMiddleware.run({ http, context }, () => language.doStream(options)) : language.doStream(options)
+        // SiCode: mirrored OS proxy died (Clash quit) — clear HTTP_PROXY and open the stream
+        // direct once, same shape as webfetch. Waiting for the runner's delayed Transport retry
+        // still shows a network error to the user for one full attempt.
         return yield* Effect.tryPromise({
-          try: () =>
-            http ? httpMiddleware.run({ http, context }, () => language.doStream(options)) : language.doStream(options),
-          catch: (error) => llmError(error, "request"),
-        })
+          try: openStream,
+          catch: (error) => error,
+        }).pipe(
+          Effect.catch((error) => {
+            if (!failoverMirroredProxy(error)) return Effect.fail(llmError(error, "request"))
+            return Effect.tryPromise({
+              try: openStream,
+              catch: (retryError) => llmError(retryError, "request"),
+            })
+          }),
+        )
       }).pipe(
         Effect.map((result) =>
           Stream.fromReadableStream({
@@ -933,7 +947,10 @@ function llmError(error: unknown, operation: "request" | "read") {
   if (error instanceof AIError) return error
   if (APICallError.isInstance(error)) return apiCallError(error)
   const network = networkFailure(error)
-  if (network)
+  if (network) {
+    // SiCode: drop dead mirrored OS proxy so a later runner Transport retry (or the immediate
+    // doStream retry above) goes direct. Clearing here covers mid-stream read failures too.
+    failoverMirroredProxy(error)
     return new AIError({
       reason: new TransportError({
         message: network.message.trim() === "" ? unknownErrorMessage(error) : network.message,
@@ -943,6 +960,7 @@ function llmError(error: unknown, operation: "request" | "read") {
         code: network.code,
       }),
     })
+  }
   return RequestExecutor.httpFailure({
     message: unknownErrorMessage(error),
     data: errorValue(error) ?? error,

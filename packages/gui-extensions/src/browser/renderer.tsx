@@ -51,16 +51,11 @@ const setup: Setup<typeof definition> = (ctx) => {
   // SiCode: extension popup pushes — a page, a picked element, or the site's login cookies.
   createKeyed(ctx.uses.chromeBridge, (client) => {
     const stickSystem = (chromeTabID?: string) => {
-      // Push must own system Chrome before the next prompt: prefer + pin the tab + wake the
-      // chrome attachment (not Electron). Without wake, browser.write is still denied when the
-      // model starts and Cursor-style drive of 宝塔/admin pages never gets tools.
+      // Push must own system Chrome before the next prompt: prefer + pin + wait until the chrome
+      // RPC attachment is bound. A bare wake races the first tool call → browser.disconnected.
       const session = ctx.sessions.current()
       if (!session) return
-      void (async () => {
-        await client.setPreferSystem({ session: session.id, prefer: true })
-        if (chromeTabID) await client.pinWorkingTab({ session: session.id, tabID: chromeTabID })
-        model()?.wake(session)
-      })()
+      void model()?.ensure(session, { chromeTabIDs: chromeTabID ? [chromeTabID] : [] })
     }
 
     client.on("tabOffer", (event) => {
@@ -138,6 +133,7 @@ const setup: Setup<typeof definition> = (ctx) => {
     open: (session, url) => model()?.openURL(session, url),
     openFile: (session, path, options) => model()?.openFile(session, path, options),
     wake: (session) => model()?.wake(session),
+    ensure: (session, options) => model()?.ensure(session, options) ?? Promise.resolve(),
   })
 
   ctx.add(Command, (): Command | undefined => {

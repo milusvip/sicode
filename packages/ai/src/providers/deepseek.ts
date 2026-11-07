@@ -38,6 +38,10 @@ export const configure = (input: LanguageModelOptions = {}) => {
     ...defaults,
     endpoint: { baseURL: endpoint ?? baseURL },
     auth: AuthOptions.bearer(input, "DEEPSEEK_API_KEY"),
+    // SiCode: DeepSeek can stream nothing for minutes while reasoning. The fork-wide default
+    // chunkTimeout is 30s (dead-relay recovery); without an explicit override here, long thinks
+    // false-timeout and resend the whole prompt. Caller http.chunkTimeout still wins.
+    http: { chunkTimeout: 900_000, ...defaults.http },
   })
   return {
     id,

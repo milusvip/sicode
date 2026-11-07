@@ -21,6 +21,8 @@ import { ConfigCommandPlugin } from "../config/plugin/command.js"
 import { ConfigCompactionPlugin } from "../config/plugin/compaction.js"
 // SiCode: project memory, kept from compaction summaries (see config/plugin/project-memory.ts).
 import { ConfigProjectMemoryPlugin } from "../config/plugin/project-memory.js"
+// SiCode: budgeted belief inject so Flash sees memory without calling recall.
+import { ConfigProjectMemoryInjectPlugin } from "../config/plugin/project-memory-inject.js"
 // SiCode: repo map and notes index injected into every request (see config/plugin/project-map.ts).
 import { ConfigProjectMapPlugin } from "../config/plugin/project-map.js"
 import { ConfigFormatterPlugin } from "../config/plugin/formatter.js"
@@ -54,6 +56,7 @@ import { Image } from "../image.js"
 import { InstructionDiscovery } from "../instruction-discovery.js"
 import { Integration } from "../integration.js"
 import { Job } from "../job.js"
+import { Database } from "../database/database.js"
 import { KV } from "../kv.js"
 import { Location } from "../location.js"
 import { ManagedPolicy } from "../managed-policy.js"
@@ -90,8 +93,12 @@ import { ReadToolFileSystem } from "../tool/read-filesystem.js"
 import { ReadTool } from "../tool/plugin/read.js"
 // SiCode: reads what compactions kept as project memory.
 import { RecallTool } from "../tool/plugin/recall.js"
+// SiCode: explicit project/persona memory writes (M6).
+import { RememberTool } from "../tool/plugin/remember.js"
 // SiCode: reads the transcript a compaction took away (see tool/plugin/history.ts).
 import { HistoryTool } from "../tool/plugin/history.js"
+// SiCode: Cursor-style search across other sessions in the same project directory.
+import { ChatsTool } from "../tool/plugin/chats.js"
 import { ShellTool } from "../tool/plugin/shell.js"
 import { SkillTool } from "../tool/plugin/skill.js"
 import { SubagentTool } from "../tool/plugin/subagent.js"
@@ -145,6 +152,8 @@ const services = [
   InstructionDiscovery.Service,
   Integration.Service,
   Job.Service,
+  // SiCode: memory_belief store (project memory M1) reads/writes through Database.
+  Database.Service,
   KV.Service,
   LLMClient.Service,
   Location.Service,
@@ -202,6 +211,7 @@ export const requirements = LayerNode.group([
   InstructionDiscovery.node,
   Integration.node,
   Job.node,
+  Database.node,
   KV.node,
   llmClient,
   Location.node,
@@ -267,11 +277,14 @@ const pre = [
   LspTool.Plugin,
   // SiCode: after every tool that can produce content, so an archived read composes with them.
   HistoryTool.Plugin,
+  // SiCode: beside history — same-session archive vs other sessions in this project.
+  ChatsTool.Plugin,
   OpenCodeTools.Plugin,
   McpResourceTools.Plugin,
   QuestionTool.Plugin,
   ReadTool.Plugin,
   RecallTool.Plugin,
+  RememberTool.Plugin,
   ShellTool.Plugin,
   SkillTool.Plugin,
   SubagentTool.Plugin,
@@ -293,6 +306,8 @@ const post = [
   ConfigCompactionPlugin.Plugin,
   // SiCode: after compaction, so a summary's facts land in project memory.
   ConfigProjectMemoryPlugin.Plugin,
+  // SiCode: after the writer, so each request sees the latest beliefs without a recall call.
+  ConfigProjectMemoryInjectPlugin.Plugin,
   // SiCode: appends the repo map and notes index to every model request.
   ConfigProjectMapPlugin.Plugin,
   ConfigFormatterPlugin.Plugin,

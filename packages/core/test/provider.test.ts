@@ -53,4 +53,15 @@ describe("Provider", () => {
       reasoningEffort: "high",
     })
   })
+
+  test("DeepSeek model ids default to a long chunkTimeout; others keep the short dead-relay window", () => {
+    expect(Provider.defaultChunkTimeoutMs("deepseek-v4.1-flash")).toBe(Provider.DEEPSEEK_CHUNK_TIMEOUT_MS)
+    expect(Provider.defaultChunkTimeoutMs("gpt-4o")).toBe(Provider.DEFAULT_CHUNK_TIMEOUT_MS)
+    expect(Provider.timeouts({}, "m-c-api/deepseek-v4.1-flash").chunkTimeout).toBe(
+      Provider.DEEPSEEK_CHUNK_TIMEOUT_MS,
+    )
+    expect(Provider.timeouts({ chunkTimeout: 12_000 }, "deepseek-v4.1-flash").chunkTimeout).toBe(12_000)
+    expect(Provider.timeouts({ chunkTimeout: false }, "deepseek-v4.1-flash").chunkTimeout).toBe(false)
+    expect(Provider.timeouts({}).chunkTimeout).toBe(Provider.DEFAULT_CHUNK_TIMEOUT_MS)
+  })
 })

@@ -95,30 +95,38 @@ describe("condense", () => {
 })
 
 describe("needed", () => {
-  test("fires when the request itself is about UI", () => {
-    expect(needed([user("把圆角改小一点")])).toBe(true)
-    expect(needed([user("the contrast is too low in dark mode")])).toBe(true)
+  test("pathless styling asks stay silent — no design-word vocabulary", () => {
+    expect(needed([user("make the radius a bit smaller")])).toBe(false)
+    expect(needed([user("the contrast is too low in dark mode")])).toBe(false)
+  })
+
+  test("fires structurally when the ask names a UI path", () => {
+    expect(needed([user("tweak spacing in packages/app/src/shell/left-sidebar.tsx")])).toBe(true)
+  })
+
+  test("stays silent when the ask names a non-UI path", () => {
+    expect(needed([user("tweak the color comment in packages/core/src/bus.ts")])).toBe(false)
   })
 
   test("fires when the turn before edited UI files", () => {
-    expect(needed([user("继续", "u1"), edit("packages/ui/src/button/button.css"), user("再改一处", "u2")])).toBe(
+    expect(needed([user("continue", "u1"), edit("packages/ui/src/button/button.css"), user("one more edit", "u2")])).toBe(
       true,
     )
-    expect(needed([user("继续", "u1"), edit("packages/app/src/shell/left-sidebar.tsx"), user("再改一处", "u2")])).toBe(
-      true,
-    )
+    expect(
+      needed([user("continue", "u1"), edit("packages/app/src/shell/left-sidebar.tsx"), user("one more edit", "u2")]),
+    ).toBe(true)
   })
 
   test("stays silent for edits that are not UI, and for older turns", () => {
-    expect(needed([user("继续", "u1"), edit("packages/core/src/bus.ts"), user("再看一下", "u2")])).toBe(false)
+    expect(needed([user("continue", "u1"), edit("packages/core/src/bus.ts"), user("look again", "u2")])).toBe(false)
     // A CSS edit two turns back does not make every later request a UI request.
     expect(
       needed([
-        user("改样式", "u1"),
+        user("change styles", "u1"),
         edit("packages/ui/src/a.css"),
-        user("换个话题", "u2"),
+        user("new topic", "u2"),
         assistant("a2"),
-        user("写个脚本", "u3"),
+        user("write a script", "u3"),
       ]),
     ).toBe(false)
   })
@@ -129,7 +137,10 @@ describe("inject", () => {
     const directory = await mkdtemp(join(tmpdir(), "design-"))
     await Bun.write(join(directory, "DESIGN.md"), DOC)
 
-    const messages = await inject({ messages: [user("把圆角改小一点")], directory })
+    const messages = await inject({
+      messages: [user("tweak spacing in packages/app/src/shell/left-sidebar.tsx")],
+      directory,
+    })
     expect(messages).toHaveLength(2)
     const hint = messages[1] as SessionMessage.Synthetic
     expect(hint.type).toBe("synthetic")
@@ -142,20 +153,20 @@ describe("inject", () => {
   test("leaves a non-UI request alone", async () => {
     const directory = await mkdtemp(join(tmpdir(), "design-"))
     await Bun.write(join(directory, "DESIGN.md"), DOC)
-    const messages = [user("写个脚本统计工具调用")]
+    const messages = [user("write a script that counts tool calls")]
     expect(await inject({ messages, directory })).toBe(messages)
   })
 
   test("leaves the request alone when the project wrote no values down", async () => {
     const directory = await mkdtemp(join(tmpdir(), "design-"))
-    const messages = [user("把圆角改小一点")]
+    const messages = [user("make the radius a bit smaller")]
     expect(await inject({ messages, directory })).toBe(messages)
   })
 
   test("can be switched off", async () => {
     const directory = await mkdtemp(join(tmpdir(), "design-"))
     await Bun.write(join(directory, "DESIGN.md"), DOC)
-    const messages = [user("把圆角改小一点")]
+    const messages = [user("tweak spacing in packages/app/src/shell/left-sidebar.tsx")]
     expect(await inject({ messages, directory, enabled: false })).toBe(messages)
   })
 })

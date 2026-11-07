@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import type { FileSystem } from "@opencode/core/filesystem"
 import { DateTime, Effect, Fiber, Layer, LayerMap, Schema, Stream } from "effect"
 import path from "path"
+import { existsSync } from "fs"
 import { pathToFileURL } from "url"
 import { eq } from "drizzle-orm"
 import { Database } from "@opencode/core/database/database"
@@ -331,15 +332,17 @@ describe("Session.prompt", () => {
         resume: false,
       })
 
-      expect(message.payload.files).toEqual([
-        {
-          data: uri.slice(uri.indexOf(",") + 1),
-          mime: "image/png",
-          source: { type: "inline" },
-          name: "image.png",
-          mention: { start: 8, end: 17, text: "[Image 1]" },
-        },
-      ])
+      const file = message.payload.files?.[0]
+      expect(file).toMatchObject({
+        data: uri.slice(uri.indexOf(",") + 1),
+        mime: "image/png",
+        source: { type: "inline" },
+        mention: { start: 8, end: 17, text: "[Image 1]" },
+      })
+      // Paste copy path lives in name so the bubble stays inline and tools still have a disk path.
+      expect(typeof file?.name).toBe("string")
+      expect(file?.name?.includes("attachments")).toBe(true)
+      expect(existsSync(file!.name!)).toBe(true)
       const stored = yield* admitted(message.id)
       expect(stored?.type).toBe("user")
       if (stored?.type === "user") expect(stored.payload.files).toEqual(message.payload.files)
@@ -367,7 +370,7 @@ describe("Session.prompt", () => {
       expect(message.payload.files?.[0]).toMatchObject({
         mime: "text/plain",
         source: { type: "uri", uri: sourceUri.href },
-        name: "main.ts",
+        name: source,
       })
       expect(
         Buffer.from(message.payload.files?.[0]?.data ?? "", "base64")
@@ -394,7 +397,7 @@ describe("Session.prompt", () => {
       expect(message.payload.files?.[0]).toMatchObject({
         mime: "application/x-directory",
         source: { type: "uri", uri },
-        name: "source",
+        name: import.meta.dir,
       })
       expect(Buffer.from(message.payload.files?.[0]?.data ?? "", "base64").toString("utf8")).toContain(
         "session-prompt.test.ts",
@@ -421,14 +424,12 @@ describe("Session.prompt", () => {
         resume: false,
       })
 
-      expect(message.payload.files).toEqual([
-        {
-          data: bytes.toString("base64"),
-          mime: "image/png",
-          source: { type: "uri", uri: pathToFileURL(source).href },
-          name: "image.png",
-        },
-      ])
+      expect(message.payload.files?.[0]).toMatchObject({
+        data: bytes.toString("base64"),
+        mime: "image/png",
+        source: { type: "uri", uri: pathToFileURL(source).href },
+        name: source,
+      })
       const stored = yield* admitted(message.id)
       expect(stored?.type === "user" ? stored.payload.files : undefined).toEqual(message.payload.files)
     }),
@@ -453,13 +454,15 @@ describe("Session.prompt", () => {
         resume: false,
       })
 
-      expect(message.payload.files).toEqual([
-        {
-          data: "AA==",
-          mime: "image/png",
-          source: { type: "inline" },
-        },
-      ])
+      const file = message.payload.files?.[0]
+      expect(file).toMatchObject({
+        data: "AA==",
+        mime: "image/png",
+        source: { type: "inline" },
+      })
+      expect(typeof file?.name).toBe("string")
+      expect(file?.name?.includes("attachments")).toBe(true)
+      expect(existsSync(file!.name!)).toBe(true)
     }),
   )
 
@@ -476,7 +479,11 @@ describe("Session.prompt", () => {
         resume: false,
       })
 
-      expect(message.payload.files).toEqual([{ data, mime: "image/heic", source: { type: "inline" } }])
+      const file = message.payload.files?.[0]
+      expect(file).toMatchObject({ data, mime: "image/heic", source: { type: "inline" } })
+      expect(typeof file?.name).toBe("string")
+      expect(file?.name?.includes("attachments")).toBe(true)
+      expect(existsSync(file!.name!)).toBe(true)
     }),
   )
 
@@ -493,14 +500,15 @@ describe("Session.prompt", () => {
         resume: false,
       })
 
-      expect(message.payload.files).toEqual([
-        {
-          data: Buffer.from("export const value = 1\n").toString("base64"),
-          mime: "text/plain",
-          source: { type: "inline" },
-          name: "main.ts",
-        },
-      ])
+      const file = message.payload.files?.[0]
+      expect(file).toMatchObject({
+        data: Buffer.from("export const value = 1\n").toString("base64"),
+        mime: "text/plain",
+        source: { type: "inline" },
+      })
+      expect(typeof file?.name).toBe("string")
+      expect(file?.name?.includes("attachments")).toBe(true)
+      expect(existsSync(file!.name!)).toBe(true)
     }),
   )
 

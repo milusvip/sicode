@@ -478,7 +478,7 @@ function ExaOutput(props: { output?: string }) {
 export type ContextGroupPart =
   | SessionMessageAssistantTool
   | (SessionMessageAssistantReasoning & { id: string; streaming?: boolean })
-  | { type: "notice" | "shell"; id: string; render: () => JSX.Element; summary?: string }
+  | { type: "notice" | "shell"; id: string; render: () => JSX.Element; summary?: string; failed?: boolean }
 
 export function CurrentContextToolGroup(props: {
   parts: ContextGroupPart[]
@@ -507,7 +507,15 @@ export function CurrentContextToolGroup(props: {
 
   // A finished process that contains a failed tool may not wear the success check: the collapsed
   // chain is the only place that failure shows, and `bun test` failing is a `completed` tool.
-  const failed = createMemo(() => tools().some(currentToolFailed))
+  // The count covers the same population as the head's "N tools": a shell row in the chain counts
+  // toward N, so a killed or non-zero shell has to count toward the failures as well.
+  const failedTools = createMemo(
+    () =>
+      props.parts.filter((part) =>
+        part.type === "tool" ? currentToolFailed(part) : part.type === "shell" ? part.failed === true : false,
+      ).length,
+  )
+  const failed = createMemo(() => failedTools() > 0)
 
   createEffect(() => {
     if (!pending()) return
@@ -553,27 +561,42 @@ export function CurrentContextToolGroup(props: {
       return {
         text,
         open,
-        closed: open,
         tools: "",
         count: undefined as number | undefined,
         summary,
         before: "",
         mid: "",
         after: "",
+        failed: "",
       }
     }
 
-    const count = props.parts.filter((part) => part.type === "tool" || part.type === "shell").length || thoughts
+    // A thought-only group has no tools at all. Counting its reasoning parts as tools printed
+    // "过程 · 3 个工具" for a stage that ran nothing, so the noun follows what actually ran.
+    const toolCount = props.parts.filter((part) => part.type === "tool" || part.type === "shell").length
+    const thoughtsOnly = toolCount === 0
+    const count = thoughtsOnly ? thoughts : toolCount
     const before = props.open ? i18n.t("ui.processShell.count.before") : i18n.t("ui.processShell.open.before")
-    const after = i18n.plural("ui.processShell.count.after", count)
+    const after = i18n.plural(
+      thoughtsOnly ? "ui.processShell.count.afterThought" : "ui.processShell.count.after",
+      count,
+    )
     // Expanded, the rows below already name every tool; repeating them in the header is noise.
-    // Collapsed, that list is the only preview of what ran, so it stays.
-    const tools = props.open ? "" : names() || i18n.plural("ui.messagePart.context.thought", thoughts)
-    const mid = props.open ? "" : i18n.t("ui.processShell.open.mid")
+    // Collapsed, that list is the only preview of what ran, so it stays. A thought-only group
+    // already says "thoughts" in its count, so it carries no middle list at all.
+    const tools = props.open || thoughtsOnly ? "" : (names() ?? "")
+    const mid = props.open || thoughtsOnly ? "" : i18n.t("ui.processShell.open.mid")
     // "已完成 N 个工具" belongs on the work-shell head. Process rows always read as 过程.
-    const text = i18n.plural("ui.processShell.open", count, { tools: names() || tools })
+    const text = thoughtsOnly
+      ? i18n.plural("ui.processShell.openThought", count)
+      : i18n.plural("ui.processShell.open", count, { tools: names() || tools })
+    // Failures keep their count here: the head only carries a warning glyph, so "3 个工具，1 个失败"
+    // is the one place the reader can tell one broken call from a stage that mostly failed.
+    const failedText = failedTools()
+      ? i18n.plural("ui.processShell.failed", failedTools(), { count: failedTools() })
+      : ""
 
-    return { text, open: text, closed: text, tools, count, summary: "", before, mid, after }
+    return { text, open: text, tools, count, summary: "", before, mid, after, failed: failedText }
   })
 
   const items = createMemo(() =>
@@ -673,7 +696,10 @@ export function CurrentContextToolGroup(props: {
           <div
             data-component="context-tool-group-trigger"
             data-process-shell-trigger=""
-            aria-label={label().open}
+            /* Only the collapsed tool-name list can be ellipsized; a tooltip on every head that has
+               nothing to truncate was pure noise. */
+            title={label().tools || undefined}
+            aria-label={label().text}
           >
             <span data-slot="process-shell-icon">
               <Show
@@ -708,6 +734,13 @@ export function CurrentContextToolGroup(props: {
                   </span>
                   <span data-slot="context-tool-group-prefix">{label().after}</span>
                 </span>
+                <Show when={label().failed}>
+                  {(failed) => (
+                    <span data-slot="context-tool-group-failed">
+                      <span data-slot="context-tool-group-prefix">{failed()}</span>
+                    </span>
+                  )}
+                </Show>
               </Show>
             </span>
             <Show when={elapsed()}>

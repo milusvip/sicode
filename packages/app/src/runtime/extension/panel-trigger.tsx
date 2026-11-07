@@ -118,8 +118,8 @@ export function PanelTrigger(props: {
   const others = () => props.region.keys().filter((key) => key !== props.value && closable(key))
   const every = () => props.region.keys().filter(closable)
 
-  // Label text only — keep the X in Tabs.Trigger's close slot (same layout as before). Wrapping the
-  // whole tab in Context.Trigger swallowed close clicks; wrapping only the label does not.
+  // SiCode: wrap only the label in the context-menu trigger. The close button stays in Tabs.Trigger's
+  // close slot (unchanged layout). Wrapping the whole tab swallowed X clicks.
   const labeled = (node: JSX.Element) => (
     <Menu.Context.Trigger as="div" class="contents">
       {node}
@@ -152,12 +152,25 @@ export function PanelTrigger(props: {
             {labeled(content())}
           </Tabs.Trigger>
         </Match>
+        <Match when={props.tab.draggable === false && props.tab.closable === "compact"}>
+          <Tabs.Trigger
+            value={props.value}
+            id={props.tab.dom?.tab}
+            onMiddleClick={() => props.onClose(props.value)}
+            closeButton={compactClose()}
+            hideCloseButton
+          >
+            {labeled(content())}
+          </Tabs.Trigger>
+        </Match>
         <Match when={props.tab.draggable === false}>
           <Tabs.Trigger
             value={props.value}
             id={props.tab.dom?.tab}
             class="group"
             onMiddleClick={props.tab.closable === false ? undefined : () => props.onClose(props.value)}
+            closeButton={close()}
+            hideCloseButton
           >
             {labeled(content())}
           </Tabs.Trigger>

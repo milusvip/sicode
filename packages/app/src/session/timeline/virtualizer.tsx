@@ -11,6 +11,7 @@ import { Predicate } from "effect"
 import {
   filterCollapsedWorkShellRows,
   openWorkShellOnly,
+  restoreDefaultOpenWorkShells,
   Timeline,
   TimelineRow,
   WorkShellHead,
@@ -36,6 +37,7 @@ import { createMediaQuery } from "@solid-primitives/media"
 import type { createTimelineProjection } from "./projection"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { filterVirtualIndexes } from "./virtual-items"
+import "./jump-to-latest.css"
 
 const fallbackItemSize = 60
 
@@ -85,6 +87,7 @@ type Input = {
     disclosure: Readonly<Record<string, boolean | undefined>>,
   ) => boolean
   setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
+  setRevealPart?: (fn: (target: string) => boolean) => void
   setScrollToEnd?: (fn: () => void) => void
   /** A tool call the route asks this timeline to open on; `done` clears it once revealed. */
   reveal?: { target: () => string | undefined; done: () => void }
@@ -121,11 +124,21 @@ export function createTimelineVirtualizer(input: Input) {
   const coldBottomMount = coldMount && input.pinned()
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
+  // Survives only for this virtualizer instance; cold remount starts clean (defaults apply again).
+  const accordionClosed = new Set<string>()
+  const workShellDisclosure = () => ({
+    value: (key: string) => toolOpen[key],
+    set: (key: string, open: boolean | undefined) => setToolOpen(key, open),
+    accordionClosed,
+  })
   const patchGroupKeys = cached?.patchGroupKeys ?? new Map<string, string>()
   createEffect(
     on(
       () => input.presentationKey?.(),
-      () => setToolOpen(reconcile({})),
+      () => {
+        setToolOpen(reconcile({}))
+        accordionClosed.clear()
+      },
       { defer: true },
     ),
   )
@@ -443,14 +456,16 @@ export function createTimelineVirtualizer(input: Input) {
       )
     }
 
-    const found = rows()
-      .flatMap((row, index) =>
+    // SiCode: search the unfiltered projection. `rows()` drops tools inside a collapsed work shell
+    // (done turns default closed), so a background-pill click would miss the terminal card entirely.
+    const projected = input.projection.rows()
+    const found = projected
+      .flatMap((row) =>
         Predicate.isTagged(row, "AssistantPart")
-          ? (row.group.type === "part"
-              ? [row.group.ref]
-              : row.group.refs
-            ).flatMap((ref) =>
-              matches(ref) ? [{ group: row.group, index, partID: ref.partID }] : [],
+          ? (row.group.type === "part" ? [row.group.ref] : row.group.refs).flatMap((ref) =>
+              matches(ref)
+                ? [{ group: row.group, userMessageID: row.userMessageID, partID: ref.partID }]
+                : [],
             )
           : [],
       )
@@ -459,22 +474,40 @@ export function createTimelineVirtualizer(input: Input) {
     if (!found) return false
 
     const key = found.group.key
+    const shellKey = workShellDisclosureKey(found.userMessageID)
 
     prepareNavigation()
-    // Opening the group and anchoring its row render the tool synchronously, wherever the row is.
+    // Open the process shell first so the tool row re-enters the visible list, then expand the tool.
     batch(() => {
+      openWorkShellOnly(projected, workShellDisclosure(), found.userMessageID)
+      setToolOpen(shellKey, true)
+      accordionClosed.delete(shellKey)
       setToolOpen(
         found.group.type === "context"
           ? { [`context:${key}`]: true, [`${key}:tool:${found.partID}`]: true }
           : { [key]: true },
       )
-      setRendering("anchor", { key: TimelineRow.key(rows()[found.index]!), partID: found.partID })
+    })
+
+    const visible = rows()
+    const index = visible.findIndex(
+      (row) =>
+        Predicate.isTagged(row, "AssistantPart") &&
+        (row.group.type === "part"
+          ? row.group.ref.partID === found.partID
+          : row.group.refs.some((ref) => ref.partID === found.partID)),
+    )
+
+    if (index < 0) return false
+
+    batch(() => {
+      setRendering("anchor", { key: TimelineRow.key(visible[index]!), partID: found.partID })
     })
     // Until its ResizeObserver delivers, the opened row keeps its collapsed size, so the timeline may not scroll yet
     // (and cannot unpin) or ends above the tool. Commit the real size first.
-    const opened = virtualContent?.querySelector<HTMLElement>(`[data-index="${found.index}"]`)
+    const opened = virtualContent?.querySelector<HTMLElement>(`[data-index="${index}"]`)
 
-    if (opened) resizeItem(found.index, opened.offsetHeight)
+    if (opened) resizeItem(index, opened.offsetHeight)
     input.onUnpin()
     pinAnchor()
 
@@ -582,6 +615,8 @@ export function createTimelineVirtualizer(input: Input) {
       prepareNavigation()
       virtualizer.scrollToIndex(index, { align: "start" })
     })
+    // SiCode: background-pill clicks call this without a route change.
+    input.setRevealPart?.((target) => (active() ? revealPart(target) : false))
     input.setScrollToEnd?.(() => {
       if (!active() || !listRoot()?.isConnected) return
       prepareNavigation()
@@ -623,6 +658,23 @@ export function createTimelineVirtualizer(input: Input) {
     )
   }
 
+  const stopColdObservers = () => {
+    contentObserver?.disconnect()
+    viewportObserver?.disconnect()
+    contentObserver = undefined
+    viewportObserver = undefined
+  }
+
+  // Show the first screenful as soon as it is measured. Bottom-pin settle is separate —
+  // waiting for both together left visibility:hidden until the user scrolled up (unpin),
+  // which is the "timeline blank until I scroll" bug.
+  const revealCold = () => {
+    if (!coldRevealPending || !virtualContent) return
+    coldRevealPending = false
+    virtualContent.style.removeProperty("visibility")
+    if (!coldPending) stopColdObservers()
+  }
+
   const settleColdBottom = () => {
     if (!active() || (!coldRevealPending && !coldPending) || settleQueued) return
     settleQueued = true
@@ -643,27 +695,29 @@ export function createTimelineVirtualizer(input: Input) {
       })
 
       if (pendingSizes.size || pendingMeasurements()) return
-      if (coldPending) pinColdBottom()
 
-      if (input.pinned() && Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > 1) return
-
-      // The scroll event must update the range before newly exposed rows can reveal.
-      if (root.scrollHeight > root.clientHeight && Math.abs((virtualizer.scrollOffset ?? 0) - root.scrollTop) > 1)
-        return
-
+      // Expand the estimated tail range once the first screenful has real heights.
       if (rendering.initialTail) {
         setRendering("initialTail", false)
         settleColdBottom()
-
         return
       }
 
+      // Measured + range expanded → show content. Do not wait for bottom pin.
+      if (coldRevealPending) revealCold()
+
+      if (!coldPending) return
+      pinColdBottom()
+
+      if (input.pinned() && Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > 1) return
+
+      // The scroll event must update the range before newly exposed rows can settle.
+      if (root.scrollHeight > root.clientHeight && Math.abs((virtualizer.scrollOffset ?? 0) - root.scrollTop) > 1)
+        return
+
       if (pendingSizes.size || pendingMeasurements() || virtualContent.querySelector(pendingMarkdown)) return
       coldPending = false
-      coldRevealPending = false
-      contentObserver?.disconnect()
-      viewportObserver?.disconnect()
-      virtualContent.style.removeProperty("visibility")
+      stopColdObservers()
     })
   }
 
@@ -717,6 +771,8 @@ export function createTimelineVirtualizer(input: Input) {
   // the end must stop following, even though the resulting position still looks like the end.
   const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
     releaseAnchor()
+    // User intent: never keep a blank hidden timeline waiting on bottom-pin settle.
+    revealCold()
     input.onUserScroll(event.target)
 
     if (event.deltaY < 0) input.onUnpin()
@@ -782,6 +838,7 @@ export function createTimelineVirtualizer(input: Input) {
   // so a held pointer is what separates those from the virtualizer's own measurement adjustments.
   const handleListPointerDown = (event: PointerEvent) => {
     releaseAnchor()
+    revealCold()
     input.onUserScroll(event.target)
     pointerHeld = true
   }
@@ -808,6 +865,7 @@ export function createTimelineVirtualizer(input: Input) {
 
     if (scrollKeyOwner(event.currentTarget, event.target, key) !== event.currentTarget) return
     releaseAnchor()
+    revealCold()
     input.onUserScroll(event.currentTarget)
 
     if (upwardKeys.has(key)) input.onUnpin()
@@ -988,15 +1046,12 @@ export function createTimelineVirtualizer(input: Input) {
         >
           <button
             type="button"
+            data-component="timeline-jump-to-latest"
             aria-label={language.t("session.messages.jumpToLatest")}
             class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px]"
-            style={{
-              background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
-              "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
-            }}
             onClick={input.onResumeScroll}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <svg data-slot="jump-to-latest-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
                 d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332"
                 stroke="currentColor"
@@ -1037,8 +1092,13 @@ export function createTimelineVirtualizer(input: Input) {
                     open={open()}
                     onToggle={() => {
                       const next = !open()
-                      if (next) openWorkShell(shell().userMessageID)
-                      else setToolOpen(key(), next)
+                      if (next) {
+                        openWorkShell(shell().userMessageID)
+                        return
+                      }
+                      setToolOpen(key(), false)
+                      accordionClosed.delete(key())
+                      restoreDefaultOpenWorkShells(input.projection.rows(), workShellDisclosure(), shell().userMessageID)
                     }}
                   />
                 </div>
@@ -1105,12 +1165,12 @@ export function createTimelineVirtualizer(input: Input) {
     while (cache.size > 16) cache.delete(cache.keys().next().value!)
     coldPending = false
     coldRevealPending = false
-    contentObserver?.disconnect()
-    viewportObserver?.disconnect()
+    stopColdObservers()
 
     if (active()) {
       input.setScrollRef(undefined)
       input.setRevealMessage?.(() => {})
+      input.setRevealPart?.(() => false)
       input.setScrollToEnd?.(() => {})
     }
   })
@@ -1125,8 +1185,10 @@ export function createTimelineVirtualizer(input: Input) {
     const row = root?.querySelector<HTMLElement>(`[data-timeline-key="work-shell:${userMessageID}"]`)
     const before = row?.getBoundingClientRect().top
 
-    openWorkShellOnly(input.projection.rows(), { set: (key, value) => setToolOpen(key, value) }, userMessageID)
-    setToolOpen(workShellDisclosureKey(userMessageID), true)
+    openWorkShellOnly(input.projection.rows(), workShellDisclosure(), userMessageID)
+    const key = workShellDisclosureKey(userMessageID)
+    setToolOpen(key, true)
+    accordionClosed.delete(key)
 
     if (!row || before === undefined) return
 
@@ -1140,8 +1202,14 @@ export function createTimelineVirtualizer(input: Input) {
     disclosure: {
       patchGroupKeys,
       value: (key: string) => toolOpen[key],
-      set: (key: string, open: boolean) => setToolOpen(key, open),
+      set: (key: string, open: boolean | undefined) => {
+        setToolOpen(key, open)
+        if (open === false) accordionClosed.delete(key)
+      },
       openWorkShell,
+      restoreDefaultOpen: (except: string) => {
+        restoreDefaultOpenWorkShells(input.projection.rows(), workShellDisclosure(), except)
+      },
     },
     revealPart,
     View,

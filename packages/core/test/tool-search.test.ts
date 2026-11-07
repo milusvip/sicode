@@ -341,9 +341,17 @@ describe("search tools", () => {
             Effect.sync(() => {
               expect(result).toMatchObject({
                 status: "completed",
-                content: [{ type: "text", text: "No matches found" }],
                 metadata: { matches: 0, truncated: false, mode: "content" },
               })
+              const text =
+                result.status === "completed"
+                  ? (result.content ?? [])
+                      .filter((part): part is { type: "text"; text: string } => part.type === "text")
+                      .map((part) => part.text)
+                      .join("\n")
+                  : ""
+              expect(text.startsWith("[search empty | patterns=")).toBe(true)
+              expect(text).toContain("No matches found")
             }),
           ),
         ),
@@ -485,6 +493,36 @@ describe("search tools", () => {
     ),
   )
 
+  it.live("evidence head marks empty and truncated grep results", () =>
+    Effect.sync(() => {
+      const empty = GrepTool.toModelContent([], {
+        mode: "content",
+        truncated: false,
+        offset: 0,
+        pattern: "needle",
+        patterns: ["needle", "pin"],
+      })
+      expect(empty.startsWith("[search empty | patterns=needle,pin]")).toBe(true)
+      const hit = {
+        kind: "match" as const,
+        match: {
+          entry: { path: "a.ts", type: "file" as const },
+          line: 1,
+          offset: 0,
+          text: "x",
+          submatches: [],
+        },
+      }
+      const trunc = GrepTool.toModelContent([hit], {
+        mode: "content",
+        truncated: true,
+        offset: 0,
+        pattern: "x",
+      })
+      expect(trunc.startsWith("[search truncated | showing 1 | offset=0]")).toBe(true)
+    }),
+  )
+
   it.live("ranks files by filename hit first, demotes tests", () =>
     Effect.sync(() => {
       // toModelContent is a pure function; assert its ordering directly so the relevance
@@ -549,6 +587,31 @@ describe("search tools", () => {
       const out = GrepTool.toModelContent(rows, { mode: "content", truncated: false, offset: 0, pattern: "retry" })
       // Line 12 (the declaration) prints before line 40, the earliest usage.
       expect(out.indexOf("Line 12:")).toBeLessThan(out.indexOf("Line 40:"))
+    }),
+  )
+
+  it.live("ranks concept-extra filename when the label alone is not a stem", () =>
+    Effect.sync(() => {
+      // compress → compaction: the rendered label is "compress (+1 synonyms)", which is not a
+      // filename stem. Filename ranking must still see `compaction` from patterns[].
+      const mk = (p: string, line: number, text: string) => ({
+        kind: "match" as const,
+        match: { entry: { path: p, type: "file" as const }, line, offset: 0, text, submatches: [] },
+      })
+      const rows = [
+        mk("src/plugin/provider/openai.ts", 1, "compress: true"),
+        mk("src/plugin/provider/openai.ts", 2, "compress tokens"),
+        mk("src/plugin/provider/openai.ts", 3, "compress again"),
+        mk("src/session/compaction.ts", 1, "export function compact(session)"),
+      ]
+      const out = GrepTool.toModelContent(rows, {
+        mode: "content",
+        truncated: false,
+        offset: 0,
+        pattern: "compress (+1 synonyms)",
+        patterns: ["compress", "compaction"],
+      })
+      expect(out.indexOf("src/session/compaction.ts:")).toBeLessThan(out.indexOf("src/plugin/provider/openai.ts:"))
     }),
   )
 

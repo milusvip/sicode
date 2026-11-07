@@ -116,8 +116,62 @@ function bounded(items, limit) {
   return selected.reverse()
 }
 
+/** @type {Map<number, { resolve: (params: object) => void, reject: (error: Error) => void, timer: ReturnType<typeof setTimeout> }[]>} */
+const fileChooserWaiters = new Map()
+
+function armFileChooser(tabId, ms) {
+  return new Promise((resolve, reject) => {
+    const entry = {
+      resolve: (params) => resolve(params),
+      reject,
+      timer: setTimeout(() => {
+        const queue = fileChooserWaiters.get(tabId) || []
+        const index = queue.indexOf(entry)
+        if (index >= 0) queue.splice(index)
+        if (!queue.length) fileChooserWaiters.delete(tabId)
+        reject(
+          new Error(
+            "File chooser did not open within the timeout. Call browser.snapshot({tabID}) and retry browser.files.upload with a [file] ref, or click the control that opens the file picker first.",
+          ),
+        )
+      }, ms),
+    }
+    const queue = fileChooserWaiters.get(tabId) || []
+    queue.push(entry)
+    fileChooserWaiters.set(tabId, queue)
+  })
+}
+
+function settleFileChooser(tabId, params) {
+  const queue = fileChooserWaiters.get(tabId)
+  if (!queue?.length) return false
+  const entry = queue.shift()
+  if (!queue.length) fileChooserWaiters.delete(tabId)
+  clearTimeout(entry.timer)
+  entry.resolve(params || {})
+  return true
+}
+
+function cancelFileChooser(tabId, error) {
+  const queue = fileChooserWaiters.get(tabId)
+  if (!queue?.length) return
+  fileChooserWaiters.delete(tabId)
+  const reason = error instanceof Error ? error : new Error(String(error))
+  for (const entry of queue) {
+    clearTimeout(entry.timer)
+    entry.reject(reason)
+  }
+}
+
 function onDebuggerEvent(source, method, params) {
   if (typeof source?.tabId !== "number") return
+
+  // File-chooser interception must work even before a diagnostics buffer exists.
+  if (method === "Page.fileChooserOpened") {
+    settleFileChooser(source.tabId, params)
+    return
+  }
+
   const buffer = buffers.get(source.tabId)
   if (!buffer) return
 
@@ -452,4 +506,136 @@ export async function getNetwork(tabId, input = {}) {
   }
 }
 
-export { detach as detachDebugger }
+/**
+ * Attach files via chrome.debugger using file-chooser interception.
+ *
+ * Direct DOM.setFileInputFiles({nodeId}) is rejected with -32000 "Not allowed"
+ * for extension debuggers (Chromium #928255 / OpenCLI #2108). The permitted path is:
+ * Page.setInterceptFileChooserDialog → trigger chooser → Page.fileChooserOpened
+ * → DOM.setFileInputFiles with the event's backendNodeId.
+ *
+ * @param {number} tabId
+ * @param {string[]} paths Absolute paths on this machine (desktop wrote the bytes there).
+ * @param {() => Promise<unknown>} trigger Opens the file chooser (click marked input or upload control).
+ */
+async function setFileInputFiles(tabId, paths, trigger) {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new Error("Upload needs at least one local file path.")
+  }
+  if (typeof trigger !== "function") {
+    throw new Error("Upload needs a trigger that opens the file chooser after interception is enabled.")
+  }
+
+  ensureListener()
+  await withTimeout(attach(tabId), 5_000, "debugger.attach")
+  await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.enable"), 3_000, "Page.enable").catch(() => undefined)
+  await withTimeout(chrome.debugger.sendCommand({ tabId }, "DOM.enable"), 3_000, "DOM.enable")
+
+  const opened = armFileChooser(tabId, 5_000)
+  // If trigger fails we cancel without awaiting `opened`; swallow that rejection.
+  const openedResult = opened.then(
+    (params) => ({ ok: true, params }),
+    (error) => ({ ok: false, error }),
+  )
+  let interceptOn = false
+  try {
+    await withTimeout(
+      chrome.debugger.sendCommand({ tabId }, "Page.setInterceptFileChooserDialog", { enabled: true }),
+      3_000,
+      "Page.setInterceptFileChooserDialog",
+    )
+    interceptOn = true
+    await trigger()
+    const result = await openedResult
+    if (!result.ok) throw result.error
+    const backendNodeId = result.params?.backendNodeId
+    if (!backendNodeId) {
+      throw new Error(
+        "File chooser opened without a backing input. Prefer a snapshot [file] ref for browser.files.upload; showOpenFilePicker-style choosers without an input are not supported.",
+      )
+    }
+    await withTimeout(
+      chrome.debugger.sendCommand(
+        { tabId },
+        "DOM.setFileInputFiles",
+        { files: paths, backendNodeId },
+      ),
+      15_000,
+      "DOM.setFileInputFiles",
+    )
+    return true
+  } catch (error) {
+    cancelFileChooser(tabId, error instanceof Error ? error : new Error(String(error)))
+    throw error
+  } finally {
+    if (interceptOn) {
+      await chrome.debugger
+        .sendCommand({ tabId }, "Page.setInterceptFileChooserDialog", { enabled: false })
+        .catch(() => undefined)
+    }
+  }
+}
+
+/** @type {Map<number, { type: string, message: string, defaultValue: string } | null>} */
+const dialogs = new Map()
+
+function ensureDialogListener() {
+  if (ensureDialogListener.installed) return
+  ensureDialogListener.installed = true
+  chrome.debugger.onEvent.addListener((source, method, params) => {
+    if (!source?.tabId) return
+    if (method === "Page.javascriptDialogOpening") {
+      dialogs.set(source.tabId, {
+        type: String(params?.type || "alert"),
+        message: String(params?.message || ""),
+        defaultValue: String(params?.defaultPrompt || ""),
+      })
+      return
+    }
+    if (method === "Page.javascriptDialogClosed") dialogs.set(source.tabId, null)
+  })
+}
+
+async function enableDialogWatch(tabId) {
+  ensureDialogListener()
+  await attach(tabId)
+  await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.enable"), 3_000, "Page.enable")
+  if (!dialogs.has(tabId)) dialogs.set(tabId, null)
+}
+
+async function getDialog(tabId) {
+  await enableDialogWatch(tabId)
+  return dialogs.get(tabId) ?? null
+}
+
+async function handleDialog(tabId, accept, promptText) {
+  await enableDialogWatch(tabId)
+  const open = dialogs.get(tabId)
+  if (!open) {
+    throw new Error(
+      'This tab has no JavaScript dialog to handle. browser.dialog({tabID,action:"get"}) returns null when none is open; continue without accepting or dismissing one.',
+    )
+  }
+  await withTimeout(
+    chrome.debugger.sendCommand(
+      { tabId },
+      "Page.handleJavaScriptDialog",
+      {
+        accept: !!accept,
+        ...(promptText !== undefined ? { promptText: String(promptText) } : {}),
+      },
+    ),
+    5_000,
+    "Page.handleJavaScriptDialog",
+  )
+  dialogs.set(tabId, null)
+  return true
+}
+
+export {
+  detach as detachDebugger,
+  setFileInputFiles,
+  getDialog,
+  handleDialog,
+  enableDialogWatch,
+}

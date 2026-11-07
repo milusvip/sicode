@@ -75,6 +75,30 @@ export type ChromeBridgeHost = {
     allowDestructive?: boolean,
   ) => Promise<BridgeTab>
   fillTab: (chromeTabId: number, ref: string, text: string) => Promise<BridgeTab>
+  selectTab: (chromeTabId: number, ref: string, values: readonly string[]) => Promise<BridgeTab>
+  checkTab: (chromeTabId: number, ref: string, checked: boolean) => Promise<BridgeTab>
+  hoverTab: (chromeTabId: number, ref: string) => Promise<BridgeTab>
+  fillFormTab: (
+    chromeTabId: number,
+    fields: ReadonlyArray<
+      | { readonly ref: string; readonly type: "text"; readonly value: string }
+      | { readonly ref: string; readonly type: "select"; readonly values: readonly string[] }
+      | { readonly ref: string; readonly type: "check"; readonly checked: boolean }
+    >,
+  ) => Promise<BridgeTab>
+  waitTab: (
+    chromeTabId: number,
+    input: {
+      condition: "load" | "text" | "textGone" | "response"
+      text?: string
+      timeoutMs?: number
+    },
+  ) => Promise<BridgeTab>
+  dialogTab: (
+    chromeTabId: number,
+    input: { action: "get" | "accept" | "dismiss"; promptText?: string },
+  ) => Promise<{ dialog: { type: string; message: string; defaultValue: string } | null; tab: BridgeTab }>
+  uploadTab: (chromeTabId: number, ref: string, paths: readonly string[]) => Promise<BridgeTab>
   pressTab: (chromeTabId: number, key: string) => Promise<BridgeTab>
   scrollTab: (chromeTabId: number, deltaY: number, deltaX?: number) => Promise<BridgeTab>
   screenshotTab: (chromeTabId: number) => Promise<{ screenshot: BridgeScreenshot; tab: BridgeTab }>
@@ -368,10 +392,20 @@ export function createChromeBridgeHost(stores: Stores, options: HostOptions): Ch
       message.type === "forward.result" ||
       message.type === "click.result" ||
       message.type === "fill.result" ||
+      message.type === "select.result" ||
+      message.type === "check.result" ||
+      message.type === "hover.result" ||
+      message.type === "fill_form.result" ||
+      message.type === "wait.result" ||
+      message.type === "files.upload.result" ||
       message.type === "press.result" ||
       message.type === "scroll.result"
     ) {
       item.resolve(message.tab)
+      return
+    }
+    if (message.type === "dialog.result") {
+      item.resolve({ dialog: message.dialog, tab: message.tab })
       return
     }
     if (message.type === "snapshot.result") {
@@ -644,6 +678,62 @@ export function createChromeBridgeHost(stores: Stores, options: HostOptions): Ch
       }),
     fillTab: (chromeTabId, ref, text) =>
       request({ type: "fill", requestID: requestID(), tabID: chromeTabID(chromeTabId), ref, text }),
+    selectTab: (chromeTabId, ref, values) =>
+      request({
+        type: "select",
+        requestID: requestID(),
+        tabID: chromeTabID(chromeTabId),
+        ref,
+        values: [...values],
+      }),
+    checkTab: (chromeTabId, ref, checked) =>
+      request({ type: "check", requestID: requestID(), tabID: chromeTabID(chromeTabId), ref, checked }),
+    hoverTab: (chromeTabId, ref) =>
+      request({ type: "hover", requestID: requestID(), tabID: chromeTabID(chromeTabId), ref }),
+    fillFormTab: (chromeTabId, fields) =>
+      request({
+        type: "fill_form",
+        requestID: requestID(),
+        tabID: chromeTabID(chromeTabId),
+        fields: fields.map((field) =>
+          field.type === "text"
+            ? { ref: field.ref, type: "text" as const, value: field.value }
+            : field.type === "select"
+              ? { ref: field.ref, type: "select" as const, values: [...field.values] }
+              : { ref: field.ref, type: "check" as const, checked: field.checked },
+        ),
+      }),
+    waitTab: (chromeTabId, input) =>
+      request(
+        {
+          type: "wait",
+          requestID: requestID(),
+          tabID: chromeTabID(chromeTabId),
+          condition: input.condition,
+          text: input.text,
+          timeoutMs: input.timeoutMs,
+        },
+        Math.min(35_000, Math.max(15_000, (input.timeoutMs ?? 10_000) + 5_000)),
+      ),
+    dialogTab: (chromeTabId, input) =>
+      request({
+        type: "dialog",
+        requestID: requestID(),
+        tabID: chromeTabID(chromeTabId),
+        action: input.action,
+        promptText: input.promptText,
+      }),
+    uploadTab: (chromeTabId, ref, paths) =>
+      request(
+        {
+          type: "files.upload",
+          requestID: requestID(),
+          tabID: chromeTabID(chromeTabId),
+          ref,
+          paths: [...paths],
+        },
+        45_000,
+      ),
     pressTab: (chromeTabId, key) =>
       request({ type: "press", requestID: requestID(), tabID: chromeTabID(chromeTabId), key }),
     scrollTab: (chromeTabId, deltaY, deltaX) =>

@@ -3,7 +3,7 @@ import { realpathSync, watch } from "node:fs"
 import os from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Scope, Stream } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Schedule, Scope, Stream } from "effect"
 import { Money } from "@opencode/schema/money"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -1048,6 +1048,31 @@ describe("ShellTool", () => {
     { timeout: 15_000 },
   )
 
+  // SiCode: force UTF-8 so Windows Python prints of CJK don't fail after a successful write.
+  productionIt.live(
+    "forces Python UTF-8 mode in agent shell commands",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => {
+          reset()
+          return withSession(tmp.path, (registry) =>
+            Effect.gen(function* () {
+              const command = isWindows
+                ? '[Console]::Out.Write("$env:PYTHONUTF8|$env:PYTHONIOENCODING")'
+                : 'printf %s "$PYTHONUTF8|$PYTHONIOENCODING"'
+              const settled = yield* executeTool(registry, call({ command }))
+
+              expect(settled.status).toBe("completed")
+              expect(settled.content?.[0]).toEqual({ type: "text", text: "1|utf-8" })
+            }),
+          )
+        },
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+      ),
+    { timeout: 15_000 },
+  )
+
   productionIt.live(
     "preserves an outer AI_AGENT marker in agent shell commands",
     () =>
@@ -1789,6 +1814,134 @@ describe("ShellTool", () => {
             expect(stopped.output?.output).toContain("Stopped background command")
             expect(stopped.output?.shellID).toBe(shellID)
             expect((yield* shell.list()).map((info) => info.id)).not.toContain(id)
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+    { timeout: 15_000 },
+  )
+
+  it.live("reads the recent output of a running background command", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const shell = yield* Shell.Service
+            const started = yield* executeTool(
+              registry,
+              call({ command: stallCommand, background: true }, "call-read-target"),
+            )
+            const shellID = started.metadata?.shellID
+            expect(typeof shellID).toBe("string")
+            if (typeof shellID !== "string") return
+            // The capture file is written asynchronously, so wait for the marker rather than guess.
+            const read = yield* executeTool(registry, call({ read: shellID }, "call-read-running")).pipe(
+              Effect.retry({ times: 20, schedule: Schedule.spaced(Duration.millis(50)) }),
+              Effect.filterOrFail((result) => result.output?.output.includes("mark-stall")),
+            )
+            expect(read.status).toBe("completed")
+            expect(read.output?.shellID).toBe(shellID)
+            expect(read.output?.status).toBe("running")
+            expect(read.output?.output).toContain(`<shell id="${shellID}" state="running" command="${stallCommand}">`)
+            expect(read.output?.output).toContain("mark-stall")
+            expect(read.output?.output).toContain("Still running")
+            expect(read.metadata).toMatchObject({ status: "running", truncated: false })
+            yield* shell.remove(ID.make(shellID))
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+    { timeout: 15_000 },
+  )
+
+  it.live("reads a finished background command with its exit code", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const shell = yield* Shell.Service
+            const started = yield* executeTool(
+              registry,
+              call({ command: bodyExitCommand, background: true }, "call-read-finished"),
+            )
+            const shellID = started.metadata?.shellID
+            expect(typeof shellID).toBe("string")
+            if (typeof shellID !== "string") return
+            yield* shell.wait(ID.make(shellID))
+
+            const read = yield* executeTool(registry, call({ read: shellID }, "call-read-exited"))
+            expect(read.status).toBe("completed")
+            expect(read.output?.status).toBe("completed")
+            expect(read.output?.output).toContain("body")
+            expect(read.output?.output).toContain("with exit code 7")
+            expect(read.output?.output).not.toContain("Still running")
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+    { timeout: 15_000 },
+  )
+
+  it.live("lists only this session's running background commands", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const shell = yield* Shell.Service
+            const empty = yield* executeTool(registry, call({ list: true }, "call-list-empty"))
+            expect(empty.output?.output).toBe("No background commands are running in this session.")
+
+            const started = yield* executeTool(
+              registry,
+              call({ command: idleCommand, background: true }, "call-list-target"),
+            )
+            const shellID = started.metadata?.shellID
+            expect(typeof shellID).toBe("string")
+            if (typeof shellID !== "string") return
+
+            const listed = yield* executeTool(registry, call({ list: true }, "call-list-one"))
+            expect(listed.output?.output).toContain("Background commands running in this session (1):")
+            expect(listed.output?.output).toContain(`${shellID}: ${idleCommand}`)
+
+            // A command started outside this session must not appear in it.
+            const foreign = yield* shell.create({ command: idleCommand, timeout: 0, metadata: { sessionID: "ses_other" } })
+            const scoped = yield* executeTool(registry, call({ list: true }, "call-list-scoped"))
+            expect(scoped.output?.output).not.toContain(foreign.id)
+            expect(scoped.output?.output).toContain(shellID)
+            yield* shell.remove(foreign.id)
+            yield* shell.remove(ID.make(shellID))
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
+    { timeout: 15_000 },
+  )
+
+  it.live("rejects mixing read, list, kill, and command", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            for (const input of [
+              { command: helloCommand, read: "sh_x" },
+              { command: helloCommand, list: true },
+              { list: true, read: "sh_x" },
+            ] as const) {
+              const rejected = yield* executeTool(registry, call(input, `call-mixed-${Permission.ID.create()}`))
+              expect(rejected.status).toBe("error")
+            }
           }),
         )
       },

@@ -121,7 +121,10 @@ describe("CodeModeInstructions.render", () => {
     expect(instructions).toContain("- orders (1 tool)")
     expect(instructions).toContain(`  - ${lookup.signature} // Look up an order by ID`)
     expect(instructions).not.toContain("search")
-    expect(instructions).toContain("They cannot be called directly. They only work inside code you pass to `execute`.")
+    expect(instructions).toContain(
+      "Those catalog entries cannot be called as top-level tools. They only work inside code you pass to `execute`.",
+    )
+    expect(instructions).toContain("Session tools (`grep`, `read`, `edit`")
     expect(instructions).toContain("The catalog is complete. Do not guess tool names.")
   })
 
@@ -129,9 +132,9 @@ describe("CodeModeInstructions.render", () => {
     const partial = render([lookup], 0)
     expect(partial).toContain("## Available tools")
     expect(partial).toContain("- orders (1 tool, none shown)")
-    expect(partial).toContain("They cannot be called directly, and neither can `search`.")
+    expect(partial).toContain("Those catalog entries cannot be called as top-level tools, and neither can `search`.")
     expect(partial).toContain(
-      "The catalog is partial. Inside `execute`, use `search(...)` to find a tool, then call it by the `path` in the result. `search` is synchronous. Call it without `await`; it does not return a Promise.",
+      "The catalog is partial. Inside `execute`, use `search(...)` to find a Code Mode tool, then call it by the `path` in the result. `search` is synchronous and only covers this catalog (not session tools). Call it without `await`; it does not return a Promise.",
     )
     expect(partial).toContain("- search({")
     expect(partial).toContain("  /** @integer @exclusiveMinimum 0 */\n  limit?: number,")

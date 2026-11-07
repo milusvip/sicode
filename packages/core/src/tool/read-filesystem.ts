@@ -11,10 +11,11 @@ import { FileSystem } from "../filesystem.js"
 import { Mime } from "../mime.js"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath } from "../schema.js"
 
-// SiCode: 2_000 行 / 50KB 会把常见的 60KB 源码文件强制分页。实测 review.spec.ts（63KB、1_399 行）
-// 在单个会话里被读了 21 次、每次只跟读 40-110 行，21 次往返 ≈ 3.4 分钟。放宽后这类文件一次读完。
+// SiCode: once raised to 3_000 / 128KB so medium sources were not re-paged 20×. Keep a high line
+// ceiling for the "widen small limit to EOF" path, but pull bytes back toward 64KB so a single
+// page cannot dump an 80KB+ file into the model before ToolOutput caps it (ses_e6ce form.js).
 export const MAX_READ_LINES = 3_000
-export const MAX_READ_BYTES = 128 * 1024
+export const MAX_READ_BYTES = 64 * 1024
 // SiCode: 低于这个行数的文件不值得为「小 limit」再分页一次 —— 多分一页就多一整轮模型往返。
 // 配合下面的「只讨要了不到一半」条件，放大后多注入的 token 远小于省下的一轮往返（9.8s）。
 const WHOLE_FILE_MIN_LINES = 150

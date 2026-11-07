@@ -199,9 +199,12 @@ export default function FileTreeV2(props: {
   // session deleted would stay in them. List the loaded directories again when the tree shows, and after each turn:
   // the cached expansion and the scroll offset stay, so the rows only move where the workspace changed. Listing is a
   // request, so this waits for the server and runs again when it reconnects.
+  // SiCode: also reload open file tab content (idle/mount backstop; FileMutation covers realtime).
+  const openTabs = () => ctx.layout.stored(props.session)
+
   createKeyed(
     () => live() && props.session.server.connected,
-    () => void refreshFileTree(file),
+    () => void refreshFileTree(file, openTabs()),
   )
 
   const finished = createMemo(
@@ -214,7 +217,7 @@ export default function FileTreeV2(props: {
 
   createKeyed(
     () => live() && props.session.server.connected && finished(),
-    () => void refreshFileTree(file),
+    () => void refreshFileTree(file, openTabs()),
   )
 
   // Only scroll when the active path changes (or first appears in the tree).

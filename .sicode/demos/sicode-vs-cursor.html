@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiCode vs Cursor · 定位 / 根因 / 效率 对照</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa;
+    --panel: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6b6b66;
+    --faint: #9a9a94;
+    --line: #e6e6e1;
+    --line-strong: #d4d4cd;
+    --accent: #2d55c9;
+    --good: #2f8a4c;
+    --warn: #b5791f;
+    --bad: #c0442f;
+    --sicode: #2d55c9;
+    --cursor: #8a5cd6;
+    --grid: #ededc8;
+    --shadow: 0 1px 2px rgba(20,20,18,.05), 0 8px 24px rgba(20,20,18,.04);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131313;
+      --panel: #1b1b1a;
+      --ink: #e8e8e4;
+      --muted: #a2a29c;
+      --faint: #75756f;
+      --line: #2b2b29;
+      --line-strong: #3a3a37;
+      --accent: #7d9cf5;
+      --good: #63c07f;
+      --warn: #d9a441;
+      --bad: #e2795f;
+      --sicode: #7d9cf5;
+      --cursor: #b79bf0;
+      --grid: #33332c;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 15px;
+    padding: 32px 20px 72px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  header.top { margin-bottom: 28px; }
+  h1 { font-size: 22px; font-weight: 670; margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0; }
+  .meta { color: var(--faint); font-size: 12.5px; margin: 10px 0 0; }
+
+  h2 {
+    font-size: 16px; font-weight: 640; margin: 34px 0 12px;
+    padding-bottom: 7px; border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 14px; font-weight: 620; margin: 22px 0 8px; color: var(--muted); }
+
+  p { margin: 0 0 12px; }
+  code {
+    font-family: ui-monospace, "IBM Plex Mono", Consolas, monospace;
+    font-size: .9em;
+    background: color-mix(in srgb, var(--line) 55%, transparent);
+    padding: 1px 5px; border-radius: 4px;
+  }
+
+  /* verdict cards */
+  .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 8px; }
+  .vcard {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .vcard .who { font-size: 12.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+  .vcard.si .who { color: var(--sicode); }
+  .vcard.cur .who { color: var(--cursor); }
+  .vcard .score { font-size: 30px; font-weight: 670; line-height: 1.1; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  .vcard .cap { color: var(--muted); font-size: 13px; }
+
+  .callout {
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 14px 18px; margin: 18px 0; box-shadow: var(--shadow);
+  }
+  .callout strong { font-weight: 640; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 6px 0 4px; }
+  .scroll { overflow-x: auto; }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 620; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  td:first-child { font-weight: 560; }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+
+  .tag { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1.5px 7px; border-radius: 999px; white-space: nowrap; }
+  .t-good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .t-warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+  .t-bad  { color: var(--bad);  background: color-mix(in srgb, var(--bad) 14%, transparent); }
+  .t-eq   { color: var(--muted); background: color-mix(in srgb, var(--line-strong) 40%, transparent); }
+
+  /* score bars */
+  .bars { display: grid; gap: 11px; margin: 8px 0 4px; }
+  .bar-row { display: grid; grid-template-columns: 132px 1fr 1fr; gap: 10px; align-items: center; }
+  .bar-label { font-size: 12.5px; color: var(--muted); text-align: right; }
+  .bar-track { position: relative; height: 22px; background: color-mix(in srgb, var(--line) 45%, transparent); border-radius: 5px; overflow: hidden; }
+  .bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 7px; font-size: 11.5px; font-weight: 620; color: #fff; font-variant-numeric: tabular-nums; }
+  .bar-fill.si { background: var(--sicode); }
+  .bar-fill.cur { background: var(--cursor); }
+  .legend { display: flex; gap: 16px; align-items: center; font-size: 12.5px; color: var(--muted); margin: 4px 0 14px; }
+  .dot { display: inline-flex; align-items: center; gap: 6px; }
+  .dot i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.si i { background: var(--sicode); }
+  .dot.cur i { background: var(--cursor); }
+
+  .basis { font-size: 12.5px; color: var(--muted); }
+  .basis b { color: var(--ink); font-weight: 600; }
+
+  ol.rank { padding-left: 20px; margin: 6px 0; }
+  ol.rank li { margin-bottom: 9px; }
+  ol.rank .why { color: var(--muted); font-size: 13px; }
+  .prio { font-size: 11.5px; font-weight: 620; padding: 1px 7px; border-radius: 999px; margin-right: 6px; color: #fff; }
+  .p1 { background: var(--good); } .p2 { background: var(--accent); } .p3 { background: var(--warn); } .p4 { background: var(--bad); }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12.5px; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+  a:hover { border-bottom-color: var(--accent); }
+
+  @media (max-width: 620px) {
+    .verdict { grid-template-columns: 1fr; }
+    .bar-row { grid-template-columns: 92px 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>SiCode vs Cursor — 定位 / 根因 / 效率</h1>
+    <p class="sub">按本仓真实实测数据打分，不用任何一方宣传口径。</p>
+    <p class="meta">2026-11-05 · 数据源：<code>.sicode/notes.md</code> 检索/LSP、语义索引、Cursor 决策逻辑对照三区 + <code>cursor-parity-search.md</code> + <code>flash-dual-track.md</code></p>
+  </header>
+
+  <div class="callout">
+    <strong>一句话结论：</strong>差距不在「找得到代码」，在「从哪开始找」和「找完一次改多少」。检索底层实测同档（SiCode 盘占用还小 6 倍），真差距只有三个点 —— <b>命中排序精度（top1 仅 35%）、多文件大改、单步墙钟</b>。
+  </div>
+
+  <div class="verdict">
+    <div class="vcard si">
+      <div class="who">SiCode</div>
+      <div class="score">7.8</div>
+      <div class="cap">加权总评（定位 50% / 效率 30% / 记忆 20%）<br>局部领先：记忆、注入纪律、查询扩展</div>
+    </div>
+    <div class="vcard cur">
+      <div class="who">Cursor</div>
+      <div class="score">8.0</div>
+      <div class="cap">同上权重<br>小幅领先：排序精度、多文件改写、强模型原生体验</div>
+    </div>
+  </div>
+  <p class="basis">总评差 <b>≈0.2 分</b>，不是代差。之前担心的「索引落后」已被数据证伪。</p>
+
+  <h2>一、定位 / 根因</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>维度</th><th>SiCode</th><th>Cursor</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>本地内容检索</td>
+        <td>trigram 倒排 + rg 两阶段；本仓 8232 文件 / 建库 10s / 盘上 <b>15MB</b> / 查询 5–85ms</td>
+        <td>Crepe 本地 trigram（<code>CRP2</code> index+postings）；8019 文件 / 6.85s / <b>87MB</b> / 稀有符号 ~15ms</td>
+        <td><span class="tag t-eq">打平</span> 查询同档，SiCode 盘占用小 6 倍</td>
+      </tr>
+      <tr>
+        <td>改内容不改路径后的失效</td>
+        <td>commit 世代（<code>HEAD</code> 锚定）+ dirty 强制重嵌 + 空候选回退全量 rg</td>
+        <td>Merkle 树逐级哈希增量</td>
+        <td><span class="tag t-eq">打平</span> 早期「静默 0 命中」已修</td>
+      </tr>
+      <tr>
+        <td>grep 命中质量</td>
+        <td>文件名命中优先 + 测试降权 + 分字段 BM25F + 批量 <code>patterns[]</code></td>
+        <td><code>classifyDefinitions</code> 标定义行；<code>multiGrep</code> SIMD 多模式</td>
+        <td><span class="tag t-warn">落后半档</span> 有排序，无「定义行分类」</td>
+      </tr>
+      <tr>
+        <td>零命中兜底</td>
+        <td>连败 N 次注入换词/扩词；CJK 首次空搜即 nudge；概念扩词</td>
+        <td>靠模型自己扩词（Claude 系强）</td>
+        <td><span class="tag t-good">SiCode 略优</span> 对弱模型是硬补丁</td>
+      </tr>
+      <tr>
+        <td>语义检索</td>
+        <td>仅记忆用 <code>feat-hash-v1</code> 假向量；代码无 embedding</td>
+        <td>云端向量 + rerank（<code>topK</code> 25）</td>
+        <td><span class="tag t-bad">Cursor 领先</span> 但差距被高估：官方 +12.5% 准确率且非速度，Cursor 本地也没 embedding</td>
+      </tr>
+      <tr>
+        <td>大型结构导航</td>
+        <td><code>repo-map/</code>（tree-sitter 符号图 + call-graph）+ <code>callgraph</code> + <code>lsp</code> 工具（均已注册）</td>
+        <td>LSP 编辑器内跳转 + 跨仓引用</td>
+        <td><span class="tag t-eq">打平偏 SiCode</span></td>
+      </tr>
+      <tr>
+        <td>自动注入上下文</td>
+        <td>每请求 push structure.md 全文 + notes 目录 + code-chunks 预算摘录</td>
+        <td>只注入用户手选 <code>selectedContext</code> + rules</td>
+        <td><span class="tag t-good">SiCode 更激进</span> 你要的「像 Cursor」这里已超</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>最硬的基线</h3>
+  <p class="basis">本仓 20 条意图查询实测：grep <b>零命中 0</b> · 答案在候选 <b>85%</b> · 进 top5 <b>65%</b> · <b>排第 1 仅 35%</b>。三条彻底失败案例：<code>compress</code>→真实文件是 <code>compaction.ts</code>（文件名不含关键词）。<b>缺口不是搜不到，是排不对。</b></p>
+
+  <h2>二、效率 / 能力</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>维度</th><th>SiCode</th><th>Cursor</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>每步耗时</td>
+        <td>单步中位 <b>7.62s</b>（queue 4.44 + gen 0.92 + 工具 0.25）；每多一次请求 ≈ 5.3–7.6s</td>
+        <td>未公开</td>
+        <td><span class="tag t-eq">不可直比</span> SiCode 瓶颈是请求数，不是工具速度</td>
+      </tr>
+      <tr>
+        <td>工具轮次控制</td>
+        <td>explore-budget + locate≥8 强制收窄 + batchNudge 同步多工具；golden median ≤3</td>
+        <td>Agent 自动并行探查</td>
+        <td><span class="tag t-eq">打平</span></td>
+      </tr>
+      <tr>
+        <td>洪水治理</td>
+        <td>grep 字符帽 15k + 落盘回填 + files_with_matches 先行</td>
+        <td>输出落盘 + 回填路径</td>
+        <td><span class="tag t-eq">打平</span></td>
+      </tr>
+      <tr>
+        <td>编辑工具面</td>
+        <td>edit/write/patch 三工具全模型族通吃（刻意不做模型分支）</td>
+        <td>oneof 单一编辑语义，全模型</td>
+        <td><span class="tag t-eq">打平</span> 这是主动对齐 Cursor 的结果</td>
+      </tr>
+      <tr>
+        <td>多文件大改</td>
+        <td>靠模型串行 edit/patch</td>
+        <td>多文件 diff 一次应用 + apply 容错层</td>
+        <td><span class="tag t-bad">Cursor 领先</span> SiCode「不跟 apply 容错层」，主动放弃</td>
+      </tr>
+      <tr>
+        <td>长会话上下文</td>
+        <td>压缩 + degradation + history-degrade 硬机制</td>
+        <td>自动压缩 + 大索引补位</td>
+        <td><span class="tag t-good">SiCode 领先</span> 上下文用量已优于 Claude Code</td>
+      </tr>
+      <tr>
+        <td>跨会话记忆</td>
+        <td>M0–M6 全套（Belief / SQLite / BM25 / 注入 / 时序 / 图）</td>
+        <td>仅 rules/skills，无跨会话记忆库</td>
+        <td><span class="tag t-good">SiCode 大幅领先</span></td>
+      </tr>
+      <tr>
+        <td>模型适配</td>
+        <td>专为 DeepSeek Flash 反向优化（短纪律 + 硬能力 + 连败注入）</td>
+        <td>服务自家 + Claude/GPT 强模型</td>
+        <td><span class="tag t-eq">不同赛道</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>三、打分（10 分制）</h2>
+  <div class="legend">
+    <span class="dot si"><i></i>SiCode</span>
+    <span class="dot cur"><i></i>Cursor</span>
+  </div>
+  <div class="bars" id="bars"></div>
+
+  <div class="scroll" style="margin-top:16px">
+  <table>
+    <thead><tr><th>能力</th><th>SiCode</th><th>Cursor</th><th>依据</th></tr></thead>
+    <tbody>
+      <tr><td>检索底层（速度 / 成本）</td><td>8.5</td><td>8.5</td><td>索引层实测同档，盘占用 SiCode 小 6 倍</td></tr>
+      <tr><td>命中排序 / 找对根因</td><td>6.5</td><td>8.5</td><td>top1 仅 35%；Cursor 有 define 分类 + 向量兜底</td></tr>
+      <tr><td>查询扩展 / 不空转</td><td>8.5</td><td>8.0</td><td>连败注入 + CJK nudge 是硬补丁，Flash 上更稳</td></tr>
+      <tr><td>结构导航（符号 / 调用图）</td><td>8.0</td><td>8.0</td><td>双方都有；SiCode 有 repo-map + callgraph + lsp</td></tr>
+      <tr><td>自动注入上下文</td><td>8.5</td><td>7.0</td><td>SiCode 每请求注 structure+notes+code-chunks</td></tr>
+      <tr><td>单次请求效率（墙钟）</td><td>7.0</td><td>8.5</td><td>SiCode 7.62s/步且轮数敏感；Cursor 少探查轮</td></tr>
+      <tr><td>工具轮次控制</td><td>8.5</td><td>8.5</td><td>都有 budget / 并行 / batchNudge</td></tr>
+      <tr><td>多文件大改</td><td>6.5</td><td>9.0</td><td>SiCode 主动不抄 apply 容错层</td></tr>
+      <tr><td>跨会话记忆</td><td>9.0</td><td>4.0</td><td>SiCode 全套，Cursor 基本无</td></tr>
+      <tr><td>Flash / 弱模型适配</td><td>8.5</td><td>6.5</td><td>SiCode 专为它设计，Cursor 靠模型自身</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>四、追赶优先级（都不需要新依赖）</h2>
+  <ol class="rank">
+    <li><span class="prio p1">P1</span><b>接 <code>classifyDefinitions</code></b> —— 标出「定义行」重排。<br><span class="why">直接打 top1 35% 这个最大缺口。fff 自带这能力，只差接进 <code>fff.ts</code>。</span></li>
+    <li><span class="prio p2">P2</span><b>接 <code>multiGrep</code></b> —— SIMD 多模式一次搜同义词。<br><span class="why">压 45% 的多轮试探。</span></li>
+    <li><span class="prio p3">P3</span><b>apply 容错层</b> —— 唯一 SiCode 主动放弃的 Cursor 能力。<br><span class="why">多文件改写体感落差最大，看你愿不愿意破这条纪律。</span></li>
+    <li><span class="prio p4">不建议</span><b>语义向量</b> —— notes 已用本仓数据判死：零命中只 13% 且 59% 自愈。<br><span class="why">收益最低、成本最高。</span></li>
+  </ol>
+
+  <footer>
+    依据链可复核：<code>.sicode/notes.md</code>「代码检索 / LSP」「语义索引」「Cursor 决策逻辑对照」三区 · <code>.sicode/plans/cursor-parity-search.md</code> · <code>.sicode/plans/flash-dual-track.md</code>。<br>
+    打分是工程判断，非厂商口径；两个数字都可能随实测基线更新。
+  </footer>
+
+</div>
+
+<script>
+  const scores = [
+    ["检索底层",           8.5, 8.5],
+    ["命中排序/根因",       6.5, 8.5],
+    ["查询扩展",           8.5, 8.0],
+    ["结构导航",           8.0, 8.0],
+    ["自动注入上下文",      8.5, 7.0],
+    ["单次请求效率",        7.0, 8.5],
+    ["工具轮次控制",        8.5, 8.5],
+    ["多文件大改",          6.5, 9.0],
+    ["跨会话记忆",          9.0, 4.0],
+    ["Flash/弱模型适配",    8.5, 6.5],
+  ];
+  const max = 10;
+  const host = document.getElementById("bars");
+  host.innerHTML = scores.map(([label, si, cur]) => `
+    <div class="bar-row">
+      <div class="bar-label">${label}</div>
+      <div class="bar-track"><div class="bar-fill si" style="width:${(si / max) * 100}%">${si.toFixed(1)}</div></div>
+      <div class="bar-track"><div class="bar-fill cur" style="width:${(cur / max) * 100}%">${cur.toFixed(1)}</div></div>
+    </div>`).join("");
+</script>
+</body>
+</html>

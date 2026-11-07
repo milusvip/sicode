@@ -1,4 +1,3 @@
-import { $ } from "bun"
 import { constants, setPriority } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,12 +22,23 @@ async function main() {
 }
 
 async function prepareDesktop() {
+  // SiCode: Windows — Bun `$` / console bins flash short-lived terminals; spawn with windowsHide.
   await Promise.all([
-    $`bun run install-electron`,
-    $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`,
+    run(["bun", "run", "install-electron"]),
+    run(["bun", "./scripts/copy-icons.ts", process.env.OPENCODE_CHANNEL ?? "dev"]),
   ])
 
   if (process.platform === "darwin") process.env.ELECTRON_EXEC_PATH = await prepareDevElectron()
+}
+
+async function run(cmd: string[]) {
+  const proc = Bun.spawn(cmd, {
+    env: process.env,
+    stdio: ["inherit", "inherit", "inherit"],
+    windowsHide: true,
+  })
+  const code = await proc.exited
+  if (code !== 0) throw new Error(`${cmd.join(" ")} exited with ${code}`)
 }
 
 function selectOptions(): DevOptions {
@@ -70,6 +80,7 @@ function buildWebUi() {
     cwd: join(import.meta.dirname, "../../app"),
     env: { ...process.env, VITE_OPENCODE_SERVER_MODE: "origin" },
     stdio: ["ignore", "ignore", "ignore"],
+    windowsHide: true,
   })
 
   setPriority(build.pid, constants.priority.PRIORITY_LOW)
@@ -87,7 +98,7 @@ async function startDesktop(args: string[]) {
   // Bun's implicit spawn environment omits values set during preparation.
   process.exitCode = await Bun.spawn(
     ["node", fileURLToPath(new URL("../bin/electron-vite.js", import.meta.resolve("electron-vite"))), "dev", ...args],
-    { env: process.env, stdio: ["inherit", "inherit", "inherit"] },
+    { env: process.env, stdio: ["inherit", "inherit", "inherit"], windowsHide: true },
   ).exited
 }
 

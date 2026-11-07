@@ -24,6 +24,24 @@ describe("elementSelector", () => {
 
     expect(elementSelector(span)).toBe("body > div > span:nth-of-type(2)")
   })
+
+  test("walks ancestors for data-slot / data-component / data-action", () => {
+    document.body.innerHTML = `
+      <div data-component="composer-attachments">
+        <button data-slot="composer-attachment-remove" data-action="remove" type="button">
+          <svg><path d="M0 0"></path></svg>
+        </button>
+      </div>
+    `
+    const path = document.querySelector("path")!
+
+    expect(describeElement(path)).toMatchObject({
+      label: "path · composer-attachment-remove",
+      slot: "composer-attachment-remove",
+      component: "composer-attachments",
+      action: "remove",
+    })
+  })
 })
 
 describe("elementAtPoint", () => {

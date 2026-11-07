@@ -17,8 +17,6 @@ import { useServer } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { Timeline, WorkShellHead, workShellDisclosureKey } from "@opencode/session-ui/timeline/projection"
 import { createSessionTimelineRowRenderer } from "@opencode/session-ui/timeline/row"
-import { ArtifactPanel } from "@opencode/session-ui/artifact-panel"
-import { useExtensionHost } from "@/runtime/extension/host"
 import { getReadyMarkdown, preloadMarkdown } from "@opencode/session-ui/markdown-cache"
 import { createTimelineController, type TimelineController, type TimelineSessionSource } from "./controller"
 import { createTimelineVirtualizer } from "./virtualizer"
@@ -29,7 +27,7 @@ import { parseVoiceDelegation } from "./voice-delegation"
 import { useCommand } from "@/shell/commands/command"
 import { SessionAncestorTrail, SessionProjectMenu, SessionTitleHeader } from "../session-identity-header"
 import { SessionHeaderSpacer } from "@/session/header/session-header"
-import { SessionRunningMenu } from "@/session/header/session-running-menu"
+import { SessionWorkingIndicator } from "@/session/header/session-working-indicator"
 import { selectSessionUserMessages, selectVisibleSessionUserMessages } from "../session-domain"
 import { SessionTurnRail } from "./turn-rail"
 
@@ -93,6 +91,7 @@ type MessageTimelineProps = {
   setContentRef: (el: HTMLDivElement) => void
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
+  setRevealPart?: (fn: (target: string) => boolean) => void
   setScrollToEnd?: (fn: () => void) => void
   reveal?: { target: () => string | undefined; done: () => void }
   search?: JSX.Element
@@ -131,7 +130,6 @@ function MessageTimelineView(
 ) {
   const language = useLanguage()
   const server = useServer()
-  const extensionHost = useExtensionHost()
   const data = server.ctx.data
   const sdk = useWorkspaceLocation()
   const sessionID = props.data.sessionID
@@ -267,6 +265,7 @@ function MessageTimelineView(
       )
     },
     setRevealMessage: props.setRevealMessage,
+    setRevealPart: props.setRevealPart,
     setScrollToEnd: props.setScrollToEnd,
     reveal: props.reveal,
   })
@@ -494,44 +493,10 @@ function MessageTimelineView(
     </Show>
   )
 
-  const runningMenu = (title?: string) => (
-    <SessionRunningMenu
-      sessionID={sessionID()}
-      owner={props.background.running.sessionID()}
-      blocking={props.background.running.blocking()}
-      tasks={props.background.running.tasks()}
-      onReveal={virtualized.revealPart}
-      title={title}
-    />
-  )
-
   return (
     <div class="relative w-full h-full min-w-0">
-      {/* SiCode: HTML demos the assistant writes open in the side browser pane, never inline. The
-          browser extension owns the pane; when it is inactive (web, remote server) the panel falls
-          back to its own drawer. The same file shape file/renderer.tsx uses for HTML links. */}
-      <ArtifactPanel
-        messages={() => props.session.history.messages().filter((message) => message.type === "assistant")}
-        open={(path) => {
-          // The host types `context` as the base Context; `uses` lives on the instance context.
-          const context = extensionHost.context("browser") as
-            | { uses?: { browser?: () => { status: string; value?: unknown } } }
-            | undefined
-          const pane = context?.uses?.browser?.()
-
-          if (pane?.status !== "active") return false
-          const browser = pane.value as {
-            canOpen(session: unknown, path?: string): boolean
-            openFile(session: unknown, path: string, options?: { select?: boolean }): void
-          }
-
-          if (!browser.canOpen(props.session, path)) return false
-          // `select` brings the browser pane forward with the new tab, WorkBuddy-style.
-          browser.openFile(props.session, path, { select: true })
-
-          return true
-        }}
-      />
+      {/* SiCode: newly created HTML deliverables render as capsules in the timeline; click opens
+          the side region via DataProvider.onOpenFile (HTML → browser pane). No auto-open. */}
       <Show when={props.active !== false}>
         <SessionTurnRail
           turns={turnRailMessages}
@@ -582,7 +547,17 @@ function MessageTimelineView(
                         />
                       )}
                     </Show>
-                    <Show when={parentID()}>{runningMenu(childTitle())}</Show>
+                    <Show when={parentID() && childTitle()}>
+                      <SessionWorkingIndicator sessionID={sessionID()} />
+                      <h1
+                        data-slot="session-title-child"
+                        dir="auto"
+                        class="min-w-0 truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-1 py-1"
+                        classList={{ "max-w-[45%] shrink-0": !!parentID() }}
+                      >
+                        {childTitle()}
+                      </h1>
+                    </Show>
                     <Show when={!parentID() && (childTitle() || title.editing)}>
                       <Show
                         when={title.editing}
@@ -633,7 +608,6 @@ function MessageTimelineView(
                         />
                       </Show>
                     </Show>
-                    <Show when={!parentID()}>{runningMenu()}</Show>
                     <Show when={!parentID() && sessionID()} keyed>
                       {(id) => (
                         <Menu

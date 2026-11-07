@@ -47,6 +47,50 @@ function allowsFor(access: Browser.AgentAccess, locked: Locked) {
   return rules
 }
 
+/** SiCode: must match `BROWSER_TABS_KEY` in core/session/browser-tools.ts. */
+const BROWSER_TABS_KEY = "sicode.browserTabs"
+
+const mirrorBrowserTabs = (
+  ctx: Pick<Context, "session">,
+  sessionID: Session.ID,
+  access: Browser.AgentAccess,
+  state: Browser.State,
+) =>
+  Effect.gen(function* () {
+    const session = yield* ctx.session.get({ sessionID })
+    const previous =
+      session.metadata && typeof session.metadata === "object" && !Array.isArray(session.metadata)
+        ? { ...(session.metadata as Record<string, unknown>) }
+        : {}
+    yield* ctx.session.update({
+      sessionID,
+      metadata: {
+        ...previous,
+        [BROWSER_TABS_KEY]: {
+          access,
+          focusedTabID: state.focusedTabID,
+          tabs: state.tabs.map((tab) => ({ id: tab.id, title: tab.title, url: tab.url })),
+        },
+      } as typeof session.metadata,
+    })
+  })
+
+const clearBrowserTabs = (ctx: Pick<Context, "session">, sessionID: Session.ID) =>
+  Effect.gen(function* () {
+    const session = yield* ctx.session.get({ sessionID }).pipe(Effect.option)
+    if (Option.isNone(session)) return
+    const previous =
+      session.value.metadata && typeof session.value.metadata === "object" && !Array.isArray(session.value.metadata)
+        ? { ...(session.value.metadata as Record<string, unknown>) }
+        : {}
+    if (!(BROWSER_TABS_KEY in previous)) return
+    delete previous[BROWSER_TABS_KEY]
+    yield* ctx.session.update({
+      sessionID,
+      metadata: previous as NonNullable<typeof session.value.metadata>,
+    })
+  })
+
 export type Connection = Effect.Success<ReturnType<typeof make>>
 
 export const make = Effect.fn("BrowserConnection.make")(function* (
@@ -104,6 +148,8 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
       if (!browser) return
       browsers.delete(sessionID)
       browser.tunnels.dispose()
+      // SiCode: drop mirrored tab inventory so a later soft/hard drive hint does not list stale tabs.
+      if (reason === "closed") yield* clearBrowserTabs(ctx, sessionID).pipe(Effect.ignore)
       yield* Deferred.succeed(browser.closed, reason)
     })
   yield* Effect.addFinalizer(() => {
@@ -172,6 +218,9 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
           if (!browser || browser.connectionID !== input.connectionID)
             return yield* Effect.fail(call.error("unavailable", "Browser is unavailable.", {}))
           browser.state = input.state
+          // SiCode: mirror a compact tab inventory into session metadata so the runner can inject
+          // open tabs on publish/drive turns without guessing (ses_e5b3ddeb "识别不到").
+          yield* mirrorBrowserTabs(ctx, input.sessionID, browser.access, input.state).pipe(Effect.ignore)
         }),
       command: (input, call) =>
         Effect.gen(function* () {

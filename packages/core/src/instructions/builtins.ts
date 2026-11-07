@@ -123,6 +123,17 @@ export const SCRIPT_ENCODING = [
   "</script-encoding>",
 ].join("\n")
 
+// SiCode: two failure modes that cost rounds instead of being caught. Editing against a dirty
+// tree without knowing which failures predate the change makes every red look self-inflicted.
+// A one-off script written somewhere it cannot resolve its imports fails three times before the
+// location is reconsidered. Both are cheap to prevent and expensive to debug.
+export const VERIFICATION = [
+  "<verification>",
+  "Before changing code, run the relevant check once and note the failures that already exist. A red test or type error that predates your change is not yours to fix and not evidence you broke anything; without that baseline the two are indistinguishable.",
+  "A one-off script resolves imports from where it lives. A scratch directory outside the packages cannot import the packages' modules: put the script inside the package it exercises, or import by relative path from that package.",
+  "</verification>",
+].join("\n")
+
 const GIT_STATUS_INTRO = [
   "The following is the git status at the start of the conversation. It is a snapshot and does not update as the conversation goes; run `git status` yourself if you need the current state.",
   "Do not revert or discard changes you did not make. Check `git diff` before undoing any edit you are unsure about.",
@@ -207,6 +218,17 @@ const layer = Layer.effect(
               render: {
                 initial: () => SCRIPT_ENCODING,
                 changed: () => SCRIPT_ENCODING,
+              },
+            }),
+            // SiCode: baseline-before-edit and script-placement rules, the two failure modes that
+            // cost rounds rather than being caught. Rides every session like craft and prior-art.
+            Instructions.make({
+              key: Instructions.Key.make("core/verification"),
+              codec: Schema.toCodecJson(Schema.Literal("ok")),
+              read: Effect.succeed("ok" as const),
+              render: {
+                initial: () => VERIFICATION,
+                changed: () => VERIFICATION,
               },
             }),
             Instructions.make({

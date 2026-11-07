@@ -42,7 +42,7 @@ describe("current session timeline rows", () => {
       "turn-gap:msg_3",
       "user-message:msg_3",
       "work-shell:msg_3",
-      "thinking:msg_3",
+      "assistant-part:part:part:msg_4:msg_4:reasoning:0",
       "work-shell-end:msg_3",
     ])
     expect(result.rows.find((row) => Predicate.isTagged(row, "UserMessage") && row.userMessageID === "msg_3")).toEqual(
@@ -327,9 +327,16 @@ describe("current session timeline rows", () => {
         reasoningMode,
       })
 
-      expect(result.rows.some((row) => Predicate.isTagged(row, "Thinking"))).toBe(
-        reasoningMode !== "hidden" && profile.thinking,
-      )
+      // Live thoughts stay on the process chain as AssistantPart — never a standalone Thinking row.
+      expect(result.rows.some((row) => Predicate.isTagged(row, "Thinking"))).toBe(false)
+      expect(
+        result.rows.some(
+          (row) =>
+            Predicate.isTagged(row, "AssistantPart") &&
+            ((row.group.type === "context" && row.group.refs.some((ref) => ref.partID.includes(":reasoning:"))) ||
+              (row.group.type === "part" && row.group.key.includes(":reasoning:"))),
+        ),
+      ).toBe(reasoningMode !== "hidden" && profile.content.some((part) => part.type === "reasoning"))
     })
   })
 
@@ -344,12 +351,11 @@ describe("current session timeline rows", () => {
         timelineDetail: timelinePresets[2].value,
       }).rows
 
-    // A streamed thought is the only work on screen, so it renders — its head ticks the newest line,
-    // which is what keeps the shell from sitting empty for the whole first thought.
+    // A streamed thought stays inside the process shell as an AssistantPart context group.
     expect(rows([{ ...thought, time: { created: 1 } }], true).map((row) => row._tag)).toEqual([
       "UserMessage",
       "WorkShell",
-      "Thinking",
+      "AssistantPart",
       "WorkShellEnd",
     ])
     // Settled, it becomes the compact chip like any other finished thought.
@@ -365,6 +371,7 @@ describe("current session timeline rows", () => {
       "AssistantPart",
       "WorkShellEnd",
     ])
+    // Busy turn with thought+answer and no tools yet: both sit inside the streaming work shell.
     expect(rows([thought, { type: "text", text: "Answer" }], true).map((row) => row._tag)).toEqual([
       "UserMessage",
       "WorkShell",
@@ -462,7 +469,7 @@ describe("current session timeline rows", () => {
       createTimelineProjection({ sessionMessages: thought.messages, status: thought.status, reasoningMode: "full" }).rows.map(
         (row) => row._tag,
       ),
-    ).toEqual(["UserMessage", "WorkShell", "Thinking", "WorkShellEnd"])
+    ).toEqual(["UserMessage", "WorkShell", "AssistantPart", "WorkShellEnd"])
 
     // A settled empty turn (the model produced nothing and finished) shows no shell at all — there
     // is no running work to chrome, and no placeholder to show.
@@ -500,7 +507,7 @@ describe("current session timeline rows", () => {
     })
   })
 
-  test("uses the latest reasoning part and groups earlier thoughts with tools", () => {
+  test("keeps a live thought on the process chain once tools have started", () => {
     const document = storyDocument(
       [
         { type: "reasoning", text: "Old thought", time: { created: 1, completed: 2 } },
@@ -515,15 +522,19 @@ describe("current session timeline rows", () => {
       "UserMessage",
       "WorkShell",
       "AssistantPart",
-      "Thinking",
       "WorkShellEnd",
     ])
     expect(assistantParts(result.rows)[0]).toMatchObject({
-      group: { type: "context", refs: [{ partID: "msg_tool_projection_assistant:reasoning:0" }, { partID: "read" }] },
+      group: {
+        type: "context",
+        refs: [
+          { partID: "msg_tool_projection_assistant:reasoning:0" },
+          { partID: "read" },
+          { partID: "msg_tool_projection_assistant:reasoning:1" },
+        ],
+      },
     })
-    expect(result.rows.find((row) => Predicate.isTagged(row, "Thinking"))).toMatchObject({
-      ref: { partID: "msg_tool_projection_assistant:reasoning:1" },
-    })
+    expect(result.rows.some((row) => Predicate.isTagged(row, "Thinking"))).toBe(false)
   })
 
   test("keeps actual thinking with the active prompt above an undelivered prompt", () => {
@@ -539,7 +550,7 @@ describe("current session timeline rows", () => {
     expect(result.rows.map((row) => row._tag)).toEqual([
       "UserMessage",
       "WorkShell",
-      "Thinking",
+      "AssistantPart",
       "WorkShellEnd",
       "Activity",
       "TurnGap",
@@ -667,10 +678,11 @@ describe("current session timeline rows", () => {
       timelinePresets[0].value,
     )
 
+    // everything preset lays thinking out separately as a part row, still inside the work shell.
     expect(result.rows.map((row) => row._tag)).toEqual([
       "UserMessage",
       "WorkShell",
-      "Thinking",
+      "AssistantPart",
       "WorkShellEnd",
       "Notice",
     ])
@@ -955,6 +967,56 @@ describe("current session timeline rows", () => {
           { messageID: "msg_assistant", partID: "tool_read" },
           { messageID: "msg_assistant", partID: "tool_grep" },
         ],
+      },
+      {
+        type: "part",
+        key: "part:msg_assistant:msg_assistant:text:1",
+        ref: { messageID: "msg_assistant", partID: "msg_assistant:text:1" },
+      },
+    ])
+  })
+
+  test("tags completed question parts so collapsed shells can keep them", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "ask", time: { created: 1 } },
+      {
+        id: "msg_assistant",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          { type: "text", text: "which option?" },
+          {
+            type: "tool",
+            id: "tool_question",
+            name: "question",
+            state: {
+              status: "completed",
+              input: { questions: [{ question: "A or B?" }] },
+              content: [{ type: "text", text: "A" }],
+              metadata: { answers: [["A"]] },
+            },
+            time: { created: 2, completed: 3 },
+          },
+          { type: "text", text: "going with A" },
+        ],
+        time: { created: 2, completed: 4 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const result = Timeline.constructSessionMessageRows(source, false, { type: "idle" })
+    const groups = result.rows.flatMap((row) => (Predicate.isTagged(row, "AssistantPart") ? [row.group] : []))
+
+    expect(groups).toEqual([
+      {
+        type: "part",
+        key: "part:msg_assistant:msg_assistant:text:0",
+        ref: { messageID: "msg_assistant", partID: "msg_assistant:text:0" },
+      },
+      {
+        type: "part",
+        key: "part:question:msg_assistant:tool_question",
+        ref: { messageID: "msg_assistant", partID: "tool_question" },
       },
       {
         type: "part",
@@ -1836,24 +1898,25 @@ describe("current session timeline rows", () => {
       turnDiffs: true,
     }).rows
 
+    // SiCode: the new markdown file is a capsule; TurnDiff keeps only the non-deliverable edit.
+    expect(rows.filter((row) => Predicate.isTagged(row, "Artifacts"))).toEqual([
+      new TimelineRow.Artifacts({
+        userMessageID: "msg_u",
+        items: [{ path: "notes/plan.md", ref: { messageID: "msg_a", partID: "tool_write" } }],
+        collapsed: false,
+      }),
+    ])
     expect(rows.filter((row) => Predicate.isTagged(row, "TurnDiff"))).toEqual([
       new TimelineRow.TurnDiff({
         userMessageID: "msg_u",
         messageID: "msg_idle",
         from: "msg_u",
-        files: ["README.md", "notes/plan.md"],
-        diffs: [
-          { file: "README.md", patch, additions: 2, deletions: 0, status: "modified" },
-          {
-            file: "notes/plan.md",
-            patch: createTwoFilesPatch("notes/plan.md", "notes/plan.md", "", "a\nb\n"),
-            additions: 2,
-            deletions: 0,
-            status: "added",
-          },
-        ],
+        files: ["README.md"],
+        diffs: [{ file: "README.md", patch, additions: 2, deletions: 0, status: "modified" }],
       }),
     ])
+    const keys = rows.map(TimelineRow.key)
+    expect(keys.indexOf("artifacts:msg_u")).toBeLessThan(keys.indexOf("turn-diff:msg_idle"))
   })
 
   test("takes a write's reported diff over the one rebuilt from its input", () => {
@@ -1901,6 +1964,140 @@ describe("current session timeline rows", () => {
         from: "msg_u",
         files: ["notes/plan.md"],
         diffs: [reported],
+      }),
+    ])
+  })
+
+  test("omits a turn-diff when every change is already a capsule", () => {
+    const source: SessionMessageInfo[] = [
+      { id: "msg_u", type: "user", text: "note", time: { created: 1 } },
+      {
+        id: "msg_a",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          {
+            type: "tool",
+            id: "tool_write",
+            name: "write",
+            state: {
+              status: "completed",
+              input: { path: "note.txt", content: "hi\n" },
+              content: [{ type: "text", text: "ok" }],
+              metadata: {
+                files: [
+                  {
+                    file: "note.txt",
+                    patch: createTwoFilesPatch("note.txt", "note.txt", "", "hi\n"),
+                    additions: 1,
+                    deletions: 0,
+                    status: "added",
+                  },
+                ],
+              },
+            },
+            time: { created: 2, ran: 3, completed: 4 },
+          },
+        ],
+        time: { created: 2, completed: 5 },
+      },
+      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 6 } },
+    ]
+
+    const rows = createTimelineProjection({
+      sessionMessages: source,
+      status: { type: "idle" },
+      reasoningMode: "compact",
+      turnDiffs: true,
+    }).rows
+
+    expect(rows.some((row) => Predicate.isTagged(row, "TurnDiff"))).toBe(false)
+    expect(rows.filter((row) => Predicate.isTagged(row, "Artifacts"))).toEqual([
+      new TimelineRow.Artifacts({
+        userMessageID: "msg_u",
+        items: [{ path: "note.txt", ref: { messageID: "msg_a", partID: "tool_write" } }],
+        collapsed: false,
+      }),
+    ])
+  })
+
+  test("shows capsules for newly created html and folds older turns", () => {
+    type Diff = {
+      file: string
+      patch: string
+      additions: number
+      deletions: number
+      status: "added" | "modified" | "deleted"
+    }
+    const added = (file: string): Diff => ({
+      file,
+      patch: createTwoFilesPatch(file, file, "", "<h1>x</h1>\n"),
+      additions: 1,
+      deletions: 0,
+      status: "added",
+    })
+    const modified = (file: string): Diff => ({
+      file,
+      patch: createTwoFilesPatch(file, file, "<h1>x</h1>\n", "<h1>y</h1>\n"),
+      additions: 1,
+      deletions: 1,
+      status: "modified",
+    })
+    const write = (id: string, path: string, files: Diff[]): SessionMessageAssistantTool =>
+      ({
+        type: "tool",
+        id,
+        name: "write",
+        state: {
+          status: "completed",
+          input: { path, content: "<h1>x</h1>" },
+          content: [{ type: "text", text: "ok" }],
+          metadata: { files },
+        },
+        time: { created: 1, ran: 2, completed: 3 },
+      }) as unknown as SessionMessageAssistantTool
+
+    const source: SessionMessageInfo[] = [
+      { id: "msg_u1", type: "user", text: "demo", time: { created: 1 } },
+      {
+        id: "msg_a1",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [write("tool_1", "one.html", [added("one.html")])],
+        time: { created: 2, completed: 3 },
+      },
+      { id: "msg_idle1", type: "idle", outcome: "succeeded", time: { created: 4 } },
+      { id: "msg_u2", type: "user", text: "another", time: { created: 5 } },
+      {
+        id: "msg_a2",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          write("tool_2", "one.html", [modified("one.html")]),
+          write("tool_3", "two.html", [added("two.html")]),
+          write("tool_4", "app.tsx", [added("app.tsx")]),
+        ],
+        time: { created: 6, completed: 7 },
+      },
+    ]
+
+    const artifacts = Timeline.constructSessionMessageRows(source, true, { type: "idle" }).rows.filter((row) =>
+      Predicate.isTagged(row, "Artifacts"),
+    )
+
+    expect(artifacts).toEqual([
+      new TimelineRow.Artifacts({
+        userMessageID: "msg_u1",
+        items: [{ path: "one.html", ref: { messageID: "msg_a1", partID: "tool_1" } }],
+        collapsed: true,
+      }),
+      new TimelineRow.Artifacts({
+        userMessageID: "msg_u2",
+        items: [{ path: "two.html", ref: { messageID: "msg_a2", partID: "tool_3" } }],
+        collapsed: false,
       }),
     ])
   })

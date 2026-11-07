@@ -6,6 +6,7 @@ import { useGlobal } from "@/runtime/server/runtime"
 import { LocationProvider } from "@/workspaces/location"
 import { ModelsProvider } from "@/providers/models/models"
 import { ComposerPersistenceProvider } from "@/composer/persistence"
+import { DraftSessionScreenBridge } from "@/shell/browser-push/bridge"
 import { UiInspectComposerBridge } from "@/shell/ui-inspect/bridge"
 import { SelectionQuoteBridge } from "@/shell/selection-menu/bridge"
 import { ServerProvider, useServer } from "@/runtime/server/current"
@@ -99,9 +100,13 @@ function DraftProviders(props: ParentProps) {
   return (
     <FileProvider>
       <ComposerPersistenceProvider>
-        <UiInspectComposerBridge />
-        <SelectionQuoteBridge />
-        <CommentsProvider>{props.children}</CommentsProvider>
+        <CommentsProvider>
+          {/* SiCode: let system-browser push attach chips on an unsent new conversation. */}
+          <DraftSessionScreenBridge />
+          <UiInspectComposerBridge />
+          <SelectionQuoteBridge />
+          {props.children}
+        </CommentsProvider>
       </ComposerPersistenceProvider>
     </FileProvider>
   )

@@ -21,7 +21,11 @@ export function uiElementNote(element: UiElement, comment: string): NoteContextI
 }
 
 function subject(element: UiElement) {
+  // Stable design-system hooks first — CSS nth-of-type paths are last-resort locators.
   const details = [
+    element.slot ? `data-slot ${JSON.stringify(element.slot)}` : undefined,
+    element.component ? `data-component ${JSON.stringify(element.component)}` : undefined,
+    element.action ? `data-action ${JSON.stringify(element.action)}` : undefined,
     element.role ? `role ${element.role}` : undefined,
     element.name ? `accessible name ${JSON.stringify(element.name)}` : undefined,
     element.text && element.text !== element.name ? `text ${JSON.stringify(element.text.slice(0, 80))}` : undefined,

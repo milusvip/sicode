@@ -4,8 +4,8 @@ import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { useLocal, type ModelSelection } from "@/providers/models/selection"
 import { isFreeModel } from "@/providers/models/models"
+import { providerDisplay } from "@/providers/models/display"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { popularProviders } from "@/providers/catalog/providers"
 import { Button } from "@opencode/ui/button"
 import { Badge } from "@opencode/ui/badge"
 import { Dialog, DialogBody, DialogHeader, DialogTitleGroup } from "@opencode/ui/dialog"
@@ -13,6 +13,8 @@ import { Icon } from "@opencode/ui/icon"
 import { ScrollView } from "@opencode/ui/scroll-view"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { Menu } from "@opencode/ui/menu"
+import { SegmentedControl, SegmentedControlItem } from "@opencode/ui/segmented-control"
+import { Switch } from "@opencode/ui/switch"
 import { TextInput } from "@opencode/ui/text-input"
 import { ModelTooltip } from "./tooltip"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -32,8 +34,15 @@ import {
   ProviderModelSections,
 } from "@/providers/models/provider-group"
 import { consoleProviderName } from "@/providers/catalog/console"
+import {
+  compareProviderOrder,
+  useModelSelectorPrefs,
+  type ModelSelectorTab,
+} from "@/providers/models/prefs"
 import "@/settings/settings.css"
 import "./select-dialog.css"
+
+type ModelTab = ModelSelectorTab
 
 const MobilePanelDrawer = lazy(async () => {
   const { MobilePanelDrawer } = await import("@/shell/mobile-panel-drawer")
@@ -49,20 +58,32 @@ const modelKey = (model: ModelItem) => `${model.provider.id}:${model.id}`
 
 const manageKey = "action:manage"
 
-const sortModelGroups = (a: { category: string; items: ModelItem[] }, b: { category: string; items: ModelItem[] }) => {
-  const aIndex = popularProviders.indexOf(a.category)
-  const bIndex = popularProviders.indexOf(b.category)
-  const aPopular = aIndex >= 0
-  const bPopular = bIndex >= 0
+function resolveOpenTab(input: {
+  current?: string
+  remembered: ModelTab
+  models: (search: string, tab: ModelTab) => ModelItem[]
+}): ModelTab {
+  if (input.current) {
+    if (input.models("", "mine").some((item) => modelKey(item) === input.current)) return "mine"
+    if (input.models("", "free").some((item) => modelKey(item) === input.current)) return "free"
+    if (input.models("", "all").some((item) => modelKey(item) === input.current)) return "all"
+  }
 
-  if (aPopular && !bPopular) return -1
+  if (input.models("", input.remembered).length > 0) return input.remembered
 
-  if (!aPopular && bPopular) return 1
-
-  if (aPopular && bPopular) return aIndex - bIndex
-
-  return a.items[0].provider.name.localeCompare(b.items[0].provider.name)
+  if (input.models("", "mine").length > 0) return "mine"
+  if (input.models("", "free").length > 0) return "free"
+  return "all"
 }
+
+const sortModelGroups =
+  (order: readonly string[]) =>
+  (a: { category: string; items: ModelItem[] }, b: { category: string; items: ModelItem[] }) =>
+    compareProviderOrder(
+      { id: a.category, name: providerDisplay(a.items[0].provider).title },
+      { id: b.category, name: providerDisplay(b.items[0].provider).title },
+      order,
+    )
 
 const ModelList: Component<{
   mobile?: boolean
@@ -78,9 +99,16 @@ const ModelList: Component<{
     provider: () => props.provider,
     onSelect: props.onSelect,
   })
+  const [prefs, setPrefs] = useModelSelectorPrefs()
 
-  const [store, setStore] = createStore<{ search: string; active: string; collapsed: Record<string, boolean> }>({
+  const [store, setStore] = createStore<{
+    search: string
+    tab: ModelTab
+    active: string
+    collapsed: Record<string, boolean>
+  }>({
     search: "",
+    tab: prefs.tab,
     active: props.mobile ? (controller.current() ?? "") : "",
     collapsed: {},
   })
@@ -90,11 +118,16 @@ const ModelList: Component<{
       () => props.open,
       (open) => {
         if (!props.mobile || !open) return
-        setStore({ search: "", active: controller.current() ?? "" })
+        const tab = resolveOpenTab({
+          current: controller.current(),
+          remembered: prefs.tab,
+          models: controller.models,
+        })
+        setStore({ search: "", tab, active: controller.current() ?? "" })
       },
     ),
   )
-  const models = createMemo(() => controller.models(store.search))
+  const models = createMemo(() => controller.models(store.search, store.tab))
   const modelGroups = createMemo(() => controller.groups(models()))
   const managed = createMemo(() => consoleModelGroup(controller.all()))
   const expanded = (provider: string) => store.search.length > 0 || !store.collapsed[provider]
@@ -108,8 +141,16 @@ const ModelList: Component<{
   let scrollRef: HTMLDivElement | undefined
 
   const setSearch = (value: string) => {
-    const first = controller.models(value).find((item) => value.length > 0 || !store.collapsed[item.provider.id])
+    const first = controller
+      .models(value, store.tab)
+      .find((item) => value.length > 0 || !store.collapsed[item.provider.id])
     setStore({ search: value, active: first ? modelKey(first) : "" })
+  }
+
+  const setTab = (tab: ModelTab) => {
+    const first = controller.models(store.search, tab)[0]
+    setPrefs("tab", tab)
+    setStore({ tab, active: first ? modelKey(first) : "" })
   }
 
   const moveActive = (delta: number) => {
@@ -136,46 +177,71 @@ const ModelList: Component<{
     return (
       <SettingsList variant="catalog">
         <For each={props.items}>
-          {(item) => (
-            <button
-              type="button"
-              data-component="settings-row"
-              data-option-key={modelKey(item)}
-              aria-pressed={controller.current() === modelKey(item)}
-              class="-mx-4 w-[calc(100%+32px)] px-4 text-start first:rounded-t-lg last:rounded-b-lg hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
-              classList={{ "bg-v2-overlay-simple-overlay-hover": store.active === modelKey(item) }}
-              onMouseEnter={() => setStore("active", modelKey(item))}
-              onMouseLeave={() => setStore("active", "")}
-              onClick={() => controller.select(item)}
-            >
-              <div data-slot="settings-row-copy">
-                <div data-slot="settings-row-title" class="flex items-center gap-2">
-                  <Tooltip
-                    inactive={props.mobile}
-                    placement="right-start"
-                    gutter={12}
-                    openDelay={0}
-                    value={
-                      <ModelTooltip model={item} latest={item.latest} free={isFreeModel(item)} v2 />
-                    }
+          {(item) => {
+            const shown = () => controller.visible(item)
+
+            return (
+              <div
+                data-component="settings-row"
+                data-option-key={modelKey(item)}
+                class="-mx-4 flex w-[calc(100%+32px)] items-center gap-2 px-4 first:rounded-t-lg last:rounded-b-lg hover:bg-v2-overlay-simple-overlay-hover"
+                classList={{ "bg-v2-overlay-simple-overlay-hover": store.active === modelKey(item) }}
+                onMouseEnter={() => setStore("active", modelKey(item))}
+                onMouseLeave={() => setStore("active", "")}
+              >
+                <button
+                  type="button"
+                  aria-pressed={controller.current() === modelKey(item)}
+                  class="flex min-w-0 flex-1 items-center gap-2 py-2 text-start focus-visible:outline-none"
+                  onClick={() => {
+                    setPrefs("tab", store.tab)
+                    controller.select(item)
+                  }}
+                >
+                  <div data-slot="settings-row-copy" class="min-w-0 flex-1">
+                    <div data-slot="settings-row-title" class="flex items-center gap-2">
+                      <Tooltip
+                        inactive={props.mobile}
+                        placement="right-start"
+                        gutter={12}
+                        openDelay={0}
+                        value={<ModelTooltip model={item} latest={item.latest} free={isFreeModel(item)} v2 />}
+                      >
+                        <span class="min-w-0 truncate">{item.name}</span>
+                      </Tooltip>
+                      <Show when={isFreeModel(item)}>
+                        <Badge class="shrink-0">{language.t("model.tag.free")}</Badge>
+                      </Show>
+                      <Show when={!shown()}>
+                        <Badge class="shrink-0">{language.t("dialog.model.hidden")}</Badge>
+                      </Show>
+                      <Show when={item.latest}>
+                        <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
+                      </Show>
+                    </div>
+                  </div>
+                  <div data-slot="settings-row-control" class="size-4">
+                    <Show when={controller.current() === modelKey(item)}>
+                      <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-base" />
+                    </Show>
+                  </div>
+                </button>
+                <div
+                  class="shrink-0"
+                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <Switch
+                    checked={shown()}
+                    onChange={(checked) => controller.setVisibility(item, checked)}
+                    hideLabel
                   >
-                    <span class="min-w-0 truncate">{item.name}</span>
-                  </Tooltip>
-                  <Show when={isFreeModel(item)}>
-                    <Badge class="shrink-0">{language.t("model.tag.free")}</Badge>
-                  </Show>
-                  <Show when={item.latest}>
-                    <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
-                  </Show>
+                    {item.name}
+                  </Switch>
                 </div>
               </div>
-              <div data-slot="settings-row-control" class="size-4">
-                <Show when={controller.current() === modelKey(item)}>
-                  <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-base" />
-                </Show>
-              </div>
-            </button>
-          )}
+            )
+          }}
         </For>
       </SettingsList>
     )
@@ -188,7 +254,7 @@ const ModelList: Component<{
           type="search"
           appearance="base"
           class="!w-full self-stretch"
-          placeholder={language.t("dialog.model.search.placeholder")}
+          placeholder={language.t("dialog.model.search.placeholder.rich")}
           value={store.search}
           autofocus={!props.mobile}
           spellcheck={false}
@@ -218,12 +284,25 @@ const ModelList: Component<{
               selectActive()
             }
           }}
-          aria-label={language.t("dialog.model.search.placeholder")}
+          aria-label={language.t("dialog.model.search.placeholder.rich")}
           showClearButton={!!store.search}
           clearIcon="circle-xmark"
           clearLabel={language.t("common.clear")}
           onClearClick={() => setSearch("")}
         />
+      </div>
+      <div class="shrink-0 pb-2" classList={{ "px-4": !props.mobile }}>
+        <SegmentedControl
+          class="segmented-control-v2--full-width !w-full"
+          value={store.tab}
+          onChange={(value) => {
+            if (value === "mine" || value === "free" || value === "all") setTab(value)
+          }}
+        >
+          <SegmentedControlItem value="mine">{language.t("dialog.model.tab.mine")}</SegmentedControlItem>
+          <SegmentedControlItem value="free">{language.t("dialog.model.tab.free")}</SegmentedControlItem>
+          <SegmentedControlItem value="all">{language.t("dialog.model.tab.all")}</SegmentedControlItem>
+        </SegmentedControl>
       </div>
       <div class="relative min-h-0" classList={{ "flex-1": !props.mobile }}>
         <div
@@ -302,6 +381,8 @@ export function ModelSelectorPopover(props: {
           models={controller.models}
           groups={controller.groups}
           current={controller.current()}
+          visible={controller.visible}
+          setVisibility={controller.setVisibility}
           chatgptPlan={chatgptPlan()}
           select={controller.select}
           onManage={manage}
@@ -452,22 +533,34 @@ function createModelSelectorController(input: {
   onSelect: () => void
 }) {
   const model = input.model ?? useLocal().model
+  const [prefs] = useModelSelectorPrefs()
 
-  const allModels = createMemo(() =>
-    model
-      .list()
-      .filter((item) => model.visible({ modelID: item.id, providerID: item.provider.id }))
-      .filter((item) => (input.provider() ? item.provider.id === input.provider() : true)),
+  const scoped = createMemo(() =>
+    model.list().filter((item) => (input.provider() ? item.provider.id === input.provider() : true)),
   )
 
+  const matchesTab = (item: ModelItem, tab: ModelTab) => {
+    if (tab === "mine") return !isFreeModel(item)
+    if (tab === "free") return isFreeModel(item)
+    return true
+  }
+
   return {
-    all: () => model.list().filter((item) => (input.provider() ? item.provider.id === input.provider() : true)),
-    models: (search: string) => {
+    all: () => scoped(),
+    models: (search: string, tab: ModelTab = "mine") => {
       const query = search.trim()
+      const base = scoped().filter((item) => {
+        if (!matchesTab(item, tab)) return false
+        // Mine/Free hide toggled-off models unless searching; All keeps them for recovery.
+        if (tab !== "all" && !query && !model.visible({ modelID: item.id, providerID: item.provider.id })) return false
+        return true
+      })
 
       const filtered = query
-        ? allModels().filter((item) => matchesModelSearch(query, [item.name, item.id, item.provider.name]))
-        : allModels()
+        ? base.filter((item) =>
+            matchesModelSearch(query, [item.name, item.id, item.provider.name, providerDisplay(item.provider).title]),
+          )
+        : base
 
       return [...filtered].sort((a, b) => a.name.localeCompare(b.name))
     },
@@ -478,12 +571,18 @@ function createModelSelectorController(input: {
         byProvider.set(item.provider.id, [...(byProvider.get(item.provider.id) ?? []), item])
       }
 
-      return Array.from(byProvider, ([category, items]) => ({ category, items })).sort(sortModelGroups)
+      return Array.from(byProvider, ([category, items]) => ({ category, items })).sort(
+        sortModelGroups(prefs.providerOrder),
+      )
     },
     current: () => {
       const value = model.current()
 
       return value ? modelKey(value) : undefined
+    },
+    visible: (item: ModelItem) => model.visible({ modelID: item.id, providerID: item.provider.id }),
+    setVisibility: (item: ModelItem, visible: boolean) => {
+      model.setVisibility({ modelID: item.id, providerID: item.provider.id }, visible)
     },
     select: (item: ModelItem) => {
       model.set({ modelID: item.id, providerID: item.provider.id }, { recent: true })
@@ -495,21 +594,29 @@ function createModelSelectorController(input: {
 export function ModelSelectorPopoverView(props: {
   trigger: ModelSelectorTrigger
   all: () => ModelItem[]
-  models: (search: string) => ModelItem[]
+  models: (search: string, tab?: ModelTab) => ModelItem[]
   groups: (models: ModelItem[]) => { category: string; items: ModelItem[] }[]
   current: string | undefined
+  visible: (item: ModelItem) => boolean
+  setVisibility: (item: ModelItem, visible: boolean) => void
   chatgptPlan?: boolean
   select: (item: ModelItem) => void
   onManage: () => void
   onClose: () => void
 }) {
   const language = useLanguage()
-  const [store, setStore] = createStore({ open: false, search: "", active: "" })
+  const [prefs, setPrefs] = useModelSelectorPrefs()
+  const [store, setStore] = createStore<{ open: boolean; search: string; tab: ModelTab; active: string }>({
+    open: false,
+    search: "",
+    tab: prefs.tab,
+    active: "",
+  })
   let searchRef: HTMLInputElement | undefined
   let contentRef: HTMLDivElement | undefined
   const dismiss = createMenuDismissController(() => contentRef)
 
-  const models = createMemo(() => props.models(store.search))
+  const models = createMemo(() => props.models(store.search, store.tab))
   const groups = createMemo(() => props.groups(models()))
   const keys = () => [...groups().flatMap((group) => group.items.map(modelKey)), manageKey]
 
@@ -543,7 +650,13 @@ export function ModelSelectorPopoverView(props: {
   const setOpen = (open: boolean) => {
     if (open) {
       dismiss.allowTriggerRestore()
-      setStore({ open: true, active: initialActive() })
+      const tab = resolveOpenTab({
+        current: props.current,
+        remembered: prefs.tab,
+        models: props.models,
+      })
+      setStore({ open: true, search: "", tab, active: "" })
+      setStore("active", initialActive())
       setTimeout(() =>
         requestAnimationFrame(() => {
           searchRef?.focus()
@@ -558,6 +671,7 @@ export function ModelSelectorPopoverView(props: {
   }
 
   const selectModel = (item: ModelItem) => {
+    setPrefs("tab", store.tab)
     dismiss.preventTriggerRestore()
     setOpen(false)
     dismiss.afterClose(() => props.select(item))
@@ -592,8 +706,14 @@ export function ModelSelectorPopoverView(props: {
   }
 
   const setSearch = (value: string) => {
-    const first = props.models(value)[0]
+    const first = props.models(value, store.tab)[0]
     setStore({ search: value, active: first ? modelKey(first) : manageKey })
+  }
+
+  const setTab = (tab: ModelTab) => {
+    const first = props.models(store.search, tab)[0]
+    setPrefs("tab", tab)
+    setStore({ tab, active: first ? modelKey(first) : manageKey })
   }
 
   createEffect(() => {
@@ -612,8 +732,8 @@ export function ModelSelectorPopoverView(props: {
       <Menu.Portal>
         <Menu.Content
           ref={(element: HTMLDivElement) => (contentRef = element)}
-          class="w-[284px] max-w-[calc(100vw-16px)] overflow-hidden rounded-md border-0 bg-v2-background-bg-layer-01 !p-0 shadow-[var(--v2-elevation-floating)] focus:outline-none"
-          classList={{ "!w-[320px]": props.chatgptPlan }}
+          class="w-[320px] max-w-[calc(100vw-16px)] overflow-hidden rounded-md border-0 bg-v2-background-bg-layer-01 !p-0 shadow-[var(--v2-elevation-floating)] focus:outline-none"
+          classList={{ "!w-[340px]": props.chatgptPlan }}
           onPointerDownOutside={dismiss.preventTriggerRestore}
           onFocusOutside={dismiss.preventTriggerRestore}
           onCloseAutoFocus={dismiss.onCloseAutoFocus}
@@ -624,7 +744,7 @@ export function ModelSelectorPopoverView(props: {
               <input
                 ref={(el) => (searchRef = el)}
                 value={store.search}
-                placeholder={language.t("dialog.model.search.placeholder")}
+                placeholder={language.t("dialog.model.search.placeholder.rich")}
                 class="h-7 min-w-0 flex-1 border-0 bg-transparent text-[13px] font-[440] leading-5 tracking-[-0.04px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
                 spellcheck={false}
                 autocorrect="off"
@@ -678,9 +798,22 @@ export function ModelSelectorPopoverView(props: {
                 </button>
               </Show>
             </div>
+            <div class="px-1 pb-1 pt-0.5">
+              <SegmentedControl
+                class="segmented-control-v2--full-width !w-full"
+                value={store.tab}
+                onChange={(value) => {
+                  if (value === "mine" || value === "free" || value === "all") setTab(value)
+                }}
+              >
+                <SegmentedControlItem value="mine">{language.t("dialog.model.tab.mine")}</SegmentedControlItem>
+                <SegmentedControlItem value="free">{language.t("dialog.model.tab.free")}</SegmentedControlItem>
+                <SegmentedControlItem value="all">{language.t("dialog.model.tab.all")}</SegmentedControlItem>
+              </SegmentedControl>
+            </div>
           </div>
           <div class="h-px bg-v2-border-border-muted" />
-          <ScrollView data-slot="model-selector-scroll" class="max-h-[220px] min-h-0">
+          <ScrollView data-slot="model-selector-scroll" class="max-h-[260px] min-h-0">
             <div class="flex flex-col p-0.5 pt-0">
               <Show
                 when={models().length > 0}
@@ -700,12 +833,14 @@ export function ModelSelectorPopoverView(props: {
                         <ProviderModelIcon provider={group.items[0].provider} class="shrink-0" />
                         <Show
                           when={managedIDs().has(group.category) ? managed() : undefined}
-                          fallback={<span class="min-w-0 truncate">{group.items[0].provider.name}</span>}
+                          fallback={
+                            <span class="min-w-0 truncate">{providerDisplay(group.items[0].provider).title}</span>
+                          }
                         >
                           {(workspace) => (
                             <>
                               <span class="min-w-0 truncate">
-                                {consoleProviderName(workspace(), group.items[0].provider.name)}
+                                {consoleProviderName(workspace(), providerDisplay(group.items[0].provider).title)}
                               </span>
                               <Show when={direct().has(canonical(group.items[0].provider))}>
                                 <Badge class="shrink-0">{workspace().workspace}</Badge>
@@ -717,41 +852,61 @@ export function ModelSelectorPopoverView(props: {
                       <Menu.RadioGroup value={props.current}>
                         <For each={group.items}>
                           {(item) => (
-                            <Tooltip
-                              class="w-full"
-                              placement="right-start"
-                              gutter={6}
-                              openDelay={0}
-                              value={
-                                <ModelTooltip
-                                  model={item}
-                                  latest={item.latest}
-                                  free={isFreeModel(item)}
-                                  v2
-                                />
-                              }
+                            <div
+                              class="flex w-full items-center gap-1 pe-1"
+                              classList={{ "!bg-v2-overlay-simple-overlay-hover": store.active === modelKey(item) }}
+                              onMouseEnter={() => {
+                                setStore("active", modelKey(item))
+                                setTimeout(() => searchRef?.focus())
+                              }}
                             >
-                              <Menu.RadioItem
-                                value={modelKey(item)}
-                                data-option-key={modelKey(item)}
-                                data-selected-model={props.current === modelKey(item) ? true : undefined}
-                                class="scroll-my-6 w-full"
-                                classList={{ "!bg-v2-overlay-simple-overlay-hover": store.active === modelKey(item) }}
-                                onMouseEnter={() => {
-                                  setStore("active", modelKey(item))
-                                  setTimeout(() => searchRef?.focus())
-                                }}
-                                onSelect={() => selectModel(item)}
+                              <Tooltip
+                                class="min-w-0 flex-1"
+                                placement="right-start"
+                                gutter={6}
+                                openDelay={0}
+                                value={
+                                  <ModelTooltip
+                                    model={item}
+                                    latest={item.latest}
+                                    free={isFreeModel(item)}
+                                    v2
+                                  />
+                                }
                               >
-                                <span class="min-w-0 truncate leading-5">{item.name}</span>
-                                <Show when={isFreeModel(item)}>
-                                  <Badge class="shrink-0">{language.t("model.tag.free")}</Badge>
-                                </Show>
-                                <Show when={item.latest}>
-                                  <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
-                                </Show>
-                              </Menu.RadioItem>
-                            </Tooltip>
+                                <Menu.RadioItem
+                                  value={modelKey(item)}
+                                  data-option-key={modelKey(item)}
+                                  data-selected-model={props.current === modelKey(item) ? true : undefined}
+                                  class="scroll-my-6 w-full !pe-1"
+                                  onSelect={() => selectModel(item)}
+                                >
+                                  <span class="min-w-0 truncate leading-5">{item.name}</span>
+                                  <Show when={isFreeModel(item)}>
+                                    <Badge class="shrink-0">{language.t("model.tag.free")}</Badge>
+                                  </Show>
+                                  <Show when={!props.visible(item)}>
+                                    <Badge class="shrink-0">{language.t("dialog.model.hidden")}</Badge>
+                                  </Show>
+                                  <Show when={item.latest}>
+                                    <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
+                                  </Show>
+                                </Menu.RadioItem>
+                              </Tooltip>
+                              <div
+                                class="shrink-0 pe-1"
+                                onClick={(event) => event.stopPropagation()}
+                                onPointerDown={(event) => event.stopPropagation()}
+                              >
+                                <Switch
+                                  checked={props.visible(item)}
+                                  onChange={(checked) => props.setVisibility(item, checked)}
+                                  hideLabel
+                                >
+                                  {item.name}
+                                </Switch>
+                              </div>
+                            </div>
                           )}
                         </For>
                       </Menu.RadioGroup>
@@ -773,7 +928,7 @@ export function ModelSelectorPopoverView(props: {
               onSelect={manage}
             >
               <Icon name="outline-sliders" size="small" />
-              <span class="min-w-0 flex-1 truncate leading-5">{language.t("dialog.model.manage")}</span>
+              <span class="min-w-0 flex-1 truncate leading-5">{language.t("dialog.model.manage.providers")}</span>
             </Menu.Item>
           </div>
           <Show when={props.chatgptPlan}>
@@ -831,7 +986,7 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
             onClick={manage}
           >
             <Icon name="outline-sliders" size="small" />
-            <span class="min-w-0 flex-1 truncate">{language.t("dialog.model.manage")}</span>
+            <span class="min-w-0 flex-1 truncate">{language.t("dialog.model.manage.providers")}</span>
           </button>
         </div>
       </DialogBody>

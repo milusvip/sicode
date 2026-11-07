@@ -9,6 +9,7 @@ import { Mime } from "../../mime.js"
 import { Permission } from "../../permission.js"
 import { convertHTMLToMarkdown, MAX_MARKDOWN_BYTES } from "../html-markdown.js"
 import { collectBoundedResponseBody } from "../http-body.js"
+import { failoverMirroredProxy } from "../../proxy-failover.js"
 
 export const name = "webfetch"
 export const MAX_RESPONSE_BYTES = MAX_MARKDOWN_BYTES
@@ -171,6 +172,11 @@ export const Plugin = {
                   Effect.catchIf(isCloudflareChallenge, () =>
                     execute(http, check, input.url, input.format, "opencode"),
                   ),
+                  // SiCode: mirrored OS proxy died mid-session — clear HTTP_PROXY and retry direct once.
+                  Effect.catch((error) => {
+                    if (!failoverMirroredProxy(error)) return Effect.fail(error)
+                    return execute(http, check, input.url, input.format)
+                  }),
                 )
                 const contentType = response.headers["content-type"] || ""
                 const mime = mimeFrom(contentType)

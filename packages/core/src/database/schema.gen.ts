@@ -300,6 +300,74 @@ const schema: Omit<DatabaseMigration.Migration, "id"> = {
       yield* tx.run(
         `CREATE INDEX \`session_v2_time_suspended_idx\` ON \`session_v2\` (\`time_suspended\`) WHERE "session_v2"."time_suspended" is not null;`,
       )
+      // SiCode: project/persona belief store (memory M1)
+      yield* tx.run(`
+        CREATE TABLE \`memory_belief\` (
+          \`id\` text PRIMARY KEY NOT NULL,
+          \`project_key\` text NOT NULL,
+          \`persona_id\` text,
+          \`session_id\` text,
+          \`kind\` text NOT NULL,
+          \`proposition\` text NOT NULL,
+          \`paths\` text NOT NULL,
+          \`entities\` text NOT NULL,
+          \`valid_at\` integer NOT NULL,
+          \`invalid_at\` integer,
+          \`importance\` integer NOT NULL,
+          \`confidence\` integer NOT NULL,
+          \`misses\` integer NOT NULL,
+          \`seen_at\` integer NOT NULL,
+          \`superseded_by\` text,
+          \`contradicts\` text NOT NULL,
+          \`provenance\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(
+        `CREATE INDEX \`memory_belief_project_idx\` ON \`memory_belief\` (\`project_key\`, \`persona_id\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`memory_belief_seen_idx\` ON \`memory_belief\` (\`project_key\`, \`seen_at\`);`)
+      // SiCode: persistent memory graph + vector cache
+      yield* tx.run(`
+        CREATE TABLE \`memory_entity\` (
+          \`id\` text PRIMARY KEY NOT NULL,
+          \`project_key\` text NOT NULL,
+          \`name\` text NOT NULL,
+          \`type\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`CREATE INDEX \`memory_entity_project_idx\` ON \`memory_entity\` (\`project_key\`);`)
+      yield* tx.run(`
+        CREATE TABLE \`memory_edge\` (
+          \`id\` text PRIMARY KEY NOT NULL,
+          \`project_key\` text NOT NULL,
+          \`belief_a\` text NOT NULL,
+          \`belief_b\` text NOT NULL,
+          \`entity_id\` text NOT NULL,
+          \`rel\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`CREATE INDEX \`memory_edge_project_idx\` ON \`memory_edge\` (\`project_key\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_edge_belief_a_idx\` ON \`memory_edge\` (\`belief_a\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_edge_belief_b_idx\` ON \`memory_edge\` (\`belief_b\`);`)
+      yield* tx.run(`
+        CREATE TABLE \`memory_vector\` (
+          \`belief_id\` text PRIMARY KEY NOT NULL,
+          \`project_key\` text NOT NULL,
+          \`version\` text NOT NULL,
+          \`dim\` integer NOT NULL,
+          \`values\` blob NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(
+        `CREATE INDEX \`memory_vector_project_idx\` ON \`memory_vector\` (\`project_key\`, \`version\`);`,
+      )
     })
   },
 }

@@ -9,16 +9,19 @@ import { Question } from "@opencode/schema/question"
 
 export const name = "question"
 
-export const description = `Use this tool when you need to ask the user questions during execution. This allows you to:
-1. Gather user preferences or requirements
-2. Clarify ambiguous instructions
-3. Get decisions on implementation choices as you work
-4. Offer choices to the user about what direction to take.
+export const description = `Blocking ask path — the only way to wait for the user. Do not ask in assistant prose and stop.
+
+Default: pick the recommended approach yourself and keep working. Do not use this tool to confirm obvious next steps, to dump an A/B menu of equivalent approaches, or to ask mid-checklist whether to continue.
+
+Use it only when a wrong choice is costly and you cannot recover from context:
+1. Two incompatible directions (e.g. delete vs keep; A/B API that both change product behavior)
+2. Missing a secret / path / credential that is not in the repo or prior messages
+3. The user explicitly asked you to choose with them
 
 Usage notes:
-- A "Type your own answer" option is added automatically; don't include a separate option for free form answers
-- Set \`multiple: true\` to allow selecting more than one option
-- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label`
+- Put your recommended option first and mark it "(Recommended)" — never a flat "you choose" list
+- A "Type your own answer" option is added automatically; don't add a free-form option yourself
+- Set \`multiple: true\` only when selecting more than one option is real`
 
 export const Input = Schema.Struct({
   questions: Schema.Array(Question.Prompt).check(Schema.isNonEmpty()).annotate({ description: "Questions to ask" }),

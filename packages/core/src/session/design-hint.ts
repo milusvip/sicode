@@ -165,26 +165,31 @@ const MARKUP = /\.(tsx|jsx|vue|svelte|astro|html?)$/i
  */
 const NOT_UI = /(^|[\\/])(core|server|api|sdk|scripts?|tests?|fixtures|migrations|cli|tui)([\\/]|$)/i
 
-const DESIGN_WORDS =
-  /样式|字体|字号|字重|颜色|配色|排版|圆角|间距|边距|投影|阴影|深色|浅色|主题|界面|布局|对比度|\b(css|scss|tailwind|typography|design|theme|radius|spacing|elevation|contrast|palette|font-weight)\b/i
+const PATH_IN_TEXT =
+  /(?:^|[\s`"'(=])((?:packages|services)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._/@-]*)?|(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z]{1,8})/g
 
 const touched = (input: { filePath?: unknown; path?: unknown }) =>
   String(input.filePath ?? input.path ?? "").replace(/\\/g, "/")
 
 /** Whether an edit to this path is UI work. */
-const isUI = (path: string) => CSS.test(path) || (MARKUP.test(path) && !NOT_UI.test(path))
+export const isUI = (path: string) => CSS.test(path) || (MARKUP.test(path) && !NOT_UI.test(path))
+
+const pathsInText = (text: string) => {
+  const found: string[] = []
+  for (const match of text.matchAll(PATH_IN_TEXT)) {
+    const path = match[1]
+    if (path) found.push(path.replace(/\/+$/, ""))
+  }
+  return found
+}
 
 /**
- * Whether this request is UI work: either it says so, or the turn before it edited UI files.
- * Only that one turn is inspected — one CSS edit does not make every later request a UI request —
- * and the answer depends on messages before this request's prompt, so it stays the same for every
- * step of the turn and the block keeps its position in the cached prefix.
+ * Whether this request is UI work. Structural signals first (prior UI edits, paths/attachments on
+ * this ask); DESIGN_WORDS only when the ask has no path locus at all.
  */
 export const needed = (messages: ReadonlyArray<SessionMessage.Info>): boolean => {
   const index = messages.findLastIndex((message) => message.type === "user")
   if (index < 0) return false
-  const user = messages[index]
-  if (user?.type === "user" && DESIGN_WORDS.test(user.text)) return true
 
   for (let cursor = index - 1; cursor >= 0; cursor--) {
     const message = messages[cursor]!
@@ -195,6 +200,20 @@ export const needed = (messages: ReadonlyArray<SessionMessage.Info>): boolean =>
       if (isUI(touched(part.state.input as { filePath?: unknown; path?: unknown }))) return true
     }
   }
+
+  const user = messages[index]
+  if (user?.type !== "user") return false
+
+  const named = pathsInText(user.text)
+  for (const path of named) if (isUI(path)) return true
+  for (const file of user.files ?? []) {
+    if (file.name && isUI(file.name)) return true
+    if (file.mention?.text) {
+      for (const path of pathsInText(file.mention.text)) if (isUI(path)) return true
+    }
+  }
+
+  // Pathless styling asks are not detected by vocabulary — need a UI path / prior UI edit.
   return false
 }
 

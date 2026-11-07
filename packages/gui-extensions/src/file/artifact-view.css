@@ -1,3 +1,9 @@
+/* SiCode: markdown/mermaid preview tracks the panel width up to --container-6xl, with the
+   component's horizontal padding as the only gutter — never a fixed 3xl reading column. */
+[data-slot="artifact-markdown"] {
+  width: min(100%, var(--container-6xl, 72rem));
+}
+
 /* The control defaults to a fixed 232px with equal segments; here it hugs its two labels. */
 [data-slot="artifact-toolbar"] [data-slot="segmented-control-v2"] {
   width: auto;

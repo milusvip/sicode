@@ -51,6 +51,15 @@ type ComposerSubmitInput = {
     clear: () => void
     restore: (comments: PromptHistoryComment[]) => void
   }
+  /**
+   * SiCode: before a normal prompt leaves the client, wake channels the context needs (e.g. the
+   * side browser after an element pick). Called with the session that will receive the prompt.
+   * May return a Promise — submit awaits it so the agent RPC is bound before the first step.
+   */
+  prepareSend?: (
+    session: ComposerSession,
+    context: ComposerSubmission["context"],
+  ) => void | Promise<void>
 }
 
 export function createComposerSubmit(input: ComposerSubmitInput) {
@@ -140,6 +149,10 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
 
       if (!started) return
       const session = started.session
+
+      // SiCode: wake browser (and similar) before send so tool grants / tab inventory land before
+      // the runner snapshots permissions for the first step. Await so browser.* is not disconnected.
+      if (value.mode === "normal" && !command) await input.prepareSend?.(session, value.context)
 
       input.addToHistory(value.prompt, value.mode)
       input.resetHistory()
@@ -252,11 +265,15 @@ function handoffMessage(value: ComposerSubmission): SessionMessageUser {
         part.type === "path" ? [{ name: part.filename, mime: part.mime, path: part.path }] : [],
       ),
       comments: value.context.flatMap((item): PromptComment[] => {
+        if (item.type === "note") {
+          const comment = item.comment?.trim() || item.label || item.subject
+
+          return [noteComment(item, comment)]
+        }
+
         const comment = item.comment?.trim()
 
         if (!comment) return []
-
-        if (item.type === "note") return [noteComment(item, comment)]
 
         return [
           {
@@ -287,7 +304,8 @@ function readSubmission(
   if (mode === "shell" && !text.trim()) return
   const images = prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
   // Like the TUI's blank Enter, file chips alone send nothing; they wait for text.
-  const comments = context.filter((item) => !!item.comment?.trim()).length
+  // Notes always count (system-browser push may use the label as the only body).
+  const comments = context.filter((item) => item.type === "note" || !!item.comment?.trim()).length
 
   if (!text.trim() && !prompt.some(isAttachment) && comments === 0) return
 

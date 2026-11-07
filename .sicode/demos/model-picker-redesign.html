@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SiCode · 模型选择 / 管理 redesign demo</title>
+  <style>
+    :root {
+      --bg: #0e0e0e;
+      --panel: #171717;
+      --panel-2: #1c1c1c;
+      --hover: rgba(255, 255, 255, 0.06);
+      --press: rgba(255, 255, 255, 0.1);
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f2f2f2;
+      --muted: #8a8a8a;
+      --faint: #5c5c5c;
+      --accent: #7dd3a0;
+      --accent-dim: rgba(125, 211, 160, 0.14);
+      --blue: #6b8cff;
+      --blue-dim: rgba(107, 140, 255, 0.18);
+      --warn: #e8b86d;
+      --radius: 10px;
+      --font: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(900px 420px at 18% 0%, #1a2420 0%, transparent 55%),
+        radial-gradient(700px 380px at 90% 10%, #1a1a22 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+    }
+
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+      max-width: 60ch;
+    }
+
+    .top-tabs {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      margin-bottom: 28px;
+      border-radius: 9px;
+      background: rgba(255,255,255,0.04);
+    }
+    .top-tabs button {
+      height: 32px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 530;
+      cursor: pointer;
+    }
+    .top-tabs button[aria-selected="true"] {
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+    }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .col-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .col-title h2 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .col-title span { font-size: 12px; color: var(--faint); }
+
+    .stage {
+      position: relative;
+      min-height: 520px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #121212, #0c0c0c);
+      padding: 24px 18px 18px;
+      overflow: hidden;
+    }
+
+    .composer-bar {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 2;
+    }
+    .trigger, .mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .mode { color: var(--muted); }
+    .trigger .chev { opacity: 0.45; font-size: 10px; }
+
+    .pop {
+      position: absolute;
+      left: 18px;
+      bottom: 58px;
+      width: min(340px, calc(100% - 36px));
+      max-height: 420px;
+      display: flex;
+      flex-direction: column;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 50px rgba(0,0,0,.55);
+      overflow: hidden;
+      z-index: 3;
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 8px 4px;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 7px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+    }
+    .search svg { opacity: 0.45; flex: none; }
+    .search input {
+      flex: 1; min-width: 0; border: 0; outline: none;
+      background: transparent; color: var(--text); font: inherit; font-size: 13px;
+    }
+    .search input::placeholder { color: var(--faint); }
+
+    .list { flex: 1; overflow: auto; padding: 4px 6px 8px; }
+    .foot { border-top: 1px solid var(--line); padding: 4px 6px; }
+    .foot button {
+      width: 100%; display: flex; align-items: center; gap: 8px;
+      height: 32px; padding: 0 10px; border: 0; border-radius: 7px;
+      background: transparent; color: var(--muted); font: inherit; font-size: 13px;
+      cursor: pointer; text-align: left;
+    }
+    .foot button:hover { background: var(--hover); color: var(--text); }
+
+    .row {
+      display: flex; align-items: center; gap: 8px;
+      min-height: 28px; padding: 0 10px; border-radius: 6px;
+      cursor: default; font-size: 13px;
+    }
+    .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .tag {
+      height: 16px; padding: 0 5px; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: var(--muted); font-size: 11px; line-height: 16px;
+    }
+    .row.active { background: var(--press); }
+    .row .check { color: var(--accent); width: 14px; }
+    .prov {
+      display: flex; align-items: center; gap: 8px;
+      height: 28px; padding: 0 10px; margin-top: 6px;
+      color: var(--muted); font-size: 12px;
+    }
+    .prov .dot {
+      width: 14px; height: 14px; border-radius: 4px; background: #3a3a3a;
+      display: grid; place-items: center; font-size: 8px; color: #bbb;
+    }
+
+    .segs {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+      margin: 0 8px 6px; padding: 2px; border-radius: 8px; background: rgba(255,255,255,0.04);
+    }
+    .segs button {
+      height: 28px; border: 0; border-radius: 6px; background: transparent;
+      color: var(--muted); font: inherit; font-size: 12px; font-weight: 530; cursor: pointer;
+    }
+    .segs button[aria-selected="true"] {
+      background: rgba(255,255,255,0.1); color: var(--text);
+    }
+
+    .section-label {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 10px 4px; color: var(--faint); font-size: 11px; font-weight: 530;
+    }
+
+    .card {
+      display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
+      padding: 8px 10px; margin: 2px 0; border-radius: 8px; cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .card:hover { background: var(--hover); }
+    .card[aria-selected="true"] {
+      background: var(--accent-dim); border-color: rgba(125, 211, 160, 0.22);
+    }
+    .card .title {
+      font-size: 13px; font-weight: 530; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .card .meta {
+      grid-column: 1; color: var(--muted); font-size: 11px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .card .side { grid-row: 1 / span 2; display: flex; align-items: center; }
+    .pill {
+      height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10px; line-height: 18px;
+      color: var(--muted); background: rgba(255,255,255,0.05); white-space: nowrap;
+    }
+    .pill.mine { color: var(--accent); background: var(--accent-dim); }
+    .pill.off { color: var(--warn); background: rgba(232, 184, 109, 0.12); }
+
+    .switch {
+      position: relative; width: 28px; height: 16px; border-radius: 999px; border: 0;
+      background: #3a3a3a; cursor: pointer; padding: 0; flex: none;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 12px; height: 12px; border-radius: 50%; background: #ddd;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .switch[aria-checked="true"] { background: #2f6b4a; }
+    .switch[aria-checked="true"]::after { transform: translateX(12px); background: var(--accent); }
+    .switch.blue[aria-checked="true"] { background: #3553b8; }
+    .switch.blue[aria-checked="true"]::after { background: #9db4ff; }
+
+    .provider-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px 2px; color: var(--muted); font-size: 12px; font-weight: 530;
+    }
+    .provider-head .mark {
+      width: 16px; height: 16px; border-radius: 4px; background: #2c2c2c;
+      display: grid; place-items: center; font-size: 9px; color: #cfcfcf; font-family: var(--mono);
+    }
+    .provider-head .grow { flex: 1; min-width: 0; }
+    .provider-head .count { color: var(--faint); font-weight: 400; }
+
+    .empty {
+      padding: 18px 12px; text-align: center; color: var(--faint); font-size: 12px; line-height: 1.5;
+    }
+
+    /* —— manage dialogs —— */
+    .dialog {
+      width: 100%;
+      max-width: 520px;
+      margin: 0 auto;
+      border-radius: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 60px rgba(0,0,0,.5);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: 560px;
+    }
+    .dialog-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 18px 12px;
+    }
+    .dialog-head h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .dialog-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .btn {
+      height: 30px;
+      padding: 0 11px;
+      border-radius: 7px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 530;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn.primary {
+      background: var(--blue-dim);
+      border-color: rgba(107,140,255,0.28);
+      color: #c5d2ff;
+    }
+    .btn:hover { background: var(--hover); }
+
+    .dialog .search { margin: 0 18px 10px; }
+
+    .dialog-body {
+      flex: 1;
+      overflow: auto;
+      padding: 0 12px 14px;
+    }
+
+    /* current manage look */
+    .old-prov {
+      margin: 4px 0;
+    }
+    .old-prov-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 0 8px;
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .old-prov-row .chev { width: 14px; color: var(--faint); font-size: 10px; }
+    .old-prov-row .label {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: var(--mono); font-size: 12px;
+    }
+    .old-model {
+      margin: 4px 8px 8px 28px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .old-model .grow { flex: 1; }
+
+    /* new manage look */
+    .block {
+      margin: 0 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.02);
+      overflow: hidden;
+    }
+    .block-head {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 12px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .block-head .mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: #2a2a2a; display: grid; place-items: center;
+      font-size: 11px; font-family: var(--mono); color: #ddd;
+    }
+    .block-head .who .name { font-size: 13px; font-weight: 600; }
+    .block-head .who .url {
+      margin-top: 2px; color: var(--faint); font-size: 11px;
+      font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 260px;
+    }
+    .block-actions { display: flex; align-items: center; gap: 8px; }
+    .linkish {
+      border: 0; background: transparent; color: var(--muted);
+      font: inherit; font-size: 11px; cursor: pointer; padding: 0;
+    }
+    .linkish:hover { color: var(--text); }
+
+    .model-line {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-top: 1px solid transparent;
+    }
+    .model-line + .model-line { border-top-color: var(--line); }
+    .model-line .mid .id {
+      font-size: 13px; font-weight: 530;
+    }
+    .model-line .mid .hint {
+      margin-top: 2px; color: var(--faint); font-size: 11px;
+    }
+
+    .group-title {
+      padding: 4px 4px 8px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 530;
+    }
+
+    .notes {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) {
+      .notes { grid-template-columns: 1fr; }
+    }
+    .note {
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+    }
+    .note strong { display: block; margin-bottom: 6px; font-size: 13px; }
+    .note p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+    .status {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--faint);
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>模型选择 / 管理 · redesign demo</h1>
+    <p class="lead">
+      选择器：我的置顶、行内开关。管理页：只保留「模型」一层开关，提供商行只管展开与批量，名字用人话、URL 降级成副标题。
+    </p>
+
+    <div class="top-tabs" role="tablist">
+      <button type="button" data-panel="picker" aria-selected="true">选择器</button>
+      <button type="button" data-panel="manage" aria-selected="false">管理模型</button>
+    </div>
+
+    <!-- PICKER -->
+    <div class="panel active" id="panel-picker">
+      <div class="grid">
+        <section>
+          <div class="col-title"><h2>现在</h2><span>免费盖住自定义</span></div>
+          <div class="stage">
+            <div class="pop">
+              <div class="search">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-linecap="round"/></svg>
+                <input placeholder="搜索模型" disabled />
+              </div>
+              <div class="list">
+                <div class="row"><span class="name">Beam Free</span><span class="tag">免费</span></div>
+                <div class="row"><span class="name">DeepSeek V4.1 Flash Free</span><span class="tag">免费</span></div>
+                <div class="row"><span class="name">Flint 40B Free</span><span class="tag">免费</span></div>
+                <div class="prov"><span class="dot">M</span> M-C API</div>
+                <div class="row active"><span class="name">deepseek-v4.1-flash</span><span class="check">✓</span></div>
+              </div>
+              <div class="foot"><button type="button">⚙ 管理模型</button></div>
+            </div>
+            <div class="composer-bar">
+              <button class="trigger" type="button"><span>deepseek-v4.1-flash</span><span class="chev">▾</span></button>
+              <button class="mode" type="button">☰ 默认</button>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="col-title"><h2>提案</h2><span>可点</span></div>
+          <div class="stage">
+            <div class="pop">
+              <div class="search">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-linecap="round"/></svg>
+                <input id="q" placeholder="搜索名称、提供商…" autocomplete="off" />
+              </div>
+              <div class="segs" role="tablist">
+                <button type="button" data-tab="mine" aria-selected="true">我的</button>
+                <button type="button" data-tab="free" aria-selected="false">免费</button>
+                <button type="button" data-tab="all" aria-selected="false">全部</button>
+              </div>
+              <div class="list" id="list-new"></div>
+              <div class="foot"><button type="button" id="to-manage">⚙ 管理提供商与密钥</button></div>
+            </div>
+            <div class="composer-bar">
+              <button class="trigger" type="button"><span id="current-label">deepseek-v4.1-flash</span><span class="chev">▾</span></button>
+              <button class="mode" type="button">☰ 默认</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- MANAGE -->
+    <div class="panel" id="panel-manage">
+      <div class="grid">
+        <section>
+          <div class="col-title"><h2>现在</h2><span>提供商开关 + 模型开关，还要各拨一次</span></div>
+          <div class="stage" style="min-height:auto;padding:20px;display:flex;align-items:flex-start;justify-content:center;">
+            <div class="dialog">
+              <div class="dialog-head">
+                <div>
+                  <h3>管理模型</h3>
+                  <p>自定义模型选择器中显示的模型。</p>
+                </div>
+                <button class="btn primary" type="button">+ 连接提供商</button>
+              </div>
+              <div class="search">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-linecap="round"/></svg>
+                <input placeholder="搜索模型" disabled />
+              </div>
+              <div class="dialog-body">
+                <div class="old-prov">
+                  <div class="old-prov-row"><span class="chev">▸</span><span class="label" style="font-family:inherit">SiCode Free</span><button class="switch blue" type="button" aria-checked="false"></button></div>
+                </div>
+                <div class="old-prov">
+                  <div class="old-prov-row"><span class="chev">▾</span><span class="label">https://api.zzzai.vip/v1</span><button class="switch blue" type="button" aria-checked="false"></button></div>
+                  <div class="old-model"><span class="grow">glm-5.3</span><button class="switch blue" type="button" aria-checked="false"></button></div>
+                </div>
+                <div class="old-prov">
+                  <div class="old-prov-row"><span class="chev">▾</span><span class="label">https://vortexapi.xyz/v1</span><button class="switch blue" type="button" aria-checked="false"></button></div>
+                  <div class="old-model"><span class="grow">deepseek-v4.1-flash</span><button class="switch blue" type="button" aria-checked="false"></button></div>
+                </div>
+                <div class="old-prov">
+                  <div class="old-prov-row"><span class="chev">▾</span><span class="label" style="font-family:inherit">M-C API</span><button class="switch blue" type="button" aria-checked="true"></button></div>
+                  <div class="old-model"><span class="grow">deepseek-v4.1-flash</span><button class="switch blue" type="button" aria-checked="true"></button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="col-title"><h2>提案</h2><span>可点 · 只拨模型开关</span></div>
+          <div class="stage" style="min-height:auto;padding:20px;display:flex;align-items:flex-start;justify-content:center;">
+            <div class="dialog">
+              <div class="dialog-head">
+                <div>
+                  <h3>管理模型</h3>
+                  <p>控制选择器里显示哪些模型。新加入的默认开启。</p>
+                </div>
+                <button class="btn primary" type="button" id="connect">+ 连接提供商</button>
+              </div>
+              <div class="search">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-linecap="round"/></svg>
+                <input id="mq" placeholder="搜索提供商或模型…" autocomplete="off" />
+              </div>
+              <div class="dialog-body" id="manage-body"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="notes">
+        <div class="note">
+          <strong>去掉双开关</strong>
+          <p>提供商行不再有独立可见性开关。显示与否只看模型开关；「全部显示 / 全部隐藏」是批量操作，不是第二层状态。</p>
+        </div>
+        <div class="note">
+          <strong>名字用人话</strong>
+          <p>标题用提供商名（M-C API、zzzai），base URL 放到副行。刚加完不会只看到一长串 https://…</p>
+        </div>
+        <div class="note">
+          <strong>默认开着</strong>
+          <p>新连接的自定义模型默认 on。保存后选择器里立刻能选，不必再进管理页拨两下。</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="status" id="status">选中：M-C API / deepseek-v4.1-flash</p>
+  </div>
+
+  <script>
+    const models = [
+      { id: "mc:deepseek-v4.1-flash", provider: "M-C API", name: "deepseek-v4.1-flash", kind: "mine", on: true },
+      { id: "mc:claude-sonnet", provider: "M-C API", name: "claude-sonnet-4", kind: "mine", on: true },
+      { id: "zzz:glm", provider: "zzzai", name: "glm-5.3", kind: "mine", on: true, url: "https://api.zzzai.vip/v1" },
+      { id: "vortex:ds", provider: "vortex", name: "deepseek-v4.1-flash", kind: "mine", on: false, url: "https://vortexapi.xyz/v1" },
+      { id: "free:beam", provider: "SiCode Free", name: "Beam Free", kind: "free", on: false },
+      { id: "free:ds", provider: "SiCode Free", name: "DeepSeek V4.1 Flash Free", kind: "free", on: false },
+      { id: "free:flint", provider: "SiCode Free", name: "Flint 40B Free", kind: "free", on: false },
+    ]
+
+    const providersMeta = {
+      "M-C API": { mark: "M", url: "自定义网关" },
+      zzzai: { mark: "Z", url: "https://api.zzzai.vip/v1" },
+      vortex: { mark: "V", url: "https://vortexapi.xyz/v1" },
+      "SiCode Free": { mark: "S", url: "内置免费池" },
+    }
+
+    let tab = "mine"
+    let selected = "mc:deepseek-v4.1-flash"
+    let query = ""
+    let mquery = ""
+
+    const listEl = document.getElementById("list-new")
+    const manageBody = document.getElementById("manage-body")
+    const statusEl = document.getElementById("status")
+    const labelEl = document.getElementById("current-label")
+
+    document.querySelectorAll(".top-tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".top-tabs button").forEach((b) => b.setAttribute("aria-selected", b === btn ? "true" : "false"))
+        document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${btn.dataset.panel}`))
+      })
+    })
+
+    document.getElementById("to-manage").addEventListener("click", () => {
+      document.querySelector('.top-tabs button[data-panel="manage"]').click()
+      statusEl.textContent = "跳到管理页：这里管显示，密钥/连接走「连接提供商」"
+    })
+
+    function pickerItems() {
+      const q = query.trim().toLowerCase()
+      return models.filter((m) => {
+        if (tab === "mine" && m.kind !== "mine") return false
+        if (tab === "free" && m.kind !== "free") return false
+        if (!m.on && tab !== "all" && !q) return false
+        if (!q) return true
+        return [m.name, m.provider, m.id].some((s) => s.toLowerCase().includes(q))
+      })
+    }
+
+    function group(items) {
+      const map = new Map()
+      for (const item of items) {
+        if (!map.has(item.provider)) map.set(item.provider, [])
+        map.get(item.provider).push(item)
+      }
+      return [...map.entries()]
+    }
+
+    function renderPicker() {
+      const items = pickerItems()
+      listEl.innerHTML = ""
+      if (!items.length) {
+        listEl.innerHTML = `<div class="empty">没有匹配的模型<br/>到「全部」里打开已隐藏的，或换个分段</div>`
+        return
+      }
+      for (const [provider, groupItems] of group(items)) {
+        const head = document.createElement("div")
+        head.className = "provider-head"
+        const onCount = groupItems.filter((m) => m.on).length
+        head.innerHTML = `<span class="mark">${(providersMeta[provider]?.mark) || provider.slice(0,1)}</span><span class="grow">${provider}</span><span class="count">${onCount}/${groupItems.length}</span>`
+        listEl.appendChild(head)
+        for (const m of groupItems) listEl.appendChild(pickerCard(m))
+      }
+    }
+
+    function pickerCard(m) {
+      const el = document.createElement("div")
+      el.className = "card"
+      el.setAttribute("aria-selected", m.id === selected ? "true" : "false")
+      el.innerHTML = `
+        <div class="title">${m.name}</div>
+        <div class="side"><button class="switch" type="button" aria-checked="${m.on}"></button></div>
+        <div class="meta">
+          ${m.kind === "mine" ? `<span class="pill mine">我的</span>` : `<span class="pill">免费</span>`}
+          ${m.on ? "" : ` <span class="pill off">已隐藏</span>`}
+          <span> · ${m.provider}</span>
+        </div>`
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".switch")) return
+        if (!m.on) m.on = true
+        selected = m.id
+        labelEl.textContent = m.name
+        statusEl.textContent = `选中：${m.provider} / ${m.name}`
+        renderPicker()
+        renderManage()
+      })
+      el.querySelector(".switch").addEventListener("click", (e) => {
+        e.stopPropagation()
+        m.on = !m.on
+        statusEl.textContent = m.on ? `已显示：${m.name}` : `已隐藏：${m.name}`
+        if (!m.on && selected === m.id) {
+          const next = models.find((x) => x.on)
+          if (next) { selected = next.id; labelEl.textContent = next.name }
+        }
+        renderPicker()
+        renderManage()
+      })
+      return el
+    }
+
+    function renderManage() {
+      const q = mquery.trim().toLowerCase()
+      const items = models.filter((m) => {
+        if (!q) return true
+        return [m.name, m.provider, m.url || "", m.id].some((s) => s.toLowerCase().includes(q))
+      })
+      manageBody.innerHTML = ""
+
+      const mine = items.filter((m) => m.kind === "mine")
+      const free = items.filter((m) => m.kind === "free")
+
+      if (mine.length) {
+        const t = document.createElement("div")
+        t.className = "group-title"
+        t.textContent = "我的提供商"
+        manageBody.appendChild(t)
+        for (const [provider, groupItems] of group(mine)) manageBody.appendChild(providerBlock(provider, groupItems))
+      }
+      if (free.length) {
+        const t = document.createElement("div")
+        t.className = "group-title"
+        t.textContent = "免费"
+        manageBody.appendChild(t)
+        for (const [provider, groupItems] of group(free)) manageBody.appendChild(providerBlock(provider, groupItems))
+      }
+      if (!items.length) manageBody.innerHTML = `<div class="empty">没有匹配项</div>`
+    }
+
+    function providerBlock(provider, groupItems) {
+      const meta = providersMeta[provider] || { mark: provider.slice(0, 1), url: "" }
+      const block = document.createElement("div")
+      block.className = "block"
+      const onCount = groupItems.filter((m) => m.on).length
+      const allOn = onCount === groupItems.length
+
+      block.innerHTML = `
+        <div class="block-head">
+          <div class="mark">${meta.mark}</div>
+          <div class="who">
+            <div class="name">${provider}</div>
+            <div class="url">${meta.url || groupItems[0].url || ""}</div>
+          </div>
+          <div class="block-actions">
+            <button class="linkish" type="button" data-bulk>${allOn ? "全部隐藏" : "全部显示"}</button>
+          </div>
+        </div>
+      `
+
+      for (const m of groupItems) {
+        const line = document.createElement("div")
+        line.className = "model-line"
+        line.innerHTML = `
+          <div class="mid">
+            <div class="id">${m.name}</div>
+            <div class="hint">${m.on ? "会在选择器中显示" : "已从选择器隐藏"}</div>
+          </div>
+          <button class="switch blue" type="button" aria-checked="${m.on}"></button>
+        `
+        line.querySelector(".switch").addEventListener("click", () => {
+          m.on = !m.on
+          statusEl.textContent = m.on ? `管理：显示 ${m.provider} / ${m.name}` : `管理：隐藏 ${m.provider} / ${m.name}`
+          renderManage()
+          renderPicker()
+        })
+        block.appendChild(line)
+      }
+
+      block.querySelector("[data-bulk]").addEventListener("click", () => {
+        const turnOn = !allOn
+        for (const m of groupItems) m.on = turnOn
+        statusEl.textContent = turnOn ? `已全部显示：${provider}` : `已全部隐藏：${provider}`
+        renderManage()
+        renderPicker()
+      })
+
+      return block
+    }
+
+    document.querySelectorAll(".segs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tab = btn.dataset.tab
+        document.querySelectorAll(".segs button").forEach((b) => b.setAttribute("aria-selected", b === btn ? "true" : "false"))
+        renderPicker()
+      })
+    })
+
+    document.getElementById("q").addEventListener("input", (e) => {
+      query = e.target.value
+      renderPicker()
+    })
+    document.getElementById("mq").addEventListener("input", (e) => {
+      mquery = e.target.value
+      renderManage()
+    })
+    document.getElementById("connect").addEventListener("click", () => {
+      statusEl.textContent = "连接提供商：保存后模型默认开启，回到选择器即可用"
+    })
+
+    // Decorative non-interactive switches on the "current" manage mock
+    document.querySelectorAll("#panel-manage .stage:first-of-type .switch, .grid > section:first-child .dialog .switch").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault()
+        statusEl.textContent = "左边是现状示意：提供商和模型各有一个开关，得拨两次"
+      })
+    })
+
+    renderPicker()
+    renderManage()
+  </script>
+</body>
+</html>

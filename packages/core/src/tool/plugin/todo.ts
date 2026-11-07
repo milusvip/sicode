@@ -11,15 +11,24 @@ import DESCRIPTION from "../todowrite.txt"
 export const name = "todowrite"
 
 export const Info = Schema.Struct({
-  content: Schema.String.annotate({ description: "Brief description of the task" }),
+  // SiCode: pill renders content verbatim — keep Cursor-shaped (verb-led, short, nontrivial).
+  content: Schema.String.annotate({
+    description: "Verb-led task, ~14 words max; one nontrivial outcome (not search/lint/read chores)",
+  }),
+  // SiCode: the pill above the composer renders this field verbatim, so the schema says out loud
+  // what the description used to leave implicit — at most one item in progress, and completion
+  // belongs to the call after the step that finished it.
   status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]).annotate({
-    description: "Current status of the task: pending, in_progress, completed, cancelled",
+    description:
+      "Current status of the task: pending, in_progress, completed, cancelled. At most one item may be in_progress.",
   }),
 })
 export type Info = typeof Info.Type
 
 export const Input = Schema.Struct({
-  todos: Schema.Array(Info).annotate({ description: "The updated todo list" }),
+  todos: Schema.Array(Info).annotate({
+    description: "Full replacement list — prefer few large items over a long micro-checklist",
+  }),
 })
 
 export const Output = Schema.Struct({
@@ -47,7 +56,8 @@ export const Plugin = {
     const permission = yield* Permission.Service
     // Internal plugins are not re-run on config changes, so reload the tool transform instead.
     const loaded = yield* ConfigEntryObserver.observe(config, ctx.event, ctx.tool.reload())
-    const enabled = () => Config.latest(loaded.entries, "experimental")?.todo === true
+    // SiCode: default on so multi-step turns get a plan tool without an opt-in flag; set false to hide.
+    const enabled = () => Config.latest(loaded.entries, "experimental")?.todo !== false
 
     yield* ctx.tool
       .transform((editor) => {

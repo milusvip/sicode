@@ -15,6 +15,7 @@ import { SessionHistory } from "../history.js"
 import { SessionRecentText } from "../recent-text.js"
 import { SessionCompactionDurable } from "../compaction-durable.js"
 import type { FileAttachment } from "@opencode/schema/prompt"
+import { toolResultPath, wrapToolResult } from "../provenance.js"
 
 const imageMimes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
 
@@ -36,52 +37,70 @@ const attachmentLocation = (file: FileAttachment) => {
   }
 }
 
+/** Prefer a disk path the model can `read`; fall back to the display name. */
+const attachmentPath = (file: FileAttachment) =>
+  attachmentLocation(file) ?? file.name ?? (file.source.type === "uri" ? file.source.uri : undefined)
+
+const attachmentMeta = (file: FileAttachment) => ({
+  attachment: {
+    source: file.source,
+    name: file.name,
+    description: file.description,
+  },
+})
+
+/** Context header: path is readable; default work stays in the project (Cursor-shaped reference). */
+const attachedFileHeader = (path: string) =>
+  `Attached file (context): ${path}\nReadable path — use when relevant. Prefer changing the current project unless the user asked to edit this path itself.`
+
 const textAttachment = (file: FileAttachment): ContentPart => ({
   type: "text",
   text: `\n\n${[
-    `Attached file: ${file.name ?? (file.source.type === "uri" ? file.source.uri : "inline attachment")}`,
+    attachedFileHeader(attachmentPath(file) ?? "inline attachment"),
     file.description === undefined ? undefined : `Description: ${file.description}`,
     "",
     Buffer.from(file.data, "base64").toString("utf8"),
   ]
     .filter((line): line is string => line !== undefined)
     .join("\n")}`,
-  metadata: {
-    attachment: {
-      source: file.source,
-      name: file.name,
-      description: file.description,
-    },
-  },
+  metadata: attachmentMeta(file),
 })
 
 const directoryAttachment = (file: FileAttachment): ContentPart => ({
   type: "text",
   text: `\n\n${[
-    `Attached directory: ${attachmentLocation(file) ?? file.name ?? (file.source.type === "uri" ? file.source.uri : "directory")}`,
+    `Attached directory (context): ${attachmentPath(file) ?? "directory"}\nReadable path — use when relevant. Prefer changing the current project unless the user asked to edit this path itself.`,
     file.description === undefined ? undefined : `Description: ${file.description}`,
     file.data.length === 0 ? undefined : "",
     file.data.length === 0 ? undefined : Buffer.from(file.data, "base64").toString("utf8"),
   ]
     .filter((line): line is string => line !== undefined)
     .join("\n")}`,
-  metadata: {
-    attachment: {
-      source: file.source,
-      name: file.name,
-      description: file.description,
-    },
-  },
+  metadata: attachmentMeta(file),
 })
+
+/**
+ * Path line for media / binary. Local `file://` wins. Legacy inline chips keep a name so Flash
+ * does not hunt Temp (ses_e4d917). Non-local http(s) media stays unlabeled.
+ */
+const diskAttachmentLabel = (file: FileAttachment): string | undefined => {
+  const location = attachmentLocation(file)
+  if (location) return attachedFileHeader(location)
+  if (file.source.type !== "inline" || !file.name) return undefined
+  return `${attachedFileHeader(file.name)}\nBytes are already in this message — do not search Temp caches for the paste.`
+}
 
 const attachmentContent = (file: FileAttachment): ContentPart[] => {
   if (file.mime === "text/plain") return [textAttachment(file)]
   if (file.mime === "application/x-directory") return [directoryAttachment(file)]
   if (imageMimes.has(file.mime) || file.mime === "application/pdf") {
-    const location = attachmentLocation(file)
-    return [...(location === undefined ? [] : [Message.text(`Attached file: ${location}`)]), media(file)]
+    const label = diskAttachmentLabel(file)
+    return [...(label === undefined ? [] : [Message.text(label)]), media(file)]
   }
-  return []
+  // SiCode: zip/tipa/bin/… used to vanish from model context (empty parts). Always emit the path
+  // so tools can open the file even when the provider cannot ingest the bytes as media.
+  const label = diskAttachmentLabel(file)
+  return label === undefined ? [] : [Message.text(label)]
 }
 
 const userAttachmentContent = (files: readonly FileAttachment[]) => {
@@ -126,26 +145,50 @@ const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: Provider
   })
 
 const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined) => {
+  // SiCode: provenance wrappers so long turns can tell which read/write a quote came from.
+  const path = tool.state.status === "streaming" ? undefined : toolResultPath(tool.state.input)
   if (tool.state.status === "completed") {
     // TODO: Materialize remote and managed URIs before provider-history lowering.
     const content = tool.state.content
     const single = content.length === 1 ? content[0] : undefined
+    if (single?.type === "text") {
+      return ToolResultPart.make({
+        id: tool.id,
+        name: tool.name,
+        result: {
+          type: "text" as const,
+          value: wrapToolResult({ name: tool.name, path, text: single.text }),
+        },
+        providerExecuted: tool.executed,
+        providerMetadata,
+      })
+    }
+    let tagged = false
+    const value = content.map((part) => {
+      if (part.type !== "text" || tagged) return part
+      tagged = true
+      return { ...part, text: wrapToolResult({ name: tool.name, path, text: part.text }) }
+    })
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
-      result:
-        single?.type === "text"
-          ? { type: "text" as const, value: single.text }
-          : { type: "content" as const, value: content },
+      result: { type: "content" as const, value },
       providerExecuted: tool.executed,
       providerMetadata,
     })
   }
   if (tool.state.status === "error") {
+    // Structured error payloads stay untouched; only wrap any accompanying text content.
+    let tagged = false
+    const content = (tool.state.content ?? []).map((part) => {
+      if (part.type !== "text" || tagged) return part
+      tagged = true
+      return { ...part, text: wrapToolResult({ name: tool.name, path, text: part.text }) }
+    })
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
-      result: { error: tool.state.error, content: tool.state.content ?? [] },
+      result: { error: tool.state.error, content },
       resultType: "error",
       providerExecuted: tool.executed,
       providerMetadata,

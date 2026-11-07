@@ -187,21 +187,21 @@ test("recall ranks a path hit above a word in the text, and a stale fact below a
 test("the recall tool's output names each fact, its paths, and a stale warning", () => {
   const content = toModelContent(
     [
-      { kind: "file", text: "toolbar and popover", paths: ["browser/panel.tsx"], stale: false },
-      { kind: "context", text: "cookies die on restart", paths: [], stale: true },
+      { kind: "file", text: "toolbar and popover", paths: ["browser/panel.tsx"], stale: false, conflicts: false },
+      { kind: "context", text: "cookies die on restart", paths: [], stale: true, conflicts: false },
     ],
     9,
   )
 
   expect(content.split("\n")).toEqual([
-    "2 of 9 facts this project kept from earlier compactions:",
+    "2 of 9 memories (project + persona) matched:",
     "- [file] toolbar and popover",
     "  browser/panel.tsx",
     "- [context] cookies die on restart",
     "  (a recent check could not find one of these paths; confirm before relying on it)",
   ])
   expect(toModelContent([], 0)).toBe("This project has no memory yet. Search the code as usual.")
-  expect(toModelContent([], 4)).toContain("4 facts are kept")
+  expect(toModelContent([], 4)).toContain("4 memories are kept")
 })
 
 test("SiCode: a query typed without spaces reaches a fact written with them", () => {

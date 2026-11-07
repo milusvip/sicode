@@ -6,9 +6,10 @@ export function pathToFileUrl(filepath: string): string {
 }
 
 /** A file tab id is "//" and the encoded path, so its stored key stays the `file://<path>` it was before extensions. */
-export const fileTabId = (file: Files, path: string) => `//${encodeFilePath(file.resolve(path))}`
+export const fileTabId = (file: Pick<Files, "resolve">, path: string) =>
+  `//${encodeFilePath(file.resolve(path))}`
 
-export const fileTabPath = (file: Files, id: string) => file.resolve(`file:${id}`)
+export const fileTabPath = (file: Pick<Files, "resolve">, id: string) => file.resolve(`file:${id}`)
 
 export const isFileTab = (id: string) => id.startsWith("//")
 

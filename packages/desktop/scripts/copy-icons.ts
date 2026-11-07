@@ -1,4 +1,4 @@
-import { $ } from "bun"
+import { cp, rm } from "node:fs/promises"
 import { resolveChannel } from "./utils"
 
 const arg = process.argv[2]
@@ -9,8 +9,8 @@ const src = `./icons/${channel}`
 
 const dest = "resources/icons"
 
-await $`rm -rf ${dest}`
+await rm(dest, { recursive: true, force: true })
 
-await $`cp -R ${src} ${dest}`
+await cp(src, dest, { recursive: true })
 
 console.log(`Copied ${channel} icons from ${src} to ${dest}`)

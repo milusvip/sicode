@@ -63,27 +63,43 @@ export function pageOfferNote(input: {
   }
 }
 
+type OfferElement = {
+  selector: string
+  label: string
+  slot?: string
+  component?: string
+  action?: string
+  role?: string
+  name?: string
+  text?: string
+}
+
 /** SiCode: an element picked in the system browser — identified by selector, no live in-app ref. */
 export function elementOfferNote(input: {
   origin: string
   url: string
   title?: string
-  element: { selector: string; label: string; role?: string; name?: string; text?: string }
+  element: OfferElement
   comment?: string
 }): ComposerNote {
   const title = input.title?.trim()
   const named = title && title !== input.url ? ` titled ${JSON.stringify(title)}` : ""
   const element = input.element
   const named2 = [element.role, element.name].filter(Boolean).join(" ")
+  const label = element.label || named2 || "元素"
+  // Composer chips and send both drop notes whose comment is blank — the popup never collects one,
+  // so fall back to the label (same idea as pageOfferNote using the URL as the comment body).
+  const comment = input.comment?.trim() || label
+  const details = elementDetails(element)
 
   return {
     type: "note",
     origin: input.origin,
     commentID: crypto.randomUUID(),
-    label: element.label || named2 || "元素",
+    label,
     icon: "select-element",
-    subject: `element ${element.selector} on the browser page at ${input.url}${named}`,
-    comment: input.comment ?? "",
+    subject: `the ${JSON.stringify(label)} element on the browser page at ${input.url}${named}${details.length ? ` (${details.join("; ")})` : ""}`,
+    comment,
     href: input.url,
   }
 }
@@ -121,11 +137,12 @@ export function readHref(href: string): NoteHref | undefined {
   return ref && isRef(ref) ? { tabID, ref } : { tabID }
 }
 
-function subject(input: ElementComment, ref?: string) {
-  const element = input.element
-
-  // Page-provided strings are quoted so they read as data, not as part of the user's request.
-  const details = [
+function elementDetails(element: OfferElement) {
+  // Stable design-system hooks first — CSS nth-of-type paths are last-resort locators.
+  return [
+    element.slot ? `data-slot ${JSON.stringify(element.slot)}` : undefined,
+    element.component ? `data-component ${JSON.stringify(element.component)}` : undefined,
+    element.action ? `data-action ${JSON.stringify(element.action)}` : undefined,
     element.role ? `role ${element.role}` : undefined,
     element.name ? `accessible name ${JSON.stringify(element.name)}` : undefined,
     element.text && element.text !== element.name ? `text ${JSON.stringify(element.text.slice(0, 80))}` : undefined,
@@ -133,6 +150,13 @@ function subject(input: ElementComment, ref?: string) {
     element.selector
       ? `selector ${JSON.stringify(element.selector)}${element.selector.includes(" >>> ") ? ' (">>>" enters a shadow root)' : ""}`
       : undefined,
+  ].filter((detail) => detail !== undefined)
+}
+
+function subject(input: ElementComment, ref?: string) {
+  const element = input.element
+  const details = [
+    ...elementDetails(element),
     ref
       ? `browser ref @${ref}, usable as ref in any browser tool including browser.evaluate until the page navigates`
       : undefined,

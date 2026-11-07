@@ -598,6 +598,20 @@ function composerCursor(editor: HTMLDivElement) {
   return range.toString().length
 }
 
+function ComposerAttachmentRemoveButton(props: { label: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      data-slot="composer-attachment-remove"
+      onClick={props.onRemove}
+      class="absolute -top-1 -end-1 size-4 rounded-full bg-v2-icon-icon-muted outline-solid outline-1 outline-v2-icon-icon-contrast flex items-center justify-center hover-reveal group-hover:opacity-100"
+      aria-label={props.label}
+    >
+      <Icon name="outline-xmark" class="text-v2-icon-icon-contrast" />
+    </button>
+  )
+}
+
 export function ComposerAttachments(props: {
   attachments: ComposerAttachment[]
   uploads?: Upload[]
@@ -650,14 +664,10 @@ export function ComposerAttachments(props: {
                     onClick={() => props.onCommentClick?.(comment)}
                   />
                 </Tooltip>
-                <button
-                  type="button"
-                  onClick={() => props.onCommentRemove?.(comment)}
-                  class="absolute -top-1 -end-1 size-4 rounded-full bg-v2-icon-icon-muted outline-solid outline-1 outline-v2-icon-icon-contrast flex items-center justify-center hover-reveal group-hover:opacity-100"
-                  aria-label={props.removeLabel}
-                >
-                  <Icon name="outline-xmark" class="text-v2-icon-icon-contrast" />
-                </button>
+                <ComposerAttachmentRemoveButton
+                  label={props.removeLabel}
+                  onRemove={() => props.onCommentRemove?.(comment)}
+                />
               </div>
             )}
           </For>
@@ -679,14 +689,7 @@ export function ComposerAttachments(props: {
                     </span>
                   </AttachmentCard>
                 </Tooltip>
-                <button
-                  type="button"
-                  onClick={() => props.onFileRemove?.(file)}
-                  class="absolute -top-1 -end-1 size-4 rounded-full bg-v2-icon-icon-muted outline-solid outline-1 outline-v2-icon-icon-contrast flex items-center justify-center hover-reveal group-hover:opacity-100"
-                  aria-label={props.removeLabel}
-                >
-                  <Icon name="outline-xmark" class="text-v2-icon-icon-contrast" />
-                </button>
+                <ComposerAttachmentRemoveButton label={props.removeLabel} onRemove={() => props.onFileRemove?.(file)} />
               </div>
             )}
           </For>
@@ -727,14 +730,10 @@ export function ComposerAttachments(props: {
                     }}
                   </Show>
                 </Tooltip>
-                <button
-                  type="button"
-                  onClick={() => props.onAttachmentRemove(attachment)}
-                  class="absolute -top-1 -end-1 size-4 rounded-full bg-v2-icon-icon-muted outline-solid outline-1 outline-v2-icon-icon-contrast flex items-center justify-center hover-reveal group-hover:opacity-100"
-                  aria-label={props.removeLabel}
-                >
-                  <Icon name="outline-xmark" class="text-v2-icon-icon-contrast" />
-                </button>
+                <ComposerAttachmentRemoveButton
+                  label={props.removeLabel}
+                  onRemove={() => props.onAttachmentRemove(attachment)}
+                />
               </div>
             )}
           </For>
@@ -749,14 +748,10 @@ export function ComposerAttachments(props: {
                     </span>
                   </AttachmentCard>
                 </Tooltip>
-                <button
-                  type="button"
-                  onClick={() => props.onUploadCancel?.(upload)}
-                  class="absolute -top-1 -end-1 size-4 rounded-full bg-v2-icon-icon-muted outline-solid outline-1 outline-v2-icon-icon-contrast flex items-center justify-center hover-reveal group-hover:opacity-100"
-                  aria-label={i18n.t("ui.promptInput.cancelUpload")}
-                >
-                  <Icon name="outline-xmark" class="text-v2-icon-icon-contrast" />
-                </button>
+                <ComposerAttachmentRemoveButton
+                  label={i18n.t("ui.promptInput.cancelUpload")}
+                  onRemove={() => props.onUploadCancel?.(upload)}
+                />
               </div>
             )}
           </For>
@@ -920,7 +915,7 @@ export function ComposerEditorSelect(props: {
               as={Button}
               variant="ghost-muted"
               size="normal"
-              class={`max-w-[220px] justify-start ![font-weight:440] ${props.class ?? ""}`}
+              class={`max-w-[220px] justify-start ![font-weight:var(--font-weight-regular)] ${props.class ?? ""}`}
               aria-label={props.title}
             >
               {content()}
@@ -947,7 +942,7 @@ export function ComposerEditorSelect(props: {
           }}
           variant="ghost-muted"
           size="normal"
-          class={`max-w-[220px] justify-start ![font-weight:440] ${props.class ?? ""}`}
+          class={`max-w-[220px] justify-start ![font-weight:var(--font-weight-regular)] ${props.class ?? ""}`}
           aria-label={props.title}
           aria-haspopup="dialog"
           aria-expanded={store.open}
@@ -1127,7 +1122,7 @@ function ComposerEditorAlternateDelivery(props: { controller: ComposerEditorMode
             type="button"
             variant="ghost-faint"
             size="small"
-            class="me-3 gap-1.5 px-1.5 ![font-weight:530] duration-150 motion-reduce:animate-none"
+            class="me-3 gap-1.5 px-1.5 ![font-weight:var(--font-weight-medium)] duration-150 motion-reduce:animate-none"
             classList={{
               "animate-in fade-in": presence.animate() && presence.show(),
               "animate-out fade-out fill-mode-forwards": presence.animate() && !presence.show(),

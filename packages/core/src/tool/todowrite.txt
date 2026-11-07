@@ -1,7 +1,16 @@
-Create and update a todo list for the current session. The user sees it as your working plan.
+Create and update a short todo list for the current session. The user sees it as a progress bar in the UI — not a novel, not a second chat transcript.
 
-Use it proactively when a task has 3 or more distinct steps, or when the user gives several tasks or asks for a todo list. Skip it for a single simple task or a purely conversational request. When in doubt, use it.
+Use it only for medium/large implementation work with several nontrivial steps. Skip it for one–two step work, read-only / Q&A, or purely conversational replies. When in doubt, skip and just do the work.
 
+Shape (Cursor-style):
+- Prefer fewer, larger items. Each item should be ~5+ minutes of real work, verb-led, and at most ~14 words. One item may span several files.
+- Do not list operational chores: search, open/read a file, run lint/typecheck, "look around", "verify", or micro-substeps of one change.
+- Do not dump type/symbol/event laundry lists as todos. Action + outcome only (e.g. "Wire completion-gate into llm drain").
+
+While working:
 - Send the full list on every call; it replaces the previous one.
-- Mark items `in_progress` when you start them and `completed` as soon as they're actually done.
-- Only call it when the list changes.
+- Keep exactly one item `in_progress`. Mark `completed` right after that step finishes — not in a batch at the end of the turn.
+- Update status in this tool only. Do not reprint the checklist in chat, announce "updating todos", or narrate each check-off.
+- Keep going through remaining open items in the same turn. Do not pause after one completion to ask whether to continue — finish or cancel the whole list first.
+- If an item is blocked on the user (they must supply a file, answer, or asset), mark it `cancelled` — never leave a wait-for-user item `pending`/`in_progress` or the turn cannot idle.
+- Call again only when the list changes (status, membership, or order). A stale list is worse than one extra call.

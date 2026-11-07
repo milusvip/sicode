@@ -381,7 +381,9 @@ export function createComposerEditor(input: {
       return draft.state.context.items.find((item) => item.key === id)
     },
     comments() {
-      return draft.state.context.items.filter((item) => !!item.comment?.trim())
+      // Notes always carry a subject/label chip even when the free-text comment is blank
+      // (system-browser element push used to attach with comment:"" and vanish here).
+      return draft.state.context.items.filter((item) => item.type === "note" || !!item.comment?.trim())
     },
     files() {
       return draft.state.context.items.flatMap((item) => (item.type === "file" && !item.comment?.trim() ? [item] : []))

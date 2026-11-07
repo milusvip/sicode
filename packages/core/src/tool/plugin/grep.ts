@@ -12,6 +12,7 @@ import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { Ripgrep } from "../../ripgrep.js"
 import { SearchRanked } from "../../search-ranked/index.js"
+import { SearchRankedConcepts } from "../../search-ranked/concepts.js"
 import { NonNegativeInt, RelativePath } from "../../schema.js"
 import { ToolOutput } from "../../tool-output.js"
 
@@ -61,6 +62,10 @@ export const expandPatternAlternation = (pattern: string): readonly string[] => 
  * several English/identifier guesses in one call instead of serial empty greps. A plain
  * `a|b|c` pattern counts as the same batch (see `expandPatternAlternation`).
  * `patterns` alone is valid — Flash often omits `pattern` when it already listed synonyms.
+ *
+ * Concept extras (`compress` → `compaction`) ride along on the main path so a wrong first
+ * guess still searches the real identifier without waiting for a zero-hit shortlist.
+ * `OPENCODE_QEXPAND=0` disables the dictionary for A/B.
  */
 export const resolveGrepPatterns = (input: {
   readonly pattern?: string
@@ -74,6 +79,16 @@ export const resolveGrepPatterns = (input: {
       if (pattern.length === 0 || seen.has(pattern)) continue
       seen.add(pattern)
       out.push(pattern)
+      if (out.length >= MAX_GREP_PATTERNS) return out
+    }
+  }
+  if (process.env.OPENCODE_QEXPAND === "0" || out.length === 0) return out
+  const seeds = [...out]
+  for (const seed of seeds) {
+    for (const extra of SearchRankedConcepts.extrasOf(seed)) {
+      if (seen.has(extra)) continue
+      seen.add(extra)
+      out.push(extra)
       if (out.length >= MAX_GREP_PATTERNS) return out
     }
   }
@@ -95,12 +110,12 @@ export const Input = Schema.Struct({
           "Regular expression or literal text to match in file contents. Optional when `patterns` already lists terms. For a plain-language intent, put the best guess here and put synonyms in `patterns` so one call covers them.",
       }),
   ),
+  // SiCode: do not schema-reject oversize `patterns` — Flash often sends 9 synonyms
+  // (ses_e507 D burned steps on "At most 8 patterns"). resolveGrepPatterns soft-caps.
   patterns: Schema.optionalKey(
-    Schema.Array(Schema.String.check(Schema.isMinLength(1, { message: "Pattern must not be empty" }))).check(
-      Schema.isMaxLength(MAX_GREP_PATTERNS, { message: `At most ${MAX_GREP_PATTERNS} patterns` }),
-    ),
+    Schema.Array(Schema.String.check(Schema.isMinLength(1, { message: "Pattern must not be empty" }))),
   ).annotate({
-    description: `Literals or regexes to search in the same call (synonyms / camelCase splits / UI strings). May be used alone without \`pattern\`. Combined with \`pattern\` when both are set, de-duplicated, capped at ${MAX_GREP_PATTERNS}. Prefer this over serial greps that each return no matches.`,
+    description: `Literals or regexes to search in the same call (synonyms / camelCase splits / UI strings). May be used alone without \`pattern\`. Combined with \`pattern\` when both are set, de-duplicated; only the first ${MAX_GREP_PATTERNS} unique terms run (extras are ignored, not rejected). Prefer this over serial greps that each return no matches.`,
   }),
   path: Schema.optionalKey(Schema.String).annotate({
     description:
@@ -232,18 +247,35 @@ const sortRowsByDefinition = (rows: readonly ContentRow[]): ContentRow[] =>
 /** Format grep rows into model content. Context rows carry a `|` marker instead of `:`. */
 export const render = (
   rows: readonly ContentRow[],
-  options: { readonly mode: Mode; readonly truncated: boolean; readonly offset: number; readonly pattern: string },
+  options: {
+    readonly mode: Mode
+    readonly truncated: boolean
+    readonly offset: number
+    readonly pattern: string
+    readonly patterns?: readonly string[]
+  },
 ): Rendered => {
   const shown = rows.filter((row) => row.kind === "match").length
-  if (rows.length === 0)
-    return { text: options.offset === 0 ? "No matches found" : `No results past offset ${options.offset}.`, spill: undefined, hidden: 0 }
+  // SiCode: machine evidence head (agent-ops Track A / smart-no-spin 刀3) — empty/truncated cannot
+  // look like a silent miss. First line only; prose stays below.
+  const patternTerms = (options.patterns?.length ? options.patterns : [options.pattern]).filter((term) => term.length > 0)
+  const emptyHead = `[search empty | patterns=${patternTerms.join(",") || "(none)"}]`
+  const truncatedHead = (count: number) =>
+    `[search truncated | showing ${count} | offset=${options.offset}]`
+  if (rows.length === 0) {
+    const body = options.offset === 0 ? "No matches found" : `No results past offset ${options.offset}.`
+    return { text: `${emptyHead}\n${body}`, spill: undefined, hidden: 0 }
+  }
   const atLeast = options.truncated ? "at least " : ""
 
   if (options.mode === "count") {
     const total = rows.reduce((sum, row) => sum + row.match.line, 0)
     // Highest count first: the point of this mode is the distribution, and rg order carries no meaning.
     const ordered = [...rows].sort((a, b) => b.match.line - a.match.line)
-    const lines = [`Found ${atLeast}${total} matches in ${rows.length} files`]
+    const lines = [
+      ...(options.truncated ? [truncatedHead(rows.length)] : []),
+      `Found ${atLeast}${total} matches in ${rows.length} files`,
+    ]
     for (const row of ordered) lines.push(`  ${row.match.entry.path}: ${row.match.line}`)
     if (options.truncated) lines.push("", truncatedNote(options.offset, rows.length))
     const capped = cap(lines.join("\n"))
@@ -251,7 +283,10 @@ export const render = (
   }
 
   if (options.mode === "files_with_matches") {
-    const lines = [`Found ${atLeast}${rows.length} files with matches`]
+    const lines = [
+      ...(options.truncated ? [truncatedHead(rows.length)] : []),
+      `Found ${atLeast}${rows.length} files with matches`,
+    ]
     for (const row of rows) {
       const text = row.match.text.trimEnd()
       lines.push(
@@ -286,7 +321,14 @@ export const render = (
   }
   // A filename hit is meaningful only for a literal-ish pattern: "retry" matches retry.ts, but a
   // regex like "export const" never names a file, so its stem is empty and the signal is skipped.
-  const patternStem = /[\\^$.|?*+()[\]{}]/.test(options.pattern) ? "" : nameStem(options.pattern)
+  // SiCode: also score stems from concept extras / patterns[] so compress→compaction.ts ranks.
+  const stemTerms = [options.pattern, ...(options.patterns ?? [])]
+    .map((term) => (/[\\^$.|?*+()[\]{}]/.test(term) ? "" : nameStem(term)))
+    .filter((stem) => stem.length > 0)
+  const fileNamesTerm = (file: string) => {
+    const stem = nameStem(file).toLowerCase()
+    return stemTerms.some((term) => stem.includes(term.toLowerCase()))
+  }
   const ordered = [...groups]
     .map(([file, list]) => ({
       file,
@@ -300,13 +342,16 @@ export const render = (
         ? 3
         : list.some((row) => row.kind === "match" && isDefinitionLine(row.match.text))
           ? 0
-          : nameStem(file).toLowerCase().includes(patternStem.toLowerCase()) && patternStem.length > 0
+          : fileNamesTerm(file)
             ? 1
             : 2,
     }))
     .sort((a, b) => a.rank - b.rank || b.count - a.count)
 
-  const lines = [`Found ${atLeast}${shown} matches in ${ordered.length} files`]
+  const lines = [
+    ...(options.truncated ? [truncatedHead(shown)] : []),
+    `Found ${atLeast}${shown} matches in ${ordered.length} files`,
+  ]
   // Only worth printing when the hits are concentrated: a flat scatter of one hit per file says nothing.
   if (ordered.length > 1 && (ordered[0]?.count ?? 0) >= 2) {
     const preview = ordered
@@ -334,7 +379,13 @@ export const render = (
 /** Pure string form of `render`, kept for callers that only need the text. */
 export const toModelContent = (
   rows: readonly ContentRow[],
-  options: { readonly mode: Mode; readonly truncated: boolean; readonly offset: number; readonly pattern: string },
+  options: {
+    readonly mode: Mode
+    readonly truncated: boolean
+    readonly offset: number
+    readonly pattern: string
+    readonly patterns?: readonly string[]
+  },
 ) => render(rows, options).text
 
 /**
@@ -665,6 +716,8 @@ export const Plugin = {
                       truncated: result.truncated,
                       offset: input.offset ?? 0,
                       pattern: result.patterns > 1 ? `${label} (+${result.patterns - 1} synonyms)` : label,
+                      // SiCode: multi-stem filename rank needs every resolved pattern, including concept extras.
+                      patterns: patterns.length > 1 ? patterns : undefined,
                     },
                   )
                   // SiCode: a character-cap is the one truncation `offset` cannot page back — offset

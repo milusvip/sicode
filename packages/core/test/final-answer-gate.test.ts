@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SessionMessage } from "../src/session/message.js"
 import { unansweredPrompt } from "../src/session/runner/final-answer-gate.js"
 
-const user = (id: string, text = "这个函数是干嘛的？") =>
+const user = (id: string, text = "what does this function do?") =>
   ({ type: "user", id, text, content: [] }) as unknown as SessionMessage.Info
 
 const tool = (name = "edit", id = `tool-${name}`) =>
@@ -22,7 +22,7 @@ describe("unansweredPrompt", () => {
     const messages = [
       user("msg_user"),
       assistant("msg_a", [tool("edit")]),
-      assistant("msg_b", [{ type: "text", text: "改好了。" }]),
+      assistant("msg_b", [{ type: "text", text: "Done." }]),
     ]
 
     expect(unansweredPrompt(messages)).toBeUndefined()
@@ -49,7 +49,7 @@ describe("unansweredPrompt", () => {
   test("text written before a steering message does not answer the steer", () => {
     const messages = [
       user("msg_first"),
-      assistant("msg_a", [{ type: "text", text: "我先看下。" }]),
+      assistant("msg_a", [{ type: "text", text: "Looking next." }]),
       user("msg_steer"),
       assistant("msg_b", [tool("edit")]),
     ]

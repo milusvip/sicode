@@ -88,6 +88,29 @@ export function decodeFilePath(input: string) {
   }
 }
 
+/**
+ * The form two workspace paths compare in. A directory listing carries the server's native separators and a trailing one
+ * on directories, while a restored tab stores the path it opened, so `src\dir\` and `src/dir` are the same directory.
+ *
+ * @param input - A workspace-relative path, absolute or not.
+ */
+export function comparableFilePath(input: string) {
+  return input.replace(/\\/g, "/").replace(/\/+$/, "")
+}
+
+/**
+ * Whether `child` is `parent` itself or sits under it, whichever separators either path used.
+ *
+ * @param parent - The path that may contain the other, such as a directory a listing no longer returned.
+ * @param child - The path to test, such as a file the tree or the content cache still holds.
+ */
+export function containsFilePath(parent: string, child: string) {
+  const root = comparableFilePath(parent)
+  const target = comparableFilePath(child)
+
+  return target === root || target.startsWith(`${root}/`)
+}
+
 export function createPathHelpers(scope: () => string) {
   const normalize = (input: string) => {
     const root = scope()

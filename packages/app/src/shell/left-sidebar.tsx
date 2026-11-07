@@ -1051,17 +1051,18 @@ export function LeftSidebar() {
 
                   return (
                     <div class="mb-2 flex flex-col">
-                      <div class="relative flex h-7 items-center rounded-[5px] text-12-regular transition-colors hover:bg-v2-overlay-simple-overlay-hover">
+                      {/* SiCode: open groups get a light wash so the project header sits above its
+                          session rows; hierarchy is background, not bold. */}
+                      <div
+                        class={`relative flex h-7 items-center rounded-[5px] text-12-regular transition-colors hover:bg-v2-overlay-simple-overlay-hover ${
+                          isCollapsed() ? "" : "bg-v2-background-bg-layer-02"
+                        }`}
+                      >
                         {/* The whole row toggles: hitting a 16px chevron to fold a group was the wrong
                           target, and clicking the name used to jump to home instead of folding. */}
                         <button
                           type="button"
-                          class={`flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[5px] pe-1 ps-1 text-start hover:text-v2-text-text-base ${
-                            // A folded group shows nothing but this name, so it carries the weight its
-                            // hidden sessions cannot. Expanded, the sessions are the content and the
-                            // header steps back — one emphasis per group, never both at once.
-                            isCollapsed() ? "text-v2-text-text-base" : "text-v2-text-text-muted"
-                          }`}
+                          class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[5px] pe-1 ps-1 text-start text-v2-text-text-base hover:text-v2-text-text-base"
                           data-active={active()}
                           // In batch mode the same click picks the group instead of folding it, so the
                           // row must stop claiming it controls the disclosure. A group with nothing
@@ -1122,14 +1123,7 @@ export function LeftSidebar() {
                               same mark the settings pages and the old switcher use, so a project is
                               recognizable at a glance even when names are similar. */}
                           <ProjectIcon project={group.project} class="shrink-0" aria-hidden="true" />
-                          <span
-                            class={`min-w-0 flex-1 truncate text-12-medium ${
-                              // A pinned row keeps the emphasis a folded group has even while it is
-                              // open: the mark alone was too quiet to explain why these rows sit on
-                              // top, so the name carries the weight instead of a colour or a badge.
-                              group.project.pinned ? "text-v2-text-text-base" : ""
-                            }`}
-                          >
+                          <span class="min-w-0 flex-1 truncate text-12-regular text-v2-text-text-base">
                             {group.project.name ?? group.directory.split(/[\\/]/).filter(Boolean).pop()}
                           </span>
                           {/* Pinning only changes the row's position, so without a mark here the
@@ -1137,17 +1131,26 @@ export function LeftSidebar() {
                           <Show when={group.project.pinned}>
                             <Icon name="pin" class="size-3.5 shrink-0 text-v2-icon-icon-base" aria-hidden="true" />
                           </Show>
-                          {/* The group folds, so its running sessions can be hidden entirely — the same
-                              spinner the session rows carry says the work is still going while the
-                              rows are out of sight, and keeps saying it when they are not. */}
-                          <Show when={group.sessions.some((session) => isRunning(group.key, session))}>
-                            <span
-                              role="status"
-                              aria-label={language.t("session.timeline.working")}
-                              class="flex size-3 shrink-0 items-center justify-center"
+                          {/* SiCode: trailing slot is the session count at rest; while any child is
+                              running it becomes the same spinner the session rows use, so a folded
+                              group still shows that work is in flight. */}
+                          <Show when={group.sessions.length > 0}>
+                            <Show
+                              when={group.sessions.some((session) => isRunning(group.key, session))}
+                              fallback={
+                                <span class="shrink-0 rounded-[2px] bg-v2-overlay-simple-overlay-pressed px-1.5 text-[10.5px] text-v2-text-text-muted tabular-nums">
+                                  {group.sessions.length}
+                                </span>
+                              }
                             >
-                              <SessionProgressIndicatorV2 class="size-3" />
-                            </span>
+                              <span
+                                role="status"
+                                aria-label={language.t("session.timeline.working")}
+                                class="flex size-3 shrink-0 items-center justify-center"
+                              >
+                                <SessionProgressIndicatorV2 class="size-3" />
+                              </span>
+                            </Show>
                           </Show>
                         </button>
                       </div>

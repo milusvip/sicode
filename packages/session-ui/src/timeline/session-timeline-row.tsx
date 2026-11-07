@@ -6,7 +6,8 @@ import type {
 } from "@opencode/client/promise"
 import { useI18n } from "@opencode/ui/context/i18n"
 import { Option, Predicate, Schema } from "effect"
-import { For, Show, createEffect, createMemo, type Accessor, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Accessor, type JSX } from "solid-js"
+import { Button } from "@opencode/ui/button"
 import { DiffChanges } from "@opencode/ui/diff-changes"
 import { Dynamic } from "solid-js/web"
 import type { SessionUserActions, SessionUserAttachmentReference, SessionUserComment } from "../actions"
@@ -41,6 +42,7 @@ import {
   type ReasoningMode,
 } from "./projection"
 import { openWorkShellOnly, WorkShellHead, workShellDefaultOpen, workShellDisclosureKey } from "./work-shell"
+import { ArtifactCapsules } from "../components/artifact-capsules"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 
 const emptyAssistantMessages: SessionMessageAssistant[] = []
@@ -74,9 +76,11 @@ export function createSessionTimelineRowRenderer(input: {
   timelineDetail?: Accessor<TimelineDetail>
   disclosure: {
     value: (key: string) => boolean | undefined
-    set: (key: string, open: boolean) => void
+    set: (key: string, open: boolean | undefined) => void
     /** Open one turn's overview bar and close every other one; the host may add scroll anchoring. */
     openWorkShell?: (userMessageID: string) => void
+    /** Drop accordion-forced closes so default-open live/failed turns reopen. */
+    restoreDefaultOpen?: (except: string) => void
     patchGroupKeys?: Map<string, string>
   }
   /** When false while a turn is still working, the work shell shows disconnected. */
@@ -247,7 +251,16 @@ export function createSessionTimelineRowRenderer(input: {
           if (ref.messageID !== ref.partID || !message) return []
 
           if (message.type === "shell")
-            return [{ type: "shell", id: ref.partID, render: () => <Shell messageID={ref.messageID} grouped /> }]
+            return [
+              {
+                type: "shell",
+                id: ref.partID,
+                // The chain head counts this row as a tool, so a killed or non-zero shell has to
+                // count toward its failure total too.
+                failed: message.status === "timeout" || message.status === "killed" || (message.exit ?? 0) !== 0,
+                render: () => <Shell messageID={ref.messageID} grouped />,
+              },
+            ]
 
           if (message.type !== "assistant" && message.type !== "user") {
             const content = notice(message)
@@ -870,7 +883,10 @@ export function createSessionTimelineRowRenderer(input: {
               onToggle={() => {
                 const next = !open()
                 if (!next) {
+                  // disclosure.set(false) also clears the accordion mark for this key.
                   input.disclosure.set(key(), false)
+                  // Reopen siblings the accordion shoved shut — not ones the user collapsed by hand.
+                  input.disclosure.restoreDefaultOpen?.(current().userMessageID)
 
                   return
                 }
@@ -896,13 +912,53 @@ export function createSessionTimelineRowRenderer(input: {
         return value
       }
 
+      // SiCode: show which endpoint is being waited on, and after a long first-token stall offer
+      // interrupt. Does not auto-switch providers (latency-plan: that would break prefix cache).
+      const STALL_MS = 60_000
+      const [now, setNow] = createSignal(Date.now())
+      createEffect(() => {
+        const id = window.setInterval(() => setNow(Date.now()), 1000)
+        onCleanup(() => window.clearInterval(id))
+      })
+      const model = createMemo(() => {
+        const context = input.projection.userContextByID().get(current().userMessageID)
+        const ref = context?.model
+        if (!ref?.id || !ref.providerID) return undefined
+        const name = data.store.provider?.all?.get(ref.providerID)?.models?.[ref.id]?.name ?? ref.id
+        return ref.providerID ? `${ref.providerID} / ${name}` : name
+      })
+      const elapsedMs = createMemo(() => Math.max(0, now() - current().startedAt))
+      const stalled = createMemo(() => elapsedMs() >= STALL_MS)
+      // The work-shell head already owns the wall clock; stall copy must not print a second timer.
+      const label = createMemo(() => {
+        const named = model()
+        if (stalled() && named) return i18n.t("ui.workShell.waitingStall", { model: named })
+        if (named) return i18n.t("ui.workShell.waitingWithModel", { model: named })
+        return i18n.t("ui.workShell.waiting")
+      })
+      const stop = () => {
+        const sessionID = data.sessionID
+        if (!sessionID || !data.sessionInterrupt) return
+        void data.sessionInterrupt(sessionID)
+      }
+
       // SiCode: placeholder shown only while the model has produced nothing at all. Once the first
       // thought, tool, or word lands the projection drops this row and a real body takes its place.
       return (
         <Frame row={current()}>
           <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
-            <div data-component="waiting-for-model">
-              <TextShimmer text={i18n.t("ui.workShell.waiting")} active />
+            <div data-component="waiting-for-model" data-stalled={stalled() ? "" : undefined}>
+              <TextShimmer text={label()} active />
+              <Show when={stalled() && data.sessionInterrupt && data.sessionID}>
+                <Button
+                  variant="ghost-muted"
+                  size="small"
+                  data-slot="waiting-for-model-stop"
+                  onClick={stop}
+                >
+                  {i18n.t("ui.workShell.waitingStop")}
+                </Button>
+              </Show>
             </div>
           </div>
         </Frame>
@@ -1112,6 +1168,24 @@ export function createSessionTimelineRowRenderer(input: {
         <Frame row={current()}>
           <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
             <TurnDiff row={current()} onSizeChange={onSizeChange} />
+          </div>
+        </Frame>
+      )
+    }
+
+    if (Predicate.isTagged(row(), "Artifacts")) {
+      const current = () => {
+        const value = row()
+
+        if (!Predicate.isTagged(value, "Artifacts")) throw new Error("Expected an artifacts timeline row")
+
+        return value
+      }
+
+      return (
+        <Frame row={current()}>
+          <div data-slot="session-turn-message-container" class={`w-full ${padding()}`}>
+            <ArtifactCapsules row={current()} />
           </div>
         </Frame>
       )

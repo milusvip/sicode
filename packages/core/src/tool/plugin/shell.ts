@@ -88,6 +88,165 @@ export const detectPollingWait = (input: { command?: string | undefined; backgro
   return pollingWaitNotice(longest)
 }
 
+/**
+ * SiCode: Flash (ses_e6cda) walked `Get-ChildItem D:\ -Recurse` with no `-Depth` and blocked for
+ * nearly a minute before interrupt. Words in the tool description did not stop it — reject the
+ * shape at the boundary, same pattern as `detectPollingWait`. Require `-Depth` (or find
+ * `-maxdepth`) so a synonym batch / filter still has a ceiling.
+ */
+export const UNBOUNDED_RECURSE_NOTICE =
+  "This command recurses without a depth limit (Get-ChildItem -Recurse without -Depth, or find without -maxdepth), which can scan an entire drive and block the session. Add -Depth N (PowerShell) or -maxdepth N (find), narrow the path/Filter, and prefer hosts/vhost/config text search for a domain. Do not re-run an unbounded recurse."
+
+export const detectUnboundedRecurse = (input: { command?: string | undefined }) => {
+  const command = input.command
+  if (!command) return undefined
+  // PowerShell listing: -Recurse without -Depth. Do not treat bare -r (collides with other switches).
+  if (/\b(?:Get-ChildItem|gci)\b/i.test(command) && /-[Rr]ecurse\b/.test(command) && !/-Depth\b/i.test(command))
+    return UNBOUNDED_RECURSE_NOTICE
+  // Unix find (not findstr / Find-*). Require -maxdepth whenever find walks a path.
+  if (/(?:^|[;&|\n]\s*)find\s+/i.test(command) && !/\bfindstr\b/i.test(command) && !/-maxdepth\b/i.test(command))
+    return UNBOUNDED_RECURSE_NOTICE
+  return undefined
+}
+
+/**
+ * SiCode: Flash (ses_e77146) spent 7.7 minutes on bare `rg` over `D:\` via shell — no deadline,
+ * no trigram prefilter, no "use the grep tool" signal. Words in Prefer-dedicated-tools did not
+ * stop it. Reject content-search shapes at the boundary (same pattern as detectPollingWait).
+ * Leave version/help probes and pipe filters (`ps | grep`) alone.
+ */
+export const CONTENT_SEARCH_NOTICE =
+  "This command searches file contents via the shell (rg / grep -r / Select-String / findstr /s). Use the grep tool instead — it has a deadline, trigram prefilter, and path/include narrowing. Pass path for directories outside the workspace (external_directory approval applies). Do not re-run the same search via shell."
+
+const contentSearchVersionOnly = (afterBinary: string) =>
+  /^(?:--version|-V|--help|-h)?\s*$/.test(afterBinary.trim())
+
+export const detectContentSearch = (input: { command?: string | undefined }) => {
+  const command = input.command
+  if (!command) return undefined
+  // PowerShell content search — always better as the grep tool.
+  if (/\bSelect-String\b/i.test(command)) return CONTENT_SEARCH_NOTICE
+  // findstr /s is recursive content search across files.
+  if (/\bfindstr\b/i.test(command) && /\/[A-Za-z]*s/i.test(command)) return CONTENT_SEARCH_NOTICE
+  // Standalone rg / ripgrep (not a pipe filter). Allow bare --version / --help.
+  const rg = command.match(/(?:^|[;&|\n]\s*|&&\s*)(?:rg|ripgrep)\b(.*)$/is)
+  if (rg && !contentSearchVersionOnly(rg[1] ?? "")) return CONTENT_SEARCH_NOTICE
+  // Recursive grep / egrep only — `ps | grep foo` and single-file grep stay allowed.
+  // Flag clusters like `-rn` keep letters after `r`, so do not require a word boundary at `r`.
+  if (
+    /(?:^|[;&|\n]\s*|&&\s*)(?:e?grep)\b/i.test(command) &&
+    /(?:^|\s)(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)\b/.test(command)
+  )
+    return CONTENT_SEARCH_NOTICE
+  return undefined
+}
+
+/**
+ * SiCode: Flash (ses_e5b6962c) burned 120s on `$rb = Shell.Application.Namespace(10); $rb.Items()`
+ * looking for a deleted .sav — Recycle Bin COM enumeration has no depth knob, so unbounded-recurse
+ * and content-search detectors never fire. Reject the shape at the boundary.
+ */
+export const SLOW_ENUM_NOTICE =
+  "This command enumerates the Recycle Bin or a Shell.Application Items() collection without a bound, which can block the session for the full shell timeout. Do not scan the Recycle Bin via COM; search known save/install paths with Get-ChildItem -Depth N, or ask the user. If you must list Shell items, pipe through Select-Object -First N."
+
+export const detectSlowEnumeration = (input: { command?: string | undefined }) => {
+  const command = input.command
+  if (!command) return undefined
+  // Namespace(10) is the Recycle Bin folder — the ses_e5b6962c 120s timeout.
+  if (/Namespace\s*\(\s*10\s*\)/i.test(command)) return SLOW_ENUM_NOTICE
+  // Direct filesystem walk of $Recycle.Bin (any drive) without -Depth / -First.
+  if (
+    /\$Recycle\.Bin\b/i.test(command) &&
+    /\b(?:Get-ChildItem|gci|dir)\b/i.test(command) &&
+    !/-Depth\b/i.test(command) &&
+    !/Select-Object\s+-First\b/i.test(command)
+  )
+    return SLOW_ENUM_NOTICE
+  // Any Shell.Application Items() walk without an explicit -First cap.
+  if (
+    /Shell\.Application/i.test(command) &&
+    /\.Items\s*\(/i.test(command) &&
+    !/Select-Object\s+-First\b/i.test(command) &&
+    !/\|\s*%\s*{[^}]{0,80}-First\b/i.test(command)
+  )
+    return SLOW_ENUM_NOTICE
+  return undefined
+}
+
+/**
+ * SiCode: ses_e537b4fa — model wrapped `pnpm pack:release` in `| Select-Object -Last 40` (+
+ * background). Select-Object -Last buffers until EOF; nested `powershell -File` + Start-Job then
+ * deadlocks on Wait-Job under a piped parent. User's own terminal finished in <1 min; the agent
+ * hung for hours. Same idea as detectPollingWait: words in the tool description taught the bad
+ * shape, so reject it at the boundary. Allow Get-Content/gc of an existing file — that is a real
+ * log slice, not a live producer.
+ */
+export const TAIL_PIPE_NOTICE =
+  "This command pipes a live process through Select-Object -Last / tail, which buffers until the process exits and can hang PowerShell Start-Job builds for hours. Run the command bare (no Select-Object -Last / tail pipe, prefer foreground for packs/builds whose exit you need). The tool already returns a head+tail preview and saves the full output to a file — open that path, or Get-Content <log> | Select-Object -Last N after the command finishes. Do not re-run the piped form."
+
+/** Left of a tail pipe that is only reading an already-written file — safe. */
+const FILE_TAIL_PRODUCER =
+  /^(?:Get-Content|gc|Get-Content\.exe|type|cat)\b/i
+
+export const detectTailPipeHang = (input: { command?: string | undefined }) => {
+  const command = input.command
+  if (!command) return undefined
+
+  // PowerShell: … | Select-Object … -Last …
+  const psLast = command.match(/^(.*?)\|\s*Select-Object\b([^|]*)$/is)
+  if (psLast) {
+    const left = (psLast[1] ?? "").trim()
+    const args = psLast[2] ?? ""
+    if (/-Last\b/i.test(args) && left && !FILE_TAIL_PRODUCER.test(left.split(/\|/).pop()?.trim() ?? left))
+      return TAIL_PIPE_NOTICE
+  }
+
+  // Multi-stage: … | Tee-Object … | Select-Object -Last … (ses_e537b4fa retry)
+  if (
+    /\|\s*Tee-Object\b/i.test(command) &&
+    /\|\s*Select-Object\b[^|]*-Last\b/i.test(command) &&
+    !FILE_TAIL_PRODUCER.test(command.trim())
+  )
+    return TAIL_PIPE_NOTICE
+
+  // Bash / git-bash: live producer | tail -n N (EOF buffering; same habit the description used to teach)
+  const bashTail = command.match(/^(.*?)\|\s*tail\b(.*)$/is)
+  if (bashTail) {
+    const left = (bashTail[1] ?? "").trim()
+    if (left && !FILE_TAIL_PRODUCER.test(left.split(/\|/).pop()?.trim() ?? left)) return TAIL_PIPE_NOTICE
+  }
+
+  return undefined
+}
+
+/**
+ * SiCode: on PowerShell, bash-only shapes (`tail`, `for x in`, `sed`, `ls -la`, `<<`) exit 1 and
+ * paint red Shell cards while teaching nothing. Reject at the boundary with PS equivalents.
+ * Only when the session shell is PowerShell (`ShellSelect.ps`); Linux/mac bash stays untouched.
+ */
+export const BASH_ON_POWERSHELL_NOTICE =
+  "This command uses bash syntax, but the session shell is PowerShell. Rewrite it: use `Select-Object -Last/-First` instead of `tail`/`head`, `foreach ($x in …)` instead of `for x in`, `Get-Content` instead of `sed`/`cat`, `Get-ChildItem` instead of `ls -…`, and never use bash here-strings (`<<`). Do not re-run the bash form."
+
+export const detectBashOnPowerShell = (input: {
+  command?: string | undefined
+  /** Absolute path or name of the session shell binary. */
+  shell?: string | undefined
+}) => {
+  if (!input.shell || !ShellSelect.ps(input.shell)) return undefined
+  const command = input.command
+  if (!command) return undefined
+  // Pipe filters and bare tools that do not exist as PowerShell cmdlets.
+  if (/\|\s*(?:tail|head)\b/i.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  if (/(?:^|[;&|\n]\s*|&&\s*)(?:tail|head)\b/i.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  if (/(?:^|[;&|\n]\s*|&&\s*)for\s+\w+\s+in\s+/i.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  if (/(?:^|[;&|\n]\s*|&&\s*)sed\b/i.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  if (/(?:^|[;&|\n]\s*|&&\s*)ls\s+-/i.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  if (/(?:^|[;&|\n]\s*|&&\s*)cat\b/i.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  // Bash heredoc / here-string — invalid in PowerShell.
+  if (/<<<?-?\s*['"]?\w+/.test(command)) return BASH_ON_POWERSHELL_NOTICE
+  return undefined
+}
+
 const BACKGROUND_INSTRUCTION =
   "You will be notified automatically when the command finishes. The notification will include the command's output. Unless the user explicitly asks otherwise, DO NOT poll for completion, even if you need the final result to continue. Repeatedly sleeping and reading or searching the output file is polling, not useful work. You may read the current output if it lets you do useful work now, but do not repeatedly check it while waiting for the command to finish. Keep working on anything that does not depend on the result. If you have nothing else to do, end your response; you will be resumed automatically when the command finishes."
 const OS =
@@ -107,27 +266,49 @@ const description = (shell?: string) =>
     // they run, and without this line the model has nothing to tell it which dialect to write.
     ...(shell && ShellSelect.ps(shell)
       ? [
-          `Write PowerShell syntax, not bash: here-strings (\`<<\`) and input redirects (\`<\`) are invalid in ${shell}.`,
+          `Write PowerShell syntax, not bash: here-strings (\`<<\`), \`for x in\`, \`tail\`/\`head\`, \`sed\`, \`ls -…\`, and \`cat\` are invalid or wrong in ${shell}.`,
+          "Use `foreach`, `Get-Content`, and `Get-ChildItem` instead. For an already-written log, `Get-Content <file> | Select-Object -Last N` (or `Get-Content -Tail N`) is fine — never pipe a live build/pack through Select-Object -Last.",
           "To pass a multi-line script or file on stdin, write it to a file first and pipe it, for example `Get-Content -Raw script.txt | <command>`.",
         ]
       : []),
     "Quote file paths containing spaces or special characters.",
     "Prefer dedicated tools over shell commands when possible.",
-    "When output is large, the full result is saved to a file and a truncated preview is returned.",
-    "Rely on automatic truncation unless filtering the output is more useful.",
+    "Search file contents with the grep tool, not rg / Select-String / findstr / grep -r in the shell.",
+    "When output is large, only a short head+tail preview is returned and the full result is saved to a file. Do not pipe long-running builds through Select-Object -Last or tail — that buffers until exit and can hang PowerShell Start-Job scripts for hours. Run the command bare; open the saved path, or Get-Content the log afterward.",
+    "Do not re-run the same dump hoping for more inline text; open the saved path or narrow the command.",
     "Commands accept an optional timeout, background commands default to a 24 hour timeout.",
-    "Background commands return immediately, and you will be notified when they complete.",
+    "Background commands return immediately, and you will be notified when they complete. Prefer foreground for packs/builds whose exit status you need; use background for long-lived servers/watchers.",
+    "Read a background command's recent output with read: <shellID>, and list the ones this session is running with list: true, instead of sleeping and then reading its output file.",
     "If a background command stops producing output, you will be notified with its recent output so you can judge whether it is stuck.",
     "Set kill to a background command's shell ID to stop it instead of running a new command.",
   ].join(" ")
 
+// SiCode: shared with `watchForStall` and the `read`/`list` branches — one phrasing of an elapsed
+// span so a stall notice and a check-in describe the same duration the same way.
+const span = (ms: number) =>
+  ms < 120_000 ? `${Math.max(1, Math.round(ms / 1000))} seconds` : `${Math.round(ms / 60_000)} minutes`
+
 export const Input = Schema.Struct({
   command: Schema.optionalKey(Schema.String).annotate({
-    description: "Shell command string to execute. Omit when kill is set.",
+    description: "Shell command string to execute. Omit when kill, read, or list is set.",
   }),
   kill: Schema.optionalKey(Schema.String).annotate({
     description:
       "Shell ID of a background command to stop instead of executing a command. The command you will be notified about includes its shell ID.",
+  }),
+  // SiCode: the model could start a background command but never look at it again — the notification
+  // only arrives when it finishes, or after the stall window. Checking whether a server came up, or
+  // why it exited immediately, meant killing and re-running it: a whole step (~6s) per check.
+  // `read` returns the same bounded tail a finished command returns, while it is still running.
+  read: Schema.optionalKey(Schema.String).annotate({
+    description:
+      "Shell ID of a background command whose output to read instead of executing a command. Returns the recent output and whether it is still running. Use this once to check on a background command; do not loop on it while waiting for it to finish.",
+  }),
+  // SiCode: after a compaction the model no longer remembers which background commands it started,
+  // and `read` needs an ID. `list` answers that from the shell pool without a new tool.
+  list: Schema.optionalKey(Schema.Boolean).annotate({
+    description:
+      "List the background commands still running in this session, with their shell IDs and elapsed time, instead of executing a command.",
   }),
   workdir: Schema.optionalKey(Schema.String).annotate({
     description:
@@ -138,7 +319,7 @@ export const Input = Schema.Struct({
   }),
   background: Schema.optionalKey(Schema.Boolean).annotate({
     description:
-      "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
+      "Run the command in the background and return immediately (useful for dev servers and watchers). Prefer foreground for packs/builds whose exit status you need. You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
   }),
 })
 
@@ -294,10 +475,6 @@ export const Plugin = {
     // stop the command (kill) or keep waiting for it.
     const watchForStall = Effect.fn("ShellTool.watchForStall")(
       function* (sessionID: SessionSchema.ID, shellID: ShellSchema.ID, command: string) {
-        const span = (ms: number) =>
-          ms < 120_000
-            ? `${Math.max(1, Math.round(ms / 1000))} seconds`
-            : `${Math.round(ms / 60_000)} minutes`
         let lastSize: number | undefined
         let silentSince = 0
         let notified = false
@@ -382,8 +559,8 @@ export const Plugin = {
               // running process through its scope-bound handle, so this is more reliable than
               // shelling out to kill the pid.
               if (input.kill !== undefined) {
-                if (input.command !== undefined)
-                  return yield* Effect.fail(new Error("Provide either a command or kill, not both."))
+                if (input.command !== undefined || input.read !== undefined || input.list === true)
+                  return yield* Effect.fail(new Error("Provide only one of command, kill, read, or list."))
                 const stopped = yield* shell.get(ShellSchema.ID.make(input.kill))
                 yield* shell.remove(stopped.id)
                 return {
@@ -392,11 +569,73 @@ export const Plugin = {
                   truncated: false,
                 }
               }
+              // SiCode: check on a background command without waiting for its notification. This is
+              // the one reading of its output that is not polling: the model asks once, gets the
+              // bounded tail plus whether it is still running, and then leaves it alone.
+              if (input.read !== undefined) {
+                if (input.command !== undefined || input.list === true)
+                  return yield* Effect.fail(new Error("Provide only one of command, kill, read, or list."))
+                const target = yield* shell.get(ShellSchema.ID.make(input.read))
+                const captured = yield* tail(target.id)
+                const elapsed = span(Date.now() - target.time.started)
+                return {
+                  output: [
+                    `<shell id="${target.id}" state="${target.status}" command="${target.command}">`,
+                    captured.text,
+                    "</shell>",
+                    ...(target.status === "running"
+                      ? [
+                          `Still running (${elapsed}). You will be notified when it finishes; do not read it again unless the output is needed for work you can do now.`,
+                        ]
+                      : [
+                          `Finished after ${elapsed}${target.exit !== undefined && target.exit !== 0 ? ` with exit code ${target.exit}` : ""}.`,
+                        ]),
+                    ...(captured.truncated ? ["Only the most recent output is shown."] : []),
+                  ].join("\n"),
+                  shellID: target.id,
+                  truncated: captured.truncated,
+                  status: target.status === "running" ? ("running" as const) : ("completed" as const),
+                }
+              }
+              // SiCode: after a compaction the model no longer remembers which background commands it
+              // started, and `read` needs an ID. The shell pool already knows; this just asks it.
+              if (input.list === true) {
+                if (input.command !== undefined) return yield* Effect.fail(new Error("Provide only one of command, kill, read, or list."))
+                const running = (yield* shell.list()).filter((info) => info.metadata.sessionID === context.sessionID)
+                if (running.length === 0)
+                  return {
+                    output: "No background commands are running in this session.",
+                    truncated: false,
+                  }
+                return {
+                  output: [
+                    `Background commands running in this session (${running.length}):`,
+                    ...running.map((info) => `  ${info.id}: ${info.command} (${span(Date.now() - info.time.started)})`),
+                  ].join("\n"),
+                  truncated: false,
+                }
+              }
               if (input.command === undefined) return yield* Effect.fail(new Error("A command is required."))
               // SiCode: reject the polling shape before it starts, so the wait never happens. See
               // detectPollingWait for why a notice is not enough.
               const polling = detectPollingWait(input)
               if (polling) return yield* Effect.fail(new Error(polling))
+              // SiCode: same idea for drive-wide Get-ChildItem -Recurse / find without maxdepth.
+              const unbounded = detectUnboundedRecurse(input)
+              if (unbounded) return yield* Effect.fail(new Error(unbounded))
+              // SiCode: bare rg / Select-String via shell burned minutes with no deadline — route to grep.
+              const contentSearch = detectContentSearch(input)
+              if (contentSearch) return yield* Effect.fail(new Error(contentSearch))
+              // SiCode: Recycle Bin / Shell.Application Items() has no -Depth — refuse before spawn.
+              const slowEnum = detectSlowEnumeration(input)
+              if (slowEnum) return yield* Effect.fail(new Error(slowEnum))
+              // SiCode: live | Select-Object -Last / tail hangs Start-Job packs (ses_e537b4fa).
+              const tailPipe = detectTailPipeHang(input)
+              if (tailPipe) return yield* Effect.fail(new Error(tailPipe))
+              // SiCode: bash-only shapes on PowerShell exit 1 and burn turns — refuse before spawn.
+              const sessionShellPath = yield* compatibleShell
+              const bashOnPs = detectBashOnPowerShell({ command: input.command, shell: sessionShellPath })
+              if (bashOnPs) return yield* Effect.fail(new Error(bashOnPs))
               // SiCode: default a model-invoked background command to a 24h lifetime instead of no
               // timeout, so an unreaped server or watcher cannot run forever.
               const timeout = resolveTimeout(input)
@@ -406,7 +645,7 @@ export const Plugin = {
                   command: input.command,
                   cwd: input.workdir,
                   timeout,
-                  shell: yield* compatibleShell,
+                  shell: sessionShellPath,
                   metadata: { sessionID: context.sessionID },
                 },
                 (invocation) =>
@@ -415,6 +654,10 @@ export const Plugin = {
                     invocation.env.OPENCODE = "1"
                     invocation.env.AI_AGENT ||= "opencode"
                     invocation.env.OPENCODE_SESSION_ID = context.sessionID
+                    // SiCode: Windows consoles often use a legacy code page; Python then raises
+                    // UnicodeEncodeError on print after a successful write (ses_e507 D _probe_v2).
+                    invocation.env.PYTHONUTF8 = "1"
+                    invocation.env.PYTHONIOENCODING ||= "utf-8"
                     finalTimeout = yield* prepare(invocation, context)
                   }),
               )
@@ -481,7 +724,11 @@ export const Plugin = {
                 toolResult(output, slowNotice(waitedFrom === 0 ? 0 : Date.now() - waitedFrom, output.output.length)),
               ),
               Effect.mapError(
-                (error) => new ToolFailure({ message: `Unable to execute command: ${input.command}`, error }),
+                (error) =>
+                  new ToolFailure({
+                    message: `Unable to ${input.read !== undefined ? "read the background command" : input.list === true ? "list background commands" : "execute command"}: ${input.command ?? input.read ?? ""}`,
+                    error,
+                  }),
               ),
             )
           },

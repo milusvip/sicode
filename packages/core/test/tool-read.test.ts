@@ -49,7 +49,8 @@ const readCalls: {
 }[] = []
 const listCalls: AbsolutePath[] = []
 let readDefect: unknown
-let directoryEntries: string[] = []
+// SiCode: hand-ported from upstream 9321c2cec0 — missing() lists via reader, not host FS.
+let missingDirectories: string[] = []
 let directoryEntryDetails: Environment.DirEntry[] = []
 let readResult: ReadToolFileSystem.FileContent | ReadToolFileSystem.TextPage | ReadToolFileSystem.ListPage = {
   type: "file",
@@ -66,6 +67,7 @@ const reader = Layer.succeed(
   ReadToolFileSystem.Service.of({
     list: (input) => {
       listCalls.push(input)
+      if (missingDirectories.includes(input)) return Effect.fail(new Environment.NotFound({ path: input }))
       return Effect.succeed(directoryEntryDetails)
     },
     read: (input, resource, page = {}) => {
@@ -105,7 +107,7 @@ const testFileSystem = Layer.effect(
     Effect.succeed(
       FSUtil.Service.of({
         ...fs,
-        readDirectory: () => Effect.succeed(directoryEntries),
+        readDirectory: () => Effect.succeed([] as string[]),
       }),
     ),
   ),
@@ -144,7 +146,7 @@ describe("ReadTool", () => {
     allow = true
     deniedResource = undefined
     readDefect = undefined
-    directoryEntries = []
+    missingDirectories = []
     directoryEntryDetails = []
     readResult = {
       type: "file",
@@ -224,6 +226,41 @@ describe("ReadTool", () => {
       ])
       expect(execution.metadata).toEqual({ files: 2, truncated: false })
       expect(readCalls.map((call) => path.basename(call.input))).toEqual(["a.txt", "b.txt"])
+    }),
+  )
+
+  it.effect("coerces a stringified JSON path array into a multi-read", () =>
+    Effect.gen(function* () {
+      // ses_e5d81d66: Flash passed path as the string '["a.png","b.png"]' twice and failed before
+      // reading any image. The schema already accepts a real array; coerce the common mistake.
+      const registry = yield* Tool.Service
+      readOverride = (input) => {
+        const name = path.basename(input)
+        const file: ReadToolFileSystem.FileContent = {
+          type: "file",
+          uri: `file:///${name}`,
+          name,
+          content: name,
+          encoding: "utf8",
+          mime: "text/plain",
+        }
+        return Effect.succeed(file)
+      }
+
+      const execution = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: "call-stringified-array",
+          name: "read",
+          input: { path: '["a.png", "b.png"]' },
+        },
+      })
+      expect(execution.status).toBe("completed")
+      if (execution.status !== "completed") return
+      expect(execution.metadata).toEqual({ files: 2, truncated: false })
+      expect(readCalls.map((call) => path.basename(call.input))).toEqual(["a.png", "b.png"])
     }),
   )
 
@@ -486,7 +523,7 @@ describe("ReadTool", () => {
       if (media?.type !== "file") return
       const resized = photon.PhotonImage.new_from_byteslice(Buffer.from(media.uri.split(",")[1] ?? "", "base64"))
       expect(resized.get_width()).toBeLessThanOrEqual(4)
-      expect(resized.get_height()).toBeLessThanOrEqual(2_000)
+      expect(resized.get_height()).toBeLessThanOrEqual(1_280)
       resized.free()
     }),
   )
@@ -510,6 +547,9 @@ describe("ReadTool", () => {
         encoding: "base64",
         mime: "image/png",
       }
+      const image = yield* Image.Service
+      // Keep the "already fits → JPEG only" path; default SiCode limits are 1280 and would scale.
+      yield* image.transform((editor) => editor.configure({ maxWidth: 2_000, maxHeight: 2_000 }))
       const registry = yield* Tool.Service
       const result = yield* executeTool(registry, {
         sessionID,
@@ -564,6 +604,9 @@ describe("ReadTool", () => {
       expect(cases.small.content.length).toBeLessThanOrEqual(384 * 1024)
       expect(cases.diagram.content.length).toBeGreaterThan(384 * 1024)
       const image = yield* Image.Service
+      // Diagram is 2000×1500 — pin limits so this still exercises "fits → keep PNG", not the
+      // SiCode 1280 default that would scale it down.
+      yield* image.transform((editor) => editor.configure({ maxWidth: 2_000, maxHeight: 2_000 }))
       for (const content of Object.values(cases)) expect(yield* image.normalize("image.png", content)).toEqual(content)
     }),
   )
@@ -779,13 +822,13 @@ describe("ReadTool", () => {
   it.effect("returns missing paths as model-visible tool failures", () =>
     Effect.gen(function* () {
       readFailure = new Environment.NotFound({ path: missingAbsolutePath })
-      directoryEntries = [
+      directoryEntryDetails = [
         "__missing_read_target__.txt.bak",
         "copy___missing_read_target__.txt",
         "old___missing_read_target__.txt",
         "other___missing_read_target__.txt",
         "unrelated.txt",
-      ]
+      ].map((name) => ({ name, type: "file" as const }))
       const registry = yield* Tool.Service
 
       expect(
@@ -808,6 +851,64 @@ describe("ReadTool", () => {
           page: { offset: undefined, limit: undefined },
         },
       ])
+    }),
+  )
+
+  // SiCode: hand-ported from upstream 9321c2cec0.
+  it.effect("names the first missing folder and its nearest existing parent", () =>
+    Effect.gen(function* () {
+      const requested = "__missing_read_folder__/src/file.ts"
+      readFailure = new Environment.NotFound({ path: path.join(process.cwd(), requested) })
+      missingDirectories = [
+        path.join(process.cwd(), "__missing_read_folder__", "src"),
+        path.join(process.cwd(), "__missing_read_folder__"),
+      ]
+      directoryEntryDetails = [
+        { name: "__missing_read_folder__-old", type: "directory" },
+        { name: "unrelated", type: "file" },
+      ]
+      const registry = yield* Tool.Service
+
+      expect(
+        yield* executeTool(registry, {
+          sessionID,
+          ...toolIdentity,
+          call: { type: "tool-call", id: "call-missing-folder", name: "read", input: { path: requested } },
+        }),
+      ).toEqual({
+        status: "error",
+        error: {
+          type: "tool.execution",
+          message: [
+            `File not found: ${requested}`,
+            `The folder ${path.join(process.cwd(), "__missing_read_folder__")} does not exist. The nearest folder that does is ${process.cwd()}.`,
+            `Did you mean one of these?\n${path.join(process.cwd(), "__missing_read_folder__-old")}`,
+          ].join("\n\n"),
+        },
+      })
+    }),
+  )
+
+  it.effect("trusts the environment, not this host, about which folders exist", () =>
+    Effect.gen(function* () {
+      const requested = path.join(process.cwd(), "__only_in_workspace__", "file.ts")
+      readFailure = new Environment.NotFound({ path: requested })
+      directoryEntryDetails = [{ name: "file.tsx", type: "file" }]
+      const registry = yield* Tool.Service
+
+      expect(
+        yield* executeTool(registry, {
+          sessionID,
+          ...toolIdentity,
+          call: { type: "tool-call", id: "call-workspace-folder", name: "read", input: { path: requested } },
+        }),
+      ).toEqual({
+        status: "error",
+        error: {
+          type: "tool.execution",
+          message: `File not found: ${requested}\n\nDid you mean one of these?\n${path.join(process.cwd(), "__only_in_workspace__", "file.tsx")}`,
+        },
+      })
     }),
   )
 

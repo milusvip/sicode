@@ -14,8 +14,11 @@ import { DateTime } from "effect"
 import { SessionMessage } from "./message.js"
 import {
   BROWSER_TABS_KEY,
+  canInspectBrowser,
   hasTool,
+  isBrowserLookFollowUp,
   mentionsAttachedBrowser,
+  recentBrowserLocus,
   tabsOf,
   type BrowserTabsMeta,
 } from "./browser-tools.js"
@@ -52,6 +55,7 @@ const inventoryHint = (inventory: BrowserTabsMeta): SessionMessage.Synthetic => 
     "<browser-tabs>",
     "The side browser (or system Chrome bridge) is attached with these open tabs. Use exact tabIDs from this list or from browser.tabs.list; do not invent IDs.",
     ...formatTabs(inventory),
+    "When the user asks to publish, submit, click, fill, or debug on that page — drive it with browser tools. Do not refuse with missing browser, missing login, missing API, or \"I cannot operate / click / publish\".",
     "</browser-tabs>",
   ].join("\n"),
 })
@@ -67,10 +71,35 @@ const noteHint = (): SessionMessage.Synthetic => ({
     "<browser-tabs>",
     "The user pushed or pointed at a page/element in system Chrome (or the side browser). See their comment for tabID (`chrome_tab_*` / `tab_chrome_*`) or browser ref.",
     "Call browser.tabs.list now, then snapshot/find and drive that live tab with click/fill/screenshot — same API for system Chrome and the in-app pane. Prefer the tabID from their comment.",
-    'Do not open a second browser. Do not refuse with missing browser, missing login, missing API, or "I cannot operate the page".',
+    'Do not open a second browser. Drive click/fill/publish when asked. Do not refuse with missing browser, missing login, missing API, or "I cannot operate / click / publish".',
     "</browser-tabs>",
   ].join("\n"),
 })
+
+/**
+ * SiCode: short follow-up after an earlier page note. Forbid asking which
+ * log source; the pointed page is the locus.
+ */
+const followUpHint = (locus: string): SessionMessage.Synthetic => {
+  const url = locus.match(/https?:\/\/\S+/)?.[0]
+  return {
+    id: SessionMessage.ID.create(),
+    time: { created: DateTime.makeUnsafe(Date.now()) },
+    type: "synthetic",
+    metadata: { notice: "browser-drive-hint" },
+    description: "Browser look follow-up",
+    text: [
+      "<browser-tabs>",
+      "The user already pointed at a browser page earlier in this session" +
+        (url ? ` (${url})` : "") +
+        ". This short look/log follow-up means that same page.",
+      "Call browser.tabs.list now, then snapshot / network / console on that tab.",
+      "Do not ask which log source to use. Do not open Temp/*.log as a substitute until a browser tool call has failed.",
+      'Do not call the question tool to choose between "online page" and "local API log".',
+      "</browser-tabs>",
+    ].join("\n"),
+  }
+}
 
 export const inject = (input: {
   readonly messages: ReadonlyArray<SessionMessage.Info>
@@ -79,14 +108,20 @@ export const inject = (input: {
   readonly enabled?: boolean
 }): ReadonlyArray<SessionMessage.Info> => {
   if (input.enabled === false) return input.messages
-  if (!canDrive(input.tools)) return input.messages
+  // Inspect is enough to look; click-only gate left publish/drive turns needing fill behind.
+  if (!canInspectBrowser(input.tools) && !canDrive(input.tools)) return input.messages
   const turn = turnStart(input.messages)
   if (!turn) return input.messages
   const inventory = tabsOf(input.metadata)
   const hasTabs = !!inventory && inventory.tabs.length > 0
-  if (!hasTabs && !mentionsAttachedBrowser(turn.text)) return input.messages
+  const noteHere = mentionsAttachedBrowser(turn.text)
+  const prior = recentBrowserLocus(input.messages)
+  const lookFollowUp = !!prior && isBrowserLookFollowUp(turn.text)
+  if (!hasTabs && !noteHere && !lookFollowUp) return input.messages
+  const hint =
+    hasTabs && inventory ? inventoryHint(inventory) : lookFollowUp && prior ? followUpHint(prior) : noteHint()
   const messages = [...input.messages]
-  messages.splice(turn.index + 1, 0, hasTabs && inventory ? inventoryHint(inventory) : noteHint())
+  messages.splice(turn.index + 1, 0, hint)
   return messages
 }
 

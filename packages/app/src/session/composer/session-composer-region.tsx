@@ -1,9 +1,11 @@
 import { Show, type JSX } from "solid-js"
+import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/runtime/i18n/language"
 import { SessionElicitationDock } from "@/session/requests/session-elicitation-dock"
 import { SessionPermissionDock } from "@/session/requests/session-permission-dock"
 import { SessionQuestionDock } from "@/session/requests/session-question-dock"
 import { SessionWebSearchDock } from "@/session/requests/session-websearch-dock"
+import { SessionRunningPill } from "./running-pill"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 type SessionComposerRegionState = Pick<
@@ -12,21 +14,29 @@ type SessionComposerRegionState = Pick<
   | "elicitationRequest"
   | "websearch"
   | "permissionRequest"
+  | "permissionRequests"
   | "permissionResponding"
   | "decide"
   | "blocked"
+  | "background"
 >
 
 export type SessionComposerRegionViewController = Pick<
   SessionComposerRegionController,
   "centered" | "onResponseSubmit" | "openParent" | "setPromptRef" | "setDockRef" | "parentID" | "child" | "showComposer"
-> & { state: SessionComposerRegionState }
+> & {
+  state: SessionComposerRegionState
+  onReveal?: (target: string) => void
+}
 
 export function SessionComposerRegion(props: {
   controller: SessionComposerRegionViewController
   composer: JSX.Element
+  /** Extra capsules for the shared lane (e.g. todo) — sit beside background shells. */
+  lane?: JSX.Element
 }) {
   const language = useLanguage()
+  const params = useParams()
   const controller = props.controller
 
   return (
@@ -60,20 +70,30 @@ export function SessionComposerRegion(props: {
           )}
         </Show>
 
-        <Show when={controller.state.permissionRequest()} keyed>
-          {(request) => (
-            <div>
-              <SessionPermissionDock
-                request={request}
-                responding={controller.state.permissionResponding()}
-                onDecide={(response) => {
-                  controller.onResponseSubmit()
-                  controller.state.decide(response)
-                }}
-              />
-            </div>
-          )}
+        <Show when={controller.state.permissionRequests().length > 0}>
+          <div>
+            <SessionPermissionDock
+              requests={controller.state.permissionRequests()}
+              responding={controller.state.permissionResponding()}
+              onDecide={(response) => {
+                controller.onResponseSubmit()
+                controller.state.decide(response)
+              }}
+            />
+          </div>
         </Show>
+
+        {/* SiCode: shells share one capsule; click opens a compact popup (not an in-flow tray). */}
+        <div data-slot="composer-lane" class="pointer-events-none min-w-0 pb-2.5">
+          <SessionRunningPill
+            sessionID={params.id}
+            owner={controller.state.background.running.sessionID()}
+            blocking={controller.state.background.running.blocking()}
+            tasks={controller.state.background.running.tasks()}
+            onReveal={controller.onReveal}
+            trailing={props.lane}
+          />
+        </div>
 
         <Show when={controller.showComposer()}>
           <div

@@ -134,9 +134,8 @@ export function buildPromptRequest(input: BuildPromptRequestInput): PromptReques
 
   const context = input.context.flatMap((item) => {
     if (item.type === "note") {
-      const comment = item.comment.trim()
-
-      if (!comment) return []
+      // Empty free-text still sends the note — subject names the target; label is the chip fallback.
+      const comment = item.comment.trim() || item.label || item.subject
       comments.push(noteComment(item, comment))
 
       return mentioned(comment)
@@ -164,6 +163,9 @@ export function buildPromptRequest(input: BuildPromptRequestInput): PromptReques
     return [file, ...mentioned(comment)]
   })
 
+  // SiCode: keep data: for the chip/bubble (`attached()` only shows inline/data/blob — never
+  // file://). Absolute sourcePath stays in `name` so materialize can label a disk path for tools
+  // without converting the URI (that hid the bubble and dropped vision for the model).
   const inline = input.images.map((attachment) => ({
     uri: attachment.dataUrl,
     mime: attachment.mime,

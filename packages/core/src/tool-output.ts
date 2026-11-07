@@ -10,8 +10,11 @@ import { Identifier } from "@opencode/schema/identifier"
 import { FileRetention } from "./file-retention.js"
 import { State } from "./state.js"
 
-export const MAX_LINES = 2_000
-export const MAX_BYTES = 50 * 1024 // 50 KiB
+// SiCode: was 2000 / 50KiB. Flash sessions (ses_e6ce) still ate 80KB+ read dumps into the next
+// step because read set `truncated: false` and skipped this layer. Tighter defaults keep shell and
+// uncapped tool text near Cursor-sized previews; full text still spills to `outputPath`.
+export const MAX_LINES = 400
+export const MAX_BYTES = 24 * 1024 // 24 KiB
 export const RETENTION = Duration.days(7)
 export const DIRECTORY = "tool-output"
 
@@ -162,19 +165,29 @@ const layer = Layer.effect(
     })
 
     const truncate = Effect.fnUntraced(function* (result: Result) {
-      if (result.metadata?.truncated !== undefined) return result
       const content = result.content
       const text = content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n")
       const limits = state.get()
       const lines = text.split("\n")
       if (text.endsWith("\n")) lines.pop()
       const totalBytes = Buffer.byteLength(text, "utf-8")
+      // SiCode: do not bail just because a producer set `truncated` (read always did). Under-budget
+      // payloads keep the producer's flag; over-budget ones still get head+tail + spill — that is
+      // what stopped 80KB form.js reads from poisoning the next Flash step.
       if (lines.length <= limits.maxLines && totalBytes <= limits.maxBytes)
-        return { ...result, metadata: { ...result.metadata, truncated: false } }
+        return {
+          ...result,
+          metadata: { ...result.metadata, truncated: result.metadata?.truncated ?? false },
+        }
 
-      const file = path.join(directory, fileName())
-      yield* fs.ensureDir(directory).pipe(Effect.orDie)
-      yield* fs.writeFileString(file, text).pipe(Effect.orDie)
+      const file =
+        typeof result.metadata?.outputPath === "string"
+          ? result.metadata.outputPath
+          : path.join(directory, fileName())
+      if (typeof result.metadata?.outputPath !== "string") {
+        yield* fs.ensureDir(directory).pipe(Effect.orDie)
+        yield* fs.writeFileString(file, text).pipe(Effect.orDie)
+      }
       // SiCode: a long output's answer is nearly always in its last lines — a stack trace's cause, a
       // test run's tally — so a head-only preview hides exactly what the model needs. Keep both ends.
       // A file part (an image) keeps the head-only path: the text around it is a caption whose order
